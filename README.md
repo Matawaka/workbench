@@ -1,28 +1,25 @@
-# Matawaka Workbench v0.8
+# Matawaka Workbench v0.9
 
-Windows-first, Codex-independent workbench for bounded Matawaka catalog analysis.
+Windows/.NET 10 Workbench for bounded local Matawaka analysis.
 
-v0.8 preserves the accepted v0.7 execution boundary unchanged:
+Current surfaces:
 
+- persistent `K:\Matawaka` workspace;
+- local Matawaka catalog observation;
+- typed read-only agent authority;
+- balanced evidence frontier;
+- interchangeable offline semantic providers;
 - verified fixed `SemanticHost.exe`;
-- restricted primary token with maximum privileges disabled;
-- Low integrity (`S-1-16-4096`);
-- Windows Job Object containment;
-- child runtime security attestation verified before semantic input;
-- bounded stdin/stdout IPC;
-- no network isolation or OS-sandbox claim;
-- Execute denied; mutation budget remains zero.
+- restricted Low-integrity Windows token + Job Object;
+- child runtime security attestation before semantic input;
+- PCL-compatible visible liveness;
+- automated two-provider + denied-Execute Self-test;
+- explicit GUI-local accepted checkpoint gate.
 
-## New in v0.8
+## v0.9 checkpoint gate
 
-The **Self-test** button runs an automated acceptance matrix:
+A passing Self-test enables **Принять**. The user sees the exact local Workbench files that will enter the checkpoint and must confirm again. Only then may Workbench execute a fixed local Git sequence for its own repository.
 
-1. read-only propose with `local-contract-synthesis-v0.3`;
-2. the same bounded input with `deterministic-evidence-semantic-v0.2`;
-3. denied Execute with a check that evidence/semantic processing never opens.
+The gate never performs `git fetch`, `git push`, remote mutation, catalog mutation, agent Execute, network model calls, arbitrary command execution, ActionPermit creation or materialization authority creation.
 
-A typed receipt is saved under `Workbench/artifacts/acceptance` and shown in the
-**Acceptance** tab.
-
-`Automated Acceptance != Canonical Conformance`.
-`Passing Self-Test != New Authority`.
+The checkpoint receipt is Workbench-local evidence. It is not canonical UU-AAP conformance and does not make the Workbench repository authoritative over other Matawaka repositories.

@@ -142,8 +142,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.8",
-            "0.8.0",
+            "matawaka.workbench-acceptance-receipt/v0.9",
+            "0.9.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -164,7 +164,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "no Stable Core or interface-registry promotion",
                 "self-test artifact write is limited to Workbench/artifacts/acceptance"
             },
-            "Workbench-local acceptance automation over existing v0.7 boundaries. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation retained in v0.9 over existing v0.7 boundaries. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)

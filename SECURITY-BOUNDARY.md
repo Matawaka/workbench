@@ -1,20 +1,27 @@
-# Matawaka Workbench v0.8 security boundary
+# Matawaka Workbench v0.9 — Security boundary
 
-v0.8 does not widen the accepted v0.7 authority/security boundary.
+The accepted v0.7 semantic security boundary remains unchanged: fixed verified semantic host, restricted Low-integrity token, Windows Job Object and child runtime attestation before semantic input. Self-test from v0.8 remains read-only/offline.
 
-The semantic host remains a verified fixed binary launched with a restricted
-Low-integrity token, assigned to a bounded Job Object before resume, and required
-to attest its observed token/Job state before semantic input is released.
+v0.9 adds one deliberately separate maintenance authority: **explicit human-confirmed local Workbench Git checkpointing**.
 
-The new Workbench-local acceptance harness:
+## Local checkpoint authority
 
-- forces `AllowGitFetch=false` for its internal runs;
-- requires the Agent checkbox to be explicitly enabled;
-- runs only Observe/Propose plus a negative Execute request;
-- does not grant repository mutation, network model access, arbitrary process
-  execution, materialization authority, execution authority, or ActionPermit;
-- writes only one receipt below `Workbench/artifacts/acceptance`;
-- does not represent its result as canonical UU-AAP conformance.
+A local checkpoint is allowed only when all are true:
 
-`Acceptance Automation != Authority`.
-`Acceptance Receipt != OS Sandbox Proof`.
+1. the current process produced a passing Self-test receipt;
+2. the acceptance artifact is under `Workbench/artifacts/acceptance` and matches the in-memory receipt;
+3. the running Workbench executable hash still matches the Self-test;
+4. HEAD equals `workbench-v0.8-accepted`;
+5. `workbench-v0.9-accepted` does not already exist;
+6. the UI previews the exact working-tree file list;
+7. the human explicitly confirms the **Принять** dialog.
+
+Only fixed local operations are available: `git add`, one fixed commit, one fixed annotated tag. There is no remote push/fetch, no catalog write, no JSON-supplied executable/arguments and no agent Execute.
+
+`Self-test PASS != Checkpoint authority`
+
+`Checkpoint authority != Catalog mutation authority`
+
+`Checkpoint authority != Remote publication authority`
+
+`Checkpoint authority != Agent Execute`

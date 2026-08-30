@@ -13,6 +13,10 @@ public partial class MainWindow : Window
 {
     private readonly ICommandRunner _router = new CommandRouter();
     private readonly WorkbenchAcceptanceHarness _acceptanceHarness;
+    private readonly LocalCheckpointService _checkpointService = new();
+    private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
+    private string? _lastAcceptanceArtifactPath;
+    private bool _lastAcceptanceConsumed;
     private CancellationTokenSource? _cts;
     private WorkbenchProgressReceipt? _lastProgressReceipt;
     private CommandTerminalState? _currentTerminalState;
@@ -74,7 +78,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.8 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.9 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -84,12 +88,17 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.8-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.9-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
                 new UTF8Encoding(false),
                 _cts.Token);
+
+            _lastAcceptanceReceipt = receipt;
+            _lastAcceptanceArtifactPath = artifactPath;
+            _lastAcceptanceConsumed = false;
+            AcceptCheckpointButton.IsEnabled = receipt.Passed;
 
             AcceptanceTextBox.Text = CommandCodec.Serialize(new
             {
@@ -103,6 +112,78 @@ public partial class MainWindow : Window
                 ? $"COMPLETED: acceptance PASSED; {artifactPath}"
                 : $"FAILED: acceptance matrix has failing checks; {artifactPath}";
             EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.{(receipt.Passed ? "completed" : "failed"),-18} passed={receipt.Passed}; {artifactPath}");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
+    private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"accept-v0.9-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
+                throw new InvalidDataException("Run a passing Self-test in this Workbench process before accepting the local checkpoint.");
+            if (_lastAcceptanceConsumed)
+                throw new InvalidDataException("The latest Self-test receipt has already been consumed by a local checkpoint acceptance.");
+
+            SaveSettings();
+            var candidate = await _checkpointService.PreviewAsync(
+                WorkspaceRootBox.Text,
+                _lastAcceptanceArtifactPath,
+                _lastAcceptanceReceipt,
+                CancellationToken.None);
+
+            var preview = new StringBuilder();
+            preview.AppendLine("Создать локальный accepted checkpoint Workbench?");
+            preview.AppendLine();
+            preview.AppendLine($"Predecessor: {candidate.PreviousHead}");
+            preview.AppendLine($"Tag: {candidate.TargetTag}");
+            preview.AppendLine($"Acceptance SHA-256: {candidate.AcceptanceArtifactSha256}");
+            preview.AppendLine();
+            preview.AppendLine("Изменения Workbench, которые войдут в commit:");
+            foreach (var file in candidate.ChangedFiles.Take(30)) preview.AppendLine($"  {file}");
+            if (candidate.ChangedFiles.Count > 30) preview.AppendLine($"  ... +{candidate.ChangedFiles.Count - 30} files");
+            preview.AppendLine();
+            preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
+
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.9", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            BeginRun(id);
+            StatusText.Text = "RUNNING: explicit local Workbench checkpoint";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  checkpoint.requested        tag={candidate.TargetTag}; files={candidate.ChangedFiles.Count}");
+
+            var receipt = await _checkpointService.AcceptAsync(candidate, _cts!.Token);
+            var receiptPath = await LocalCheckpointService.WriteReceiptAsync(WorkspaceRootBox.Text, receipt, _cts.Token);
+            _lastAcceptanceConsumed = true;
+
+            AcceptanceTextBox.Text = CommandCodec.Serialize(new
+            {
+                Acceptance = _lastAcceptanceReceipt,
+                AcceptanceArtifactPath = _lastAcceptanceArtifactPath,
+                Checkpoint = receipt,
+                CheckpointReceiptPath = receiptPath
+            });
+            OutputTabs.SelectedItem = AcceptanceTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = CommandTerminalState.Completed;
+            StatusText.Text = $"COMPLETED: {receipt.Tag} -> {receipt.NewHead}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  checkpoint.completed        {receipt.Tag} -> {receipt.NewHead}; remotePush=false; catalogMutation=false");
         }
         catch (OperationCanceledException)
         {
@@ -271,6 +352,7 @@ public partial class MainWindow : Window
         _cts = new CancellationTokenSource();
         RunButton.IsEnabled = false;
         SelfTestButton.IsEnabled = false;
+        AcceptCheckpointButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -291,6 +373,7 @@ public partial class MainWindow : Window
     {
         RunButton.IsEnabled = true;
         SelfTestButton.IsEnabled = true;
+        AcceptCheckpointButton.IsEnabled = _lastAcceptanceReceipt?.Passed == true && !_lastAcceptanceConsumed && !string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath);
         CancelButton.IsEnabled = false;
     }
 
@@ -398,7 +481,7 @@ public partial class MainWindow : Window
         {
             ProgressReceipt = _lastProgressReceipt,
             HumanView = view,
-            Note = "Workbench v0.8 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+            Note = "Workbench v0.9 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
         });
     }
 
@@ -444,7 +527,7 @@ public partial class MainWindow : Window
     private const string DefaultCommand = """
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v080",
+  "id": "game-companion-propose-v090",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",

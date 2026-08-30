@@ -1,7 +1,10 @@
-# Start Here — Workbench v0.8
+# Start here — Workbench v0.9
 
-1. Keep `K:\Matawaka\Catalog` current and clean.
-2. Enable **Агент включен** for read-only analysis.
-3. Use **Self-test** after a new Workbench build to run the automated acceptance matrix.
-4. Inspect the **Acceptance** tab and the receipt under `Workbench\artifacts\acceptance`.
-5. Treat a PASS as Workbench-local evidence only; it creates no Execute or materialization authority.
+1. Enable the agent for read-only Self-test.
+2. Click **Self-test**.
+3. Require `Passed=true` in Acceptance.
+4. Click **Принять** only if you want to create the local accepted Workbench checkpoint.
+5. Review the exact changed-file list in the confirmation dialog.
+6. Confirm to create a local commit + `workbench-v0.9-accepted` tag.
+
+No remote push/fetch or Matawaka catalog mutation is performed by the checkpoint gate.
