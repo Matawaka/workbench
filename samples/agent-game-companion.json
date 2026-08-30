@@ -1,6 +1,6 @@
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v050",
+  "id": "game-companion-propose-v060",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",

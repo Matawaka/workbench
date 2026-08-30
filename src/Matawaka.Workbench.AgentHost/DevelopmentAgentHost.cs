@@ -77,11 +77,11 @@ public interface ICapabilityPolicy
 /// <summary>
 /// Workbench-local bridge inspired by FREESHIELD's authority boundary.
 /// It is intentionally not represented as canonical FREESHIELD policy.
-/// v0.5 can grant only read-only Observe/Propose authority; fixed semantic-host process invocation does not grant arbitrary process authority.
+/// v0.6 can grant only read-only Observe/Propose authority; restricted semantic-host process invocation does not grant arbitrary process authority.
 /// </summary>
 public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 {
-    private const string PolicyId = "freeshield-read-only-bridge/v0.5";
+    private const string PolicyId = "freeshield-read-only-bridge/v0.6";
 
     public CapabilityRequest CreateRequest(CommandEnvelope command)
     {
@@ -148,7 +148,7 @@ public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 
         if (string.Equals(request.Operation, "execute", StringComparison.OrdinalIgnoreCase))
         {
-            return Deny(request, "execute-not-available-in-v0.5", nonEffects);
+            return Deny(request, "execute-not-available-in-v0.6", nonEffects);
         }
 
         if (request.RequestedMutationBudget != 0 ||
@@ -422,7 +422,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
                 capabilityDecision);
 
             var packet = new SemanticEvidencePacket(
-                "matawaka.semantic-evidence-packet/v0.5",
+                "matawaka.semantic-evidence-packet/v0.6",
                 command.Id,
                 command.Target,
                 findings.Select(item => new SemanticRepositoryRef(
@@ -450,7 +450,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         }
 
         return new DevelopmentAgentReceipt(
-            "read-only-provider-host-v0.5",
+            "read-only-provider-host-v0.6",
             "completed",
             options.Mode,
             capabilityDecision.AuthorityGranted,
@@ -465,7 +465,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
             semanticBoundary,
             semanticAnalysis,
             Array.Empty<string>(),
-            "Evidence collection remains deterministic and read-only. v0.5 verifies the fixed SemanticHost executable against a build-generated SHA-256 manifest, assigns it to a Windows Job Object with active-process=1, 256 MiB process-memory and kill-on-close limits before semantic stdin is written, then uses bounded stdin/stdout receipts, an allowlisted environment, timeout/cancellation and parent-side digest verification. No repository roots, file handles, network clients/credentials, materialization authority, mutation authority or arbitrary executable path are supplied through the semantic interface. The child still uses the same Windows user token; no restricted token, filesystem ACL sandbox or OS network sandbox is claimed. Exact UU-AAP source bindings are fail-closed inputs, not claims of canonical evaluator execution or Stable Core admission.");
+            "Evidence collection remains deterministic and read-only. v0.6 verifies the fixed SemanticHost executable against a build-generated SHA-256 manifest, creates a restricted primary token with maximum privileges disabled, lowers the child token to low integrity, creates the process suspended, assigns the existing Job Object limits before resume, and only then sends bounded semantic stdin. No repository roots, file handles, network clients/credentials, materialization authority, mutation authority or arbitrary executable path are supplied through the semantic interface. The child preserves the same Windows user identity but not the same unrestricted security context. No filesystem ACL sandbox, AppContainer, VM or OS network sandbox is claimed. Exact UU-AAP source bindings are fail-closed inputs, not claims of canonical evaluator execution or Stable Core admission.");
     }
 
     private static IReadOnlyList<AgentEvidence> SelectBalancedEvidence(
@@ -679,7 +679,7 @@ public sealed class DevelopmentAgentHost
                 "TERMINAL", "DENIED", "NONE", "NONE", request.Id));
 
             return new DevelopmentAgentReceipt(
-                "authority-gate-v0.5",
+                "authority-gate-v0.6",
                 "denied",
                 request.Operation,
                 "none",
