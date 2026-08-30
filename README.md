@@ -2,9 +2,7 @@
 
 Independent Windows workbench for bounded analysis and development flows over the local Matawaka catalog.
 
-## v0.2 checkpoint
-
-The current v0.2 path is deliberately non-actuating:
+## v0.3 checkpoint
 
 ```text
 JSON command
@@ -12,48 +10,57 @@ JSON command
   -> catalog snapshot (repo + branch + HEAD)
   -> typed read-only capability decision
   -> balanced evidence frontier
-  -> evidence-only semantic provider boundary
+  -> offline semantic-provider selection
+  -> sanitized evidence packet
+  -> interchangeable provider
+  -> typed semantic analysis/boundary receipts
   -> proposal/checkpoint
-  -> STOP before mutation
+  -> STOP before materialization or mutation
 ```
 
-The Windows UI exposes separate tabs for Events, Result, Evidence Receipt, Authority Receipt, Liveness and Agent.
+The Windows UI exposes separate tabs for Events, Result, Evidence Receipt, Authority Receipt, Liveness, Semantic Provider and Agent.
 
-### PCL-compatible liveness
+### Provider substitution
 
-Workbench v0.2 projects visible progress using the field semantics of UU-AAP Perceived Causal Liveness: phase, progress kind, waiting category, next observable event and checkpoint reference. Meaningful progress changes only when one of those fields changes. Every local progress receipt keeps `hidden reasoning disclosed = false` and `external effect authority created = false`.
+`SemanticProviderRegistry` is Workbench-local and deliberately not promoted as a UU-AAP reusable/Stable Core abstraction. v0.3 ships two offline implementations:
 
-This is an exact-source-bound compatibility adapter. It does not execute the canonical UU-AAP JavaScript implementation and does not claim canonical conformance.
+- `local-contract-synthesis-v0.3`;
+- `deterministic-evidence-semantic-v0.2`.
 
-### Semantic provider boundary
+Both receive the same sanitized `SemanticEvidencePacket`. The packet contains evidence snippets, repository identity/branch/HEAD, balanced coverage and typed authority receipt. It contains no repository roots, file handles, process execution, network access or mutation authority.
 
-`ISemanticProvider` is the reusable provider seam. The built-in `DeterministicSemanticProvider` receives only:
+Provider selection and analysis are separately receipted. The semantic input/output digests make substitution inspectable. v0.3 uses built-in in-process providers only; this is an API/data-boundary proof, not an operating-system sandbox for hostile provider code.
 
-- repository name + branch + HEAD;
-- balanced evidence anchors/snippets;
-- coverage;
-- typed capability receipt.
+### Exact source frontier
 
-It does not receive repository roots, file handles, arbitrary process execution, network access or mutation authority. A future model provider must preserve the same boundary and request any additional capability separately.
+Before semantic analysis, v0.3 requires the locally observed `uu-aap` focus frontier to match:
+
+`f5673a39ddeef05f82c828f6cff554518f5f8ef6`
+
+The exact source bindings cover PCL progress/human-view, Scoped Authority Evidence, Materialization Authority and the Reusable Component Admission Audit. These are compatibility/reference bindings; canonical JavaScript/Python evaluators are not executed by Workbench.
+
+### Admission guard
+
+Workbench v0.3 follows the repository's `NO_ADMISSION` result conservatively: provider registry convenience is a Workbench-local composition, not evidence for Stable Core or interface-registry promotion.
 
 ### Authority
 
-The Workbench-local `freeshield-read-only-bridge/v0.2` is not represented as canonical FREESHIELD policy. It grants only read-only Observe/Propose when explicitly enabled and when mutation/network/process requests remain zero/false. Execute is denied.
+`freeshield-read-only-bridge/v0.3` grants only read-only Observe/Propose when explicitly enabled and when mutation/network/process requests remain zero/false. Execute is denied.
 
-The UI also carries exact-source references to UU-AAP Scoped Authority Evidence and Materialization Authority so later stages can remain distinct:
+`Evidence != Authority`
 
-`Authority Evidence != Materialization Authority != Execution Authority`.
+`Provider Selection != Authority Grant`
 
-No materialization evaluator or ActionPermit path is activated in v0.2.
+`Scoped Authority Evidence != Materialization Authority != Execution Authority`
+
+`Supported Evidence != ActionPermit`
+
+No materialization or execution path exists in v0.3.
 
 ## Local layout
 
-Default workspace:
+Workspace: `K:\Matawaka`
 
-`K:\Matawaka`
+Catalog: `K:\Matawaka\Catalog`
 
-Default catalog:
-
-`K:\Matawaka\Catalog`
-
-The Workbench itself should be tracked as its own local Git history. Catalog repositories are evidence sources and are not modified by the v0.2 patch.
+The Workbench has its own local Git predecessor chain. Catalog repositories remain evidence sources and are not modified by the v0.3 patch.

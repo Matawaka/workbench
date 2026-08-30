@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.2.0" Height="820" Width="1240" MinHeight="680" MinWidth="940"
+        Title="Matawaka Workbench v0.3.0" Height="820" Width="1240" MinHeight="680" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -21,7 +21,7 @@
             <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
             <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
             <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <TextBlock Text="v0.2: liveness + semantic boundary + typed receipts" VerticalAlignment="Center" FontStyle="Italic"/>
+            <TextBlock Text="v0.3: offline provider registry + semantic receipts + typed authority" VerticalAlignment="Center" FontStyle="Italic"/>
         </StackPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
@@ -84,6 +84,11 @@
             </TabItem>
             <TabItem x:Name="LivenessTab" Header="Liveness">
                 <TextBox x:Name="LivenessTextBox" IsReadOnly="True" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" TextWrapping="NoWrap"/>
+            </TabItem>
+            <TabItem x:Name="SemanticTab" Header="Semantic Provider">
+                <TextBox x:Name="SemanticTextBox" IsReadOnly="True" AcceptsReturn="True"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          FontFamily="Consolas" TextWrapping="NoWrap"/>
             </TabItem>

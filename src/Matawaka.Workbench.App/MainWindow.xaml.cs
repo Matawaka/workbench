@@ -215,6 +215,7 @@ public partial class MainWindow : Window
         EvidenceTextBox.Clear();
         AuthorityTextBox.Clear();
         LivenessTextBox.Clear();
+        SemanticTextBox.Clear();
         AgentTextBox.Clear();
         _lastProgressReceipt = null;
         _currentTerminalState = null;
@@ -252,8 +253,14 @@ public partial class MainWindow : Window
             AuthorityTextBox.AppendText(line + Environment.NewLine);
             AuthorityTextBox.ScrollToEnd();
         }
-        else if (e.Event.StartsWith("agent.", StringComparison.OrdinalIgnoreCase) ||
-                 e.Event.StartsWith("semantic.", StringComparison.OrdinalIgnoreCase))
+        else if (e.Event.StartsWith("semantic.", StringComparison.OrdinalIgnoreCase))
+        {
+            SemanticTextBox.AppendText(line + Environment.NewLine);
+            SemanticTextBox.ScrollToEnd();
+            AgentTextBox.AppendText(line + Environment.NewLine);
+            AgentTextBox.ScrollToEnd();
+        }
+        else if (e.Event.StartsWith("agent.", StringComparison.OrdinalIgnoreCase))
         {
             AgentTextBox.AppendText(line + Environment.NewLine);
             AgentTextBox.ScrollToEnd();
@@ -274,6 +281,10 @@ public partial class MainWindow : Window
             ? "No authority receipt for this command."
             : CommandCodec.Serialize(result.Authority);
 
+        SemanticTextBox.Text = result.Semantic is null
+            ? "No semantic-provider receipt for this command."
+            : CommandCodec.Serialize(result.Semantic);
+
         if (result.Agent is not null)
         {
             if (AgentTextBox.Text.Length > 0)
@@ -285,6 +296,7 @@ public partial class MainWindow : Window
         OutputTabs.SelectedItem = result.TerminalState switch
         {
             CommandTerminalState.Denied when result.Authority is not null => AuthorityTab,
+            CommandTerminalState.Completed when result.Semantic is not null => SemanticTab,
             CommandTerminalState.Completed when result.Evidence is not null => EvidenceTab,
             _ => ResultTab
         };
@@ -311,7 +323,7 @@ public partial class MainWindow : Window
         {
             ProgressReceipt = _lastProgressReceipt,
             HumanView = view,
-            Note = "Workbench v0.2 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+            Note = "Workbench v0.3 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
         });
     }
 
@@ -357,12 +369,13 @@ public partial class MainWindow : Window
     private const string DefaultCommand = """
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v020",
+  "id": "game-companion-propose-v030",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",
   "payload": {
     "mode": "propose",
+    "semanticProvider": "local-contract-synthesis-v0.3",
     "mutationBudget": 0,
     "networkAccess": false,
     "arbitraryProcessExecution": false,

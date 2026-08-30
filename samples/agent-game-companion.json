@@ -1,15 +1,20 @@
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v020",
+  "id": "game-companion-propose-v030",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",
   "payload": {
     "mode": "propose",
+    "semanticProvider": "local-contract-synthesis-v0.3",
     "mutationBudget": 0,
     "networkAccess": false,
     "arbitraryProcessExecution": false,
-    "focusRepositories": ["FREESHIELD", "kontur", "uu-aap"],
+    "focusRepositories": [
+      "FREESHIELD",
+      "kontur",
+      "uu-aap"
+    ],
     "terms": [
       "authority",
       "capability",

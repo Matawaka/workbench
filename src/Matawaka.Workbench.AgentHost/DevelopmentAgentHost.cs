@@ -51,7 +51,9 @@ public sealed record DevelopmentAgentReceipt(
     AgentEvidenceCoverage Coverage,
     IReadOnlyList<AgentEvidence> Evidence,
     AgentProposal? Proposal,
+    SemanticProviderSelectionReceipt? SemanticProviderSelection,
     SemanticProviderBoundaryReceipt? SemanticProviderBoundary,
+    SemanticAnalysisReceipt? SemanticAnalysis,
     IReadOnlyList<string> Mutations,
     string Limitation);
 
@@ -75,11 +77,11 @@ public interface ICapabilityPolicy
 /// <summary>
 /// Workbench-local bridge inspired by FREESHIELD's authority boundary.
 /// It is intentionally not represented as canonical FREESHIELD policy.
-/// v0.2 can grant only read-only Observe/Propose authority.
+/// v0.3 can grant only read-only Observe/Propose authority.
 /// </summary>
 public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 {
-    private const string PolicyId = "freeshield-read-only-bridge/v0.2";
+    private const string PolicyId = "freeshield-read-only-bridge/v0.3";
 
     public CapabilityRequest CreateRequest(CommandEnvelope command)
     {
@@ -146,7 +148,7 @@ public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 
         if (string.Equals(request.Operation, "execute", StringComparison.OrdinalIgnoreCase))
         {
-            return Deny(request, "execute-not-available-in-v0.2", nonEffects);
+            return Deny(request, "execute-not-available-in-v0.3", nonEffects);
         }
 
         if (request.RequestedMutationBudget != 0 ||
@@ -241,11 +243,11 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         "companion", "solver", "hint", "attention", "agent", "reversible"
     ];
 
-    private readonly ISemanticProvider _semanticProvider;
+    private readonly ISemanticProviderRegistry _semanticProviders;
 
-    public ReadOnlyDevelopmentProvider(ISemanticProvider? semanticProvider = null)
+    public ReadOnlyDevelopmentProvider(ISemanticProviderRegistry? semanticProviders = null)
     {
-        _semanticProvider = semanticProvider ?? new DeterministicSemanticProvider();
+        _semanticProviders = semanticProviders ?? new SemanticProviderRegistry();
     }
 
     public async Task<DevelopmentAgentReceipt> ObserveProposeAsync(
@@ -263,6 +265,20 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         if (!string.Equals(options.Mode, "observe", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(options.Mode, "propose", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("agent.run payload.mode must be 'observe' or 'propose' after authority gating.");
+
+        SemanticProviderSelectionReceipt? semanticSelection = null;
+        ISemanticProvider? semanticProvider = null;
+        if (string.Equals(options.Mode, "propose", StringComparison.OrdinalIgnoreCase))
+        {
+            semanticSelection = _semanticProviders.Select(options.SemanticProvider);
+            semanticProvider = _semanticProviders.Resolve(semanticSelection);
+            progress?.Report(new WorkbenchProgress(
+                command.Id, "semantic.provider.selected", 0,
+                $"{semanticSelection.SelectedProvider}; registry={semanticSelection.RegistryVersion}; offline={semanticSelection.OfflineOnly}",
+                DateTimeOffset.Now,
+                "SEMANTIC_PROVIDER_SELECTION", "PROVIDER_BOUND", "NONE",
+                "EVIDENCE_COLLECTION", $"semantic-provider:{semanticSelection.SelectedProvider}"));
+        }
 
         var selected = catalog
             .Where(repo => options.FocusRepositories.Count == 0 ||
@@ -399,6 +415,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
 
         AgentProposal? proposal = null;
         SemanticProviderBoundaryReceipt? semanticBoundary = null;
+        SemanticAnalysisReceipt? semanticAnalysis = null;
         if (string.Equals(options.Mode, "propose", StringComparison.OrdinalIgnoreCase))
         {
             var authorityReceipt = new CapabilityReceipt(
@@ -407,7 +424,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
                 capabilityDecision);
 
             var packet = new SemanticEvidencePacket(
-                "matawaka.semantic-evidence-packet/v0.2",
+                "matawaka.semantic-evidence-packet/v0.3",
                 command.Id,
                 command.Target,
                 findings.Select(item => new SemanticRepositoryRef(
@@ -420,17 +437,21 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
                 evidence,
                 authorityReceipt);
 
-            var semantic = await _semanticProvider.AnalyzeAsync(
+            if (semanticProvider is null || semanticSelection is null)
+                throw new InvalidDataException("Semantic provider selection is required for propose mode.");
+
+            var semantic = await semanticProvider.AnalyzeAsync(
                 packet,
                 progress,
                 cancellationToken);
 
             proposal = semantic.Proposal;
             semanticBoundary = semantic.Boundary;
+            semanticAnalysis = semantic.Analysis;
         }
 
         return new DevelopmentAgentReceipt(
-            "deterministic-read-only-v0.2",
+            "read-only-provider-host-v0.3",
             "completed",
             options.Mode,
             capabilityDecision.AuthorityGranted,
@@ -441,9 +462,11 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
             coverage,
             evidence,
             proposal,
+            semanticSelection,
             semanticBoundary,
+            semanticAnalysis,
             Array.Empty<string>(),
-            "Evidence collection remains deterministic and read-only. Proposal derivation is now behind an interchangeable semantic-provider interface that receives only an evidence packet plus typed authority receipt, not repository roots, file handles, process execution, network access, or mutation authority. UU-AAP protocol bindings are exact-frontier references and do not claim canonical implementation execution.");
+            "Evidence collection remains deterministic and read-only. v0.3 proves provider substitution through a Workbench-local offline registry. Providers receive only a sanitized evidence packet plus typed authority receipt, never repository roots, file handles, process execution, network access, materialization authority, or mutation authority. Exact UU-AAP source bindings are fail-closed inputs, not claims of canonical evaluator execution or Stable Core admission.");
     }
 
     private static IReadOnlyList<AgentEvidence> SelectBalancedEvidence(
@@ -514,8 +537,9 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
 
         var maxFiles = ReadInt(payload, "maxFilesPerRepository", 160, 1, 1000);
         var maxEvidence = ReadInt(payload, "maxEvidenceItems", 80, 1, 500);
+        var semanticProvider = ReadString(payload, "semanticProvider") ?? LocalContractSynthesisProvider.Id;
 
-        return new AgentOptions(mode, focus, terms, maxFiles, maxEvidence);
+        return new AgentOptions(mode, semanticProvider, focus, terms, maxFiles, maxEvidence);
     }
 
     private static string? ReadString(JsonElement payload, string name)
@@ -599,6 +623,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
 
     private sealed record AgentOptions(
         string Mode,
+        string SemanticProvider,
         IReadOnlyList<string> FocusRepositories,
         IReadOnlyList<string> Terms,
         int MaxFilesPerRepository,
@@ -655,7 +680,7 @@ public sealed class DevelopmentAgentHost
                 "TERMINAL", "DENIED", "NONE", "NONE", request.Id));
 
             return new DevelopmentAgentReceipt(
-                "authority-gate-v0.2",
+                "authority-gate-v0.3",
                 "denied",
                 request.Operation,
                 "none",
@@ -671,6 +696,8 @@ public sealed class DevelopmentAgentHost
                     0,
                     Array.Empty<AgentRepositoryCoverage>()),
                 Array.Empty<AgentEvidence>(),
+                null,
+                null,
                 null,
                 null,
                 Array.Empty<string>(),

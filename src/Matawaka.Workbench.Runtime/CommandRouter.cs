@@ -25,7 +25,8 @@ public sealed record CommandResult(
     object? Data = null,
     object? Evidence = null,
     object? Authority = null,
-    object? Agent = null);
+    object? Agent = null,
+    object? Semantic = null);
 
 public interface ICommandRunner
 {
@@ -123,6 +124,15 @@ public sealed class CommandRouter : ICommandRunner
                         receipt.Evidence,
                         receipt.CapabilityDecision.NonEffects);
 
+                    var semanticReceipt = receipt.SemanticProviderSelection is null
+                        ? null
+                        : new
+                        {
+                            Selection = receipt.SemanticProviderSelection,
+                            Analysis = receipt.SemanticAnalysis,
+                            Boundary = receipt.SemanticProviderBoundary
+                        };
+
                     result = new CommandResult(
                         command.Kind,
                         CommandTerminalState.Completed,
@@ -130,7 +140,8 @@ public sealed class CommandRouter : ICommandRunner
                         agentData,
                         evidenceReceipt,
                         authorityReceipt,
-                        receipt);
+                        receipt,
+                        semanticReceipt);
                 }
                 break;
 
