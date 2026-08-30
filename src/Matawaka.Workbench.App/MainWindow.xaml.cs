@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private readonly RecoveryEvidenceReplayService _recoveryEvidenceReplayService = new();
     private readonly RecoveryEvidenceRelocationDrillService _recoveryEvidenceRelocationDrillService = new();
     private readonly RecoveryEvidenceTransportService _recoveryEvidenceTransportService = new();
+    private readonly RecoveryEvidenceTransportIndependenceDrillService _recoveryTransportIndependenceDrillService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -110,7 +111,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.25 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.26 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -120,7 +121,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.25-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.26-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -165,7 +166,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.25-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.26-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -193,7 +194,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.25", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.26", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -679,7 +680,7 @@ public partial class MainWindow : Window
             var receipt = await _recoveryAssessmentService.AssessAsync(WorkspaceRootBox.Text, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-assessments");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.25-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.26-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -736,7 +737,7 @@ public partial class MainWindow : Window
 
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-plans");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.25-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.26-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -1190,6 +1191,56 @@ public partial class MainWindow : Window
                 ? $"COMPLETED: recovery transport import {result.Receipt.Status}; liveAuthority=false"
                 : $"FAILED: recovery transport import {result.Receipt.Status}";
             EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.import.{(result.Receipt.Verified ? "completed" : "failed"),-9} status={result.Receipt.Status}; envelopeReproduced={result.Receipt.EvidenceEnvelopeDigestReproduced}; originalRootsRequired=false");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
+    private async void RecoveryTransportIndependenceButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"recovery-transport-independence-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            SaveSettings();
+            var preview = new StringBuilder();
+            preview.AppendLine("Проверить независимость уже принятого v0.25 recovery transport от исходных replay/relocation evidence roots?");
+            preview.AppendLine();
+            preview.AppendLine("Workbench свяжет retained passing v0.25 import receipt и exact transport ZIP, скопирует ZIP в disjoint .workbench root, затем выполнит inspect/replay и materialization только из copied transport bytes.");
+            preview.AppendLine("Исходный transport/evidence не изменяется. Source tree, Git history, build, сеть, каталог и Agent Execute не разрешаются. Path guard является application-level, не OS sandbox.");
+            if (MessageBox.Show(this, preview.ToString(), "Transport independence v0.26", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            BeginRun(id);
+            StatusText.Text = "RUNNING: copied transport independence drill";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.transport-independence.started  source=v0.25 passing import; explicitUiConfirmation=true; liveAuthority=false");
+
+            var result = await _recoveryTransportIndependenceDrillService.RunAsync(WorkspaceRootBox.Text, true, _cts!.Token);
+            RecoveryTextBox.Text = CommandCodec.Serialize(new
+            {
+                Independence = result.Receipt,
+                IndependenceArtifactPath = result.ArtifactPath
+            });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = result.Receipt.Passed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = result.Receipt.Passed
+                ? $"COMPLETED: recovery transport independence {result.Receipt.Status}; crossMachineProof=false"
+                : $"FAILED: recovery transport independence {result.Receipt.Status}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.transport-independence.{(result.Receipt.Passed ? "completed" : "failed"),-9} status={result.Receipt.Status}; copiedZipOnly={result.Receipt.ReplayUsedOnlyCopiedTransportBytes}; originalEvidenceAccessAttempts={result.Receipt.OriginalEvidencePathAccessAttemptsDuringTransportReplay}");
         }
         catch (OperationCanceledException)
         {
