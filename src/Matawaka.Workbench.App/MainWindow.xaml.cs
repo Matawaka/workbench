@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly BoundedUpdateApplyBuildService _applyBuildService;
     private readonly MaintenanceRecoveryAssessmentService _recoveryAssessmentService = new();
     private readonly MaintenanceRecoveryPlanService _recoveryPlanService = new();
+    private readonly MaintenanceRecoveryExecutionService _recoveryExecutionService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -37,6 +38,9 @@ public partial class MainWindow : Window
     private string? _lastRecoveryAssessmentArtifactPath;
     private MaintenanceRecoveryPlanReceipt? _lastRecoveryPlanReceipt;
     private string? _lastRecoveryPlanArtifactPath;
+    private MaintenanceRecoveryExecutionReceipt? _lastRecoveryExecutionReceipt;
+    private string? _lastRecoveryExecutionArtifactPath;
+    private string? _lastRecoveryExecutionAuthorityPath;
     private CancellationTokenSource? _cts;
     private WorkbenchProgressReceipt? _lastProgressReceipt;
     private CommandTerminalState? _currentTerminalState;
@@ -100,7 +104,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.17 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.18 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -110,7 +114,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.17-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.18-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -155,7 +159,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.17-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.18-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -183,7 +187,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.17", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.18", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -660,12 +664,16 @@ public partial class MainWindow : Window
             _lastRecoveryAssessmentArtifactPath = null;
             _lastRecoveryPlanReceipt = null;
             _lastRecoveryPlanArtifactPath = null;
+            _lastRecoveryExecutionReceipt = null;
+            _lastRecoveryExecutionArtifactPath = null;
+            _lastRecoveryExecutionAuthorityPath = null;
             RecoveryPlanButton.IsEnabled = false;
+            RecoveryExecuteButton.IsEnabled = false;
 
             var receipt = await _recoveryAssessmentService.AssessAsync(WorkspaceRootBox.Text, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-assessments");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.17-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.18-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -722,7 +730,7 @@ public partial class MainWindow : Window
 
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-plans");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.17-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.18-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -743,6 +751,93 @@ public partial class MainWindow : Window
             _currentTerminalState = CommandTerminalState.Completed;
             StatusText.Text = $"COMPLETED: recovery plan {receipt.Status}; executionAuthorized=false";
             EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.plan.completed      status={receipt.Status}; executionAuthorized=false");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
+    private async void RecoveryExecuteButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"recovery-execute-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            if (_lastRecoveryAssessmentReceipt is null || string.IsNullOrWhiteSpace(_lastRecoveryAssessmentArtifactPath))
+                throw new InvalidDataException("Run Recovery check in this Workbench process before recovery execution.");
+            if (_lastRecoveryPlanReceipt is null || string.IsNullOrWhiteSpace(_lastRecoveryPlanArtifactPath))
+                throw new InvalidDataException("Create a fresh Recovery plan in this Workbench process before recovery execution.");
+            if (!string.Equals(_lastRecoveryPlanReceipt.Status, "READY_FOR_SEPARATE_RECOVERY_AUTHORITY", StringComparison.Ordinal) ||
+                !_lastRecoveryPlanReceipt.SeparateRecoveryAuthorityEligible)
+                throw new InvalidDataException("The current recovery plan does not permit a separate recovery execution authority decision.");
+            if (_lastRecoveryExecutionReceipt is not null)
+                throw new InvalidDataException("The current recovery plan has already been consumed by a recovery execution attempt in this Workbench process. Run Recovery check again.");
+
+            var preview = new StringBuilder();
+            preview.AppendLine("Выполнить ограниченное восстановление Workbench?");
+            preview.AppendLine();
+            preview.AppendLine($"Accepted HEAD: {_lastRecoveryPlanReceipt.ReverifiedHead}");
+            preview.AppendLine($"Classification: {_lastRecoveryAssessmentReceipt.Classification}");
+            preview.AppendLine($"Dirty paths: {_lastRecoveryPlanReceipt.ReverifiedDirtyPaths.Count}");
+            foreach (var path in _lastRecoveryPlanReceipt.ReverifiedDirtyPaths.Take(30)) preview.AppendLine($"  {path}");
+            if (_lastRecoveryPlanReceipt.ReverifiedDirtyPaths.Count > 30) preview.AppendLine($"  ... +{_lastRecoveryPlanReceipt.ReverifiedDirtyPaths.Count - 30} paths");
+            preview.AppendLine();
+            preview.AppendLine("Разрешается только вернуть exact tracked candidate bytes к текущему accepted HEAD и удалить exact byte-reverified untracked candidate additions. Build/checkpoint/network/catalog/Agent Execute не разрешаются.");
+            preview.AppendLine("После выполнения потребуется новый Recovery check.");
+
+            if (MessageBox.Show(this, preview.ToString(), "Recovery execute v0.18", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                return;
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: explicit bounded recovery execution";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.execution.requested dirtyPaths={_lastRecoveryPlanReceipt.ReverifiedDirtyPaths.Count}; explicitUiConfirmation=true");
+
+            var result = await _recoveryExecutionService.ExecuteAsync(
+                WorkspaceRootBox.Text,
+                _lastRecoveryAssessmentArtifactPath,
+                _lastRecoveryAssessmentReceipt,
+                _lastRecoveryPlanArtifactPath,
+                _lastRecoveryPlanReceipt,
+                _cts!.Token);
+
+            _lastRecoveryExecutionReceipt = result.Receipt;
+            _lastRecoveryExecutionArtifactPath = result.ArtifactPath;
+            _lastRecoveryExecutionAuthorityPath = result.AuthorityPath;
+
+            RecoveryTextBox.Text = CommandCodec.Serialize(new
+            {
+                Assessment = _lastRecoveryAssessmentReceipt,
+                AssessmentArtifactPath = _lastRecoveryAssessmentArtifactPath,
+                Plan = _lastRecoveryPlanReceipt,
+                PlanArtifactPath = _lastRecoveryPlanArtifactPath,
+                Execution = result.Receipt,
+                ExecutionArtifactPath = result.ArtifactPath,
+                ExecutionAuthorityPath = result.AuthorityPath
+            });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = CommandTerminalState.Completed;
+            StatusText.Text = $"COMPLETED: {result.Receipt.Status}; run Recovery check";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.execution.completed status={result.Receipt.Status}; build=false; checkpoint=false; network=false");
+
+            // Execution consumes the fresh assessment/plan. A new observation is required.
+            _lastRecoveryAssessmentReceipt = null;
+            _lastRecoveryAssessmentArtifactPath = null;
+            _lastRecoveryPlanReceipt = null;
+            _lastRecoveryPlanArtifactPath = null;
         }
         catch (OperationCanceledException)
         {
@@ -820,6 +915,7 @@ public partial class MainWindow : Window
         LaunchCandidateButton.IsEnabled = false;
         RecoveryCheckButton.IsEnabled = false;
         RecoveryPlanButton.IsEnabled = false;
+        RecoveryExecuteButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -850,6 +946,10 @@ public partial class MainWindow : Window
         LaunchCandidateButton.IsEnabled = _lastApplyBuildReceipt is not null;
         RecoveryCheckButton.IsEnabled = true;
         RecoveryPlanButton.IsEnabled = _lastRecoveryAssessmentReceipt is not null && !string.IsNullOrWhiteSpace(_lastRecoveryAssessmentArtifactPath);
+        RecoveryExecuteButton.IsEnabled = _lastRecoveryPlanReceipt is not null &&
+            string.Equals(_lastRecoveryPlanReceipt.Status, "READY_FOR_SEPARATE_RECOVERY_AUTHORITY", StringComparison.Ordinal) &&
+            _lastRecoveryPlanReceipt.SeparateRecoveryAuthorityEligible &&
+            _lastRecoveryExecutionReceipt is null;
         CancelButton.IsEnabled = false;
     }
 
