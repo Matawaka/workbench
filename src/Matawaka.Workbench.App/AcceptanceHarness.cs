@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.16",
-            "0.16.0",
+            "matawaka.workbench-acceptance-receipt/v0.17",
+            "0.17.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.16 retains the proven v0.15 self-hosted update loop and adds a separate read-only maintenance recovery assessment surface. Recovery assessment may observe Git/workbench maintenance evidence and write only its own assessment receipt; it does not authorize rollback, deletion, source mutation, build, checkpoint, publication, catalog mutation, network access, or Agent Execute. Self-test does not invoke or grant recovery authority, and passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.17 retains the proven v0.15 self-hosted update loop and the v0.16 observation-only recovery assessment, and adds a separate read-only recovery planning gate. A plan must bind to a fresh assessment artifact and re-verify Git state; it may describe later bounded recovery steps but does not authorize rollback, deletion, source mutation, build, checkpoint, publication, catalog mutation, network access, or Agent Execute. Self-test does not invoke or grant recovery authority, and passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)
