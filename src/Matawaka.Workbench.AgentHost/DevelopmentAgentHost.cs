@@ -77,11 +77,11 @@ public interface ICapabilityPolicy
 /// <summary>
 /// Workbench-local bridge inspired by FREESHIELD's authority boundary.
 /// It is intentionally not represented as canonical FREESHIELD policy.
-/// v0.4 can grant only read-only Observe/Propose authority; fixed semantic-host process invocation does not grant arbitrary process authority.
+/// v0.5 can grant only read-only Observe/Propose authority; fixed semantic-host process invocation does not grant arbitrary process authority.
 /// </summary>
 public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 {
-    private const string PolicyId = "freeshield-read-only-bridge/v0.4";
+    private const string PolicyId = "freeshield-read-only-bridge/v0.5";
 
     public CapabilityRequest CreateRequest(CommandEnvelope command)
     {
@@ -148,7 +148,7 @@ public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 
         if (string.Equals(request.Operation, "execute", StringComparison.OrdinalIgnoreCase))
         {
-            return Deny(request, "execute-not-available-in-v0.4", nonEffects);
+            return Deny(request, "execute-not-available-in-v0.5", nonEffects);
         }
 
         if (request.RequestedMutationBudget != 0 ||
@@ -422,7 +422,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
                 capabilityDecision);
 
             var packet = new SemanticEvidencePacket(
-                "matawaka.semantic-evidence-packet/v0.4",
+                "matawaka.semantic-evidence-packet/v0.5",
                 command.Id,
                 command.Target,
                 findings.Select(item => new SemanticRepositoryRef(
@@ -450,7 +450,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         }
 
         return new DevelopmentAgentReceipt(
-            "read-only-provider-host-v0.4",
+            "read-only-provider-host-v0.5",
             "completed",
             options.Mode,
             capabilityDecision.AuthorityGranted,
@@ -465,7 +465,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
             semanticBoundary,
             semanticAnalysis,
             Array.Empty<string>(),
-            "Evidence collection remains deterministic and read-only. v0.4 sends the sanitized semantic packet through one fixed child-process host using stdin/stdout receipts, an allowlisted environment, timeout/cancellation, and parent-side digest verification. No repository roots, file handles, network clients/credentials, materialization authority, mutation authority, or arbitrary executable path are supplied through the semantic interface. The child uses the same Windows user security context and is explicitly not represented as an OS sandbox. Exact UU-AAP source bindings are fail-closed inputs, not claims of canonical evaluator execution or Stable Core admission.");
+            "Evidence collection remains deterministic and read-only. v0.5 verifies the fixed SemanticHost executable against a build-generated SHA-256 manifest, assigns it to a Windows Job Object with active-process=1, 256 MiB process-memory and kill-on-close limits before semantic stdin is written, then uses bounded stdin/stdout receipts, an allowlisted environment, timeout/cancellation and parent-side digest verification. No repository roots, file handles, network clients/credentials, materialization authority, mutation authority or arbitrary executable path are supplied through the semantic interface. The child still uses the same Windows user token; no restricted token, filesystem ACL sandbox or OS network sandbox is claimed. Exact UU-AAP source bindings are fail-closed inputs, not claims of canonical evaluator execution or Stable Core admission.");
     }
 
     private static IReadOnlyList<AgentEvidence> SelectBalancedEvidence(
@@ -679,7 +679,7 @@ public sealed class DevelopmentAgentHost
                 "TERMINAL", "DENIED", "NONE", "NONE", request.Id));
 
             return new DevelopmentAgentReceipt(
-                "authority-gate-v0.4",
+                "authority-gate-v0.5",
                 "denied",
                 request.Operation,
                 "none",

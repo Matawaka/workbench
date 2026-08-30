@@ -32,14 +32,14 @@ public static class PclCompatibleProgress
         UuAapFrontier,
         "protocols/integration/scoped-authority-evidence/v0.1/authority-evidence.js",
         "f654753b14335745d7ea231aa4d722990a191321",
-        "reference-only; evaluator not executed by Workbench v0.4");
+        "reference-only; evaluator not executed by Workbench v0.5");
 
     public static readonly ProtocolSourceBinding MaterializationAuthoritySource = new(
         "Matawaka/uu-aap",
         UuAapFrontier,
         "protocols/integration/materialization-authority/v0.1/materialization-authority.js",
         "7d8b367d825a0729190d789bf75b68f976767ec4",
-        "reference-only; evaluator not executed by Workbench v0.4");
+        "reference-only; evaluator not executed by Workbench v0.5");
 
     public static readonly ProtocolSourceBinding ReusableAdmissionAuditSource = new(
         "Matawaka/uu-aap",
@@ -84,7 +84,7 @@ public static class PclCompatibleProgress
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
 
         return new WorkbenchProgressReceipt(
-            "matawaka.workbench.progress-receipt/v0.4",
+            "matawaka.workbench.progress-receipt/v0.5",
             ProgressSource,
             input.CommandId,
             runEpoch,
@@ -120,7 +120,7 @@ public static class PclCompatibleProgress
         };
 
         return new WorkbenchHumanLivenessView(
-            "matawaka.workbench.human-liveness-view/v0.4",
+            "matawaka.workbench.human-liveness-view/v0.5",
             HumanViewSource,
             receipt.RunId,
             receipt.RunEpoch,

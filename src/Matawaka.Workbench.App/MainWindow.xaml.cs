@@ -333,7 +333,7 @@ public partial class MainWindow : Window
         {
             ProgressReceipt = _lastProgressReceipt,
             HumanView = view,
-            Note = "Workbench v0.4 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+            Note = "Workbench v0.5 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
         });
     }
 

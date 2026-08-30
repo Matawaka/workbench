@@ -16,8 +16,8 @@ internal static class Program
 
     public static async Task<int> Main(string[] args)
     {
-        if (args.Length != 1 || !string.Equals(args[0], "--stdio-v0.4", StringComparison.Ordinal))
-            return await FailAsync("semantic host requires --stdio-v0.4");
+        if (args.Length != 1 || !string.Equals(args[0], "--stdio-v0.5", StringComparison.Ordinal))
+            return await FailAsync("semantic host requires --stdio-v0.5");
 
         try
         {
@@ -28,7 +28,7 @@ internal static class Program
             var request = JsonSerializer.Deserialize<SemanticHostRequest>(input, JsonOptions)
                 ?? throw new InvalidDataException("semantic host request is empty");
 
-            if (!string.Equals(request.Schema, "matawaka.semantic-host-request/v0.4", StringComparison.Ordinal))
+            if (!string.Equals(request.Schema, "matawaka.semantic-host-request/v0.5", StringComparison.Ordinal))
                 throw new InvalidDataException("unsupported semantic host request schema");
 
             if (!SemanticProviderCatalog.ProviderIds.Contains(request.Provider, StringComparer.OrdinalIgnoreCase))
@@ -50,7 +50,7 @@ internal static class Program
                 computation.Signals);
 
             var response = new SemanticHostResponse(
-                "matawaka.semantic-host-response/v0.4",
+                "matawaka.semantic-host-response/v0.5",
                 true,
                 request.Provider,
                 request.InputDigest,
@@ -90,7 +90,7 @@ internal static class Program
         return new SemanticHostComputation(
             proposal,
             signals,
-            "Deterministic v0.2 provider executed inside the fixed v0.4 semantic host process. The provider logic is offline and receives only the sanitized semantic evidence packet.");
+            "Deterministic v0.2 provider executed inside the fixed v0.5 semantic host process. The provider logic is offline and receives only the sanitized semantic evidence packet.");
     }
 
     private static SemanticHostComputation AnalyzeLocalContractSynthesis(SemanticEvidencePacket packet)
@@ -133,13 +133,13 @@ internal static class Program
         return new SemanticHostComputation(
             proposal,
             signals,
-            "Local contract synthesis executed inside the fixed v0.4 semantic host process. It remains deterministic, categorical and offline; separate process isolation is not represented as an OS sandbox.");
+            "Local contract synthesis executed inside the fixed v0.5 semantic host process. It remains deterministic, categorical and offline; Job Object containment and separate process isolation are not represented as an OS sandbox.");
     }
 
     private static async Task<int> FailAsync(string message)
     {
         var response = new SemanticHostResponse(
-            "matawaka.semantic-host-response/v0.4",
+            "matawaka.semantic-host-response/v0.5",
             false,
             string.Empty,
             string.Empty,
