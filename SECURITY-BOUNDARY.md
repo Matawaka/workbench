@@ -1,44 +1,20 @@
-# Security Boundary — Workbench v0.7
+# Matawaka Workbench v0.8 security boundary
 
-## Authority
+v0.8 does not widen the accepted v0.7 authority/security boundary.
 
-- Observe / Propose: read-only only.
-- Execute: denied before evidence collection or semantic-host launch.
-- Mutation budget: 0.
-- Network access requested/granted: false.
-- Arbitrary process execution requested/granted: false.
+The semantic host remains a verified fixed binary launched with a restricted
+Low-integrity token, assigned to a bounded Job Object before resume, and required
+to attest its observed token/Job state before semantic input is released.
 
-## Fixed semantic child
+The new Workbench-local acceptance harness:
 
-The only semantic executable is the build-bound `Matawaka.Workbench.SemanticHost.exe`.
+- forces `AllowGitFetch=false` for its internal runs;
+- requires the Agent checkbox to be explicitly enabled;
+- runs only Observe/Propose plus a negative Execute request;
+- does not grant repository mutation, network model access, arbitrary process
+  execution, materialization authority, execution authority, or ActionPermit;
+- writes only one receipt below `Workbench/artifacts/acceptance`;
+- does not represent its result as canonical UU-AAP conformance.
 
-Parent-side launch sequence:
-
-1. verify fixed executable SHA-256;
-2. create a restricted primary token using `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)`;
-3. lower token integrity to Low (`S-1-16-4096`);
-4. create the process suspended;
-5. assign Windows Job Object limits;
-6. resume the primary thread;
-7. receive one child runtime-security attestation line;
-8. verify user SID, filtered-token evidence, Low integrity, Job membership, no AppContainer claim, and no enabled privilege beyond `SeChangeNotifyPrivilege`;
-9. only then send the sanitized semantic evidence packet on stdin;
-10. verify provider/input/output digests in the parent.
-
-## Job limits
-
-- active process limit: 1;
-- per-process committed memory: 256 MiB;
-- kill on Job close: enabled;
-- breakaway: disabled.
-
-## Explicit non-claims
-
-- runtime attestation != OS sandbox;
-- restricted token != AppContainer;
-- Low integrity != network isolation;
-- Job Object containment != filesystem namespace isolation;
-- same user identity != same security context;
-- binary integrity != provider authority.
-
-The child runs under the same Windows user identity with a reduced security context. OS network isolation remains false in v0.7.
+`Acceptance Automation != Authority`.
+`Acceptance Receipt != OS Sandbox Proof`.

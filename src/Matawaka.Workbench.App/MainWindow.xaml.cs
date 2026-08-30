@@ -12,6 +12,7 @@ namespace Matawaka.Workbench.App;
 public partial class MainWindow : Window
 {
     private readonly ICommandRunner _router = new CommandRouter();
+    private readonly WorkbenchAcceptanceHarness _acceptanceHarness;
     private CancellationTokenSource? _cts;
     private WorkbenchProgressReceipt? _lastProgressReceipt;
     private CommandTerminalState? _currentTerminalState;
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _acceptanceHarness = new WorkbenchAcceptanceHarness(_router);
         var settings = WorkbenchSettingsStore.Load();
         WorkspaceRootBox.Text = settings.WorkspaceRoot;
         CatalogRootBox.Text = settings.CatalogRoot;
@@ -57,6 +59,66 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             ShowFailure(ex);
+        }
+    }
+
+
+    private async void SelfTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"self-test-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            if (AgentEnabledBox.IsChecked != true)
+                throw new InvalidDataException("Self-test requires 'Агент включен' to be explicitly enabled.");
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.8 matrix");
+
+            var context = new RuntimeContext(
+                CatalogRootBox.Text,
+                AgentEnabledBox.IsChecked == true,
+                false);
+
+            var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
+            var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
+            Directory.CreateDirectory(artifactDir);
+            var artifactPath = Path.Combine(artifactDir, $"v0.8-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            await File.WriteAllTextAsync(
+                artifactPath,
+                CommandCodec.Serialize(receipt),
+                new UTF8Encoding(false),
+                _cts.Token);
+
+            AcceptanceTextBox.Text = CommandCodec.Serialize(new
+            {
+                Receipt = receipt,
+                ArtifactPath = artifactPath
+            });
+            OutputTabs.SelectedItem = AcceptanceTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = receipt.Passed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = receipt.Passed
+                ? $"COMPLETED: acceptance PASSED; {artifactPath}"
+                : $"FAILED: acceptance matrix has failing checks; {artifactPath}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.{(receipt.Passed ? "completed" : "failed"),-18} passed={receipt.Passed}; {artifactPath}");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
         }
     }
 
@@ -208,6 +270,7 @@ public partial class MainWindow : Window
         _cts?.Dispose();
         _cts = new CancellationTokenSource();
         RunButton.IsEnabled = false;
+        SelfTestButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -218,6 +281,7 @@ public partial class MainWindow : Window
         SemanticTextBox.Clear();
         ProcessBoundaryTextBox.Clear();
         AgentTextBox.Clear();
+        AcceptanceTextBox.Clear();
         _lastProgressReceipt = null;
         _currentTerminalState = null;
         _runEpoch++;
@@ -226,6 +290,7 @@ public partial class MainWindow : Window
     private void EndRun()
     {
         RunButton.IsEnabled = true;
+        SelfTestButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 
@@ -333,7 +398,7 @@ public partial class MainWindow : Window
         {
             ProgressReceipt = _lastProgressReceipt,
             HumanView = view,
-            Note = "Workbench v0.7 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+            Note = "Workbench v0.8 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
         });
     }
 
@@ -379,7 +444,7 @@ public partial class MainWindow : Window
     private const string DefaultCommand = """
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v070",
+  "id": "game-companion-propose-v080",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",

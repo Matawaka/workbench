@@ -1,20 +1,28 @@
-# Matawaka Workbench v0.7
+# Matawaka Workbench v0.8
 
-Independent Windows workbench for evidence-bounded Matawaka analysis.
+Windows-first, Codex-independent workbench for bounded Matawaka catalog analysis.
 
-## Current boundary
+v0.8 preserves the accepted v0.7 execution boundary unchanged:
 
-`agent.run` supports read-only `observe` / `propose`. `execute` remains deny-by-default with mutation budget 0.
+- verified fixed `SemanticHost.exe`;
+- restricted primary token with maximum privileges disabled;
+- Low integrity (`S-1-16-4096`);
+- Windows Job Object containment;
+- child runtime security attestation verified before semantic input;
+- bounded stdin/stdout IPC;
+- no network isolation or OS-sandbox claim;
+- Execute denied; mutation budget remains zero.
 
-The semantic stage is executed by one fixed `SemanticHost.exe` whose SHA-256 is bound at build time. The child is started with a restricted primary token, maximum privileges disabled, Low integrity, suspended launch, and Windows Job Object containment. v0.7 adds a pre-input **runtime security attestation**: the child observes its own effective token and Job membership; the parent verifies that evidence before transmitting semantic input.
+## New in v0.8
 
-Semantic providers remain built-in and offline:
+The **Self-test** button runs an automated acceptance matrix:
 
-- `local-contract-synthesis-v0.3`
-- `deterministic-evidence-semantic-v0.2`
+1. read-only propose with `local-contract-synthesis-v0.3`;
+2. the same bounded input with `deterministic-evidence-semantic-v0.2`;
+3. denied Execute with a check that evidence/semantic processing never opens.
 
-## Important non-claims
+A typed receipt is saved under `Workbench/artifacts/acceptance` and shown in the
+**Acceptance** tab.
 
-Runtime attestation is evidence about the observed child context, not an OS sandbox. v0.7 does not enforce network isolation, AppContainer, filesystem namespace isolation, VM isolation, repository mutation, or arbitrary executable loading.
-
-The Workbench remains a local composition. Repeated implementation mechanics do not by themselves establish a new UU-AAP Stable Core primitive or shared interface admission.
+`Automated Acceptance != Canonical Conformance`.
+`Passing Self-Test != New Authority`.
