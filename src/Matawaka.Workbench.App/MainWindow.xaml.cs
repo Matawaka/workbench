@@ -21,7 +21,7 @@ public partial class MainWindow : Window
     private readonly MaintenanceRecoveryAssessmentService _recoveryAssessmentService = new();
     private readonly MaintenanceRecoveryPlanService _recoveryPlanService = new();
     private readonly MaintenanceRecoveryExecutionService _recoveryExecutionService = new();
-    private readonly IsolatedRecoveryDrillService _isolatedRecoveryDrillService = new();
+    private readonly RecoveryCapabilityAdmissionService _recoveryCapabilityAdmissionService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -105,7 +105,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.19 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.20 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -115,7 +115,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.19-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.20-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -160,7 +160,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.19-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.20-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -188,7 +188,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.19", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.20", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -674,7 +674,7 @@ public partial class MainWindow : Window
             var receipt = await _recoveryAssessmentService.AssessAsync(WorkspaceRootBox.Text, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-assessments");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.19-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.20-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -731,7 +731,7 @@ public partial class MainWindow : Window
 
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-plans");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.19-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.20-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -798,7 +798,7 @@ public partial class MainWindow : Window
             preview.AppendLine("Разрешается только вернуть exact tracked candidate bytes к текущему accepted HEAD и удалить exact byte-reverified untracked candidate additions. Build/checkpoint/network/catalog/Agent Execute не разрешаются.");
             preview.AppendLine("После выполнения потребуется новый Recovery check.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Recovery execute v0.19", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Recovery execute v0.20", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
 
             SaveSettings();
@@ -858,41 +858,30 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void RecoveryDrillButton_Click(object sender, RoutedEventArgs e)
+    private async void RecoveryAdmissionButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"recovery-drill-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"recovery-admission-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
-            var preview = new StringBuilder();
-            preview.AppendLine("Запустить изолированный recovery drill?");
-            preview.AppendLine();
-            preview.AppendLine("Drill создаёт отдельный вложенный Git fixture только под Workbench/.workbench/recovery-drills.");
-            preview.AppendLine("В fixture будут созданы accepted HEAD, exact tracked Replace + untracked Add, затем реальные Recovery check/plan/execute должны вернуть fixture к тому же чистому accepted HEAD.");
-            preview.AppendLine();
-            preview.AppendLine("Главный Workbench repository должен быть clean и не может быть изменён drill-операцией. Build/checkpoint/network/catalog/Agent Execute не разрешаются.");
-            preview.AppendLine("Fixture и receipts сохраняются как локальное evidence после завершения.");
-
-            if (MessageBox.Show(this, preview.ToString(), "Recovery drill v0.19", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-                return;
-
             SaveSettings();
             BeginRun(id);
-            StatusText.Text = "RUNNING: isolated bounded recovery drill";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.drill.started       isolatedFixture=true; mainMutation=false");
+            StatusText.Text = "RUNNING: read-only bounded recovery capability admission";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.admission.started  retained-v0.19-drill-evidence");
 
-            var result = await _isolatedRecoveryDrillService.RunAsync(WorkspaceRootBox.Text, _cts!.Token);
+            var result = await _recoveryCapabilityAdmissionService.AssessAsync(WorkspaceRootBox.Text, _cts!.Token);
+
             RecoveryTextBox.Text = CommandCodec.Serialize(new
             {
-                Drill = result.Receipt,
-                DrillArtifactPath = result.ArtifactPath
+                Admission = result.Receipt,
+                AdmissionArtifactPath = result.ArtifactPath
             });
             OutputTabs.SelectedItem = RecoveryTab;
             ProgressBar.Value = 100;
-            _currentTerminalState = result.Receipt.Passed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
-            StatusText.Text = result.Receipt.Passed
-                ? $"COMPLETED: isolated recovery drill PASSED; {result.ArtifactPath}"
-                : $"FAILED: isolated recovery drill did not converge; {result.ArtifactPath}";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.drill.{(result.Receipt.Passed ? "completed" : "failed"),-11} passed={result.Receipt.Passed}; mainUnchanged={result.Receipt.MainRepositoryUnchanged}");
+            _currentTerminalState = result.Receipt.Admitted ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = result.Receipt.Admitted
+                ? $"COMPLETED: recovery capability admission {result.Receipt.Status}; generalRecoveryAuthority=false"
+                : $"FAILED: recovery capability admission {result.Receipt.Status}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.admission.{(result.Receipt.Admitted ? "completed" : "failed"),-9} status={result.Receipt.Status}; generalRecoveryAuthority=false");
         }
         catch (OperationCanceledException)
         {
@@ -971,7 +960,7 @@ public partial class MainWindow : Window
         RecoveryCheckButton.IsEnabled = false;
         RecoveryPlanButton.IsEnabled = false;
         RecoveryExecuteButton.IsEnabled = false;
-        RecoveryDrillButton.IsEnabled = false;
+        RecoveryAdmissionButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -1006,7 +995,7 @@ public partial class MainWindow : Window
             string.Equals(_lastRecoveryPlanReceipt.Status, "READY_FOR_SEPARATE_RECOVERY_AUTHORITY", StringComparison.Ordinal) &&
             _lastRecoveryPlanReceipt.SeparateRecoveryAuthorityEligible &&
             _lastRecoveryExecutionReceipt is null;
-        RecoveryDrillButton.IsEnabled = true;
+        RecoveryAdmissionButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 
