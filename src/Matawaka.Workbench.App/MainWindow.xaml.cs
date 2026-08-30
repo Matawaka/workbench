@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private readonly RecoveryEvidenceRelocationDrillService _recoveryEvidenceRelocationDrillService = new();
     private readonly RecoveryEvidenceTransportService _recoveryEvidenceTransportService = new();
     private readonly RecoveryEvidenceTransportIndependenceDrillService _recoveryTransportIndependenceDrillService = new();
+    private readonly RecoveryTransportAdversarialControlMatrixService _recoveryTransportAdversarialControlMatrixService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -111,7 +112,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.26 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.27 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -121,7 +122,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.26-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.27-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -166,7 +167,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.26-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.27-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -194,7 +195,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.26", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.27", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -680,7 +681,7 @@ public partial class MainWindow : Window
             var receipt = await _recoveryAssessmentService.AssessAsync(WorkspaceRootBox.Text, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-assessments");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.26-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.27-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -737,7 +738,7 @@ public partial class MainWindow : Window
 
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-plans");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.26-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.27-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -1259,6 +1260,63 @@ public partial class MainWindow : Window
             EndRun();
         }
     }
+
+    private async void RecoveryTransportAdversarialControlsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"transport-negatives-v0.27-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            var preview = new StringBuilder();
+            preview.AppendLine("Запустить изолированную transport adversarial negative-control matrix?");
+            preview.AppendLine();
+            preview.AppendLine("Будут созданы только три локальные копии уже byte-bound recovery transport ZIP под Workbench/.workbench.");
+            preview.AppendLine("Контроли: drift после SHA-binding, extra ZIP entry, transport-manifest drift.");
+            preview.AppendLine("Ожидается отказ до evidence materialization. Source transport, main source tree, Git HEAD/tag, сеть и Agent Execute не изменяются.");
+
+            if (MessageBox.Show(this, preview.ToString(), "Transport negatives v0.27", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: isolated transport adversarial negative controls";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  transport.negatives.started v0.27 isolated controls");
+
+            var result = await _recoveryTransportAdversarialControlMatrixService.RunAsync(
+                WorkspaceRootBox.Text,
+                true,
+                _cts!.Token);
+
+            RecoveryTextBox.Text = CommandCodec.Serialize(new
+            {
+                Matrix = result.Receipt,
+                MatrixArtifactPath = result.ArtifactPath
+            });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = result.Receipt.Passed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = result.Receipt.Passed
+                ? $"COMPLETED: transport adversarial controls PASSED; {result.ArtifactPath}"
+                : $"FAILED: transport adversarial control matrix failed; {result.ArtifactPath}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  transport.negatives.{(result.Receipt.Passed ? "completed" : "failed"),-10} passed={result.Receipt.Passed}; mainUnchanged={result.Receipt.MainRepositoryUnchanged}");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
 
     private void SaveWorkspaceButton_Click(object sender, RoutedEventArgs e)
     {
