@@ -91,7 +91,7 @@ public sealed record WorkbenchCandidateLaunchReceipt(
     string Note);
 
 /// <summary>
-/// v0.13 maintenance transaction. It consumes a freshly revalidated staging-only
+/// v0.14 maintenance transaction. It consumes a freshly revalidated staging-only
 /// materialization and READY staged apply plan after a separate explicit UI
 /// confirmation. It may apply only the exact planned payload bytes to Workbench
 /// source, run only the fixed local dotnet executable with --no-restore for
@@ -101,11 +101,14 @@ public sealed record WorkbenchCandidateLaunchReceipt(
 /// </summary>
 public sealed class BoundedUpdateApplyBuildService
 {
-    public const string ReceiptSchema = "matawaka.workbench-update-apply-build-receipt/v0.13";
-    public const string AuthoritySchema = "matawaka.workbench-update-apply-build-authority-receipt/v0.13";
-    public const string LaunchReceiptSchema = "matawaka.workbench-candidate-launch-receipt/v0.13";
-    public const string LaunchAuthoritySchema = "matawaka.workbench-candidate-launch-authority-receipt/v0.13";
-    public const string Version = "0.13.0";
+    public const string ReceiptSchema = "matawaka.workbench-update-apply-build-receipt/v0.14";
+    public const string AuthoritySchema = "matawaka.workbench-update-apply-build-authority-receipt/v0.14";
+    public const string LaunchReceiptSchema = "matawaka.workbench-candidate-launch-receipt/v0.14";
+    public const string LaunchAuthoritySchema = "matawaka.workbench-candidate-launch-authority-receipt/v0.14";
+    public const string Version = "0.14.0";
+
+    private static readonly TimeSpan GitProcessTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan DotnetProcessTimeout = TimeSpan.FromMinutes(3);
 
     private readonly StagedUpdateApplyPlanService _planner;
 
@@ -172,7 +175,8 @@ public sealed class BoundedUpdateApplyBuildService
             "no ActionPermit creation",
             "no checkpoint authority",
             "no arbitrary executable path or command accepted from JSON",
-            "candidate launch remains a separate explicit UI authority gate"
+            "candidate launch remains a separate explicit UI authority gate",
+            "git/dotnet maintenance subprocesses are timeout-bounded and killed on timeout"
         };
 
         var authority = new WorkbenchUpdateApplyBuildAuthorityReceipt(
@@ -212,10 +216,10 @@ public sealed class BoundedUpdateApplyBuildService
 
         var authorityDir = Path.Combine(repositoryRoot, "artifacts", "update-applies");
         Directory.CreateDirectory(authorityDir);
-        var authorityPath = Path.Combine(authorityDir, $"apply-build-authority-v0.13-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
+        var authorityPath = Path.Combine(authorityDir, $"apply-build-authority-v0.14-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
         await File.WriteAllTextAsync(authorityPath, JsonSerializer.Serialize(authority, JsonOptions), new UTF8Encoding(false), cancellationToken);
 
-        var backupRoot = Path.Combine(repositoryRoot, ".workbench", "update-source-backups", $"v0.13-{DateTime.Now:yyyyMMdd-HHmmssfff}");
+        var backupRoot = Path.Combine(repositoryRoot, ".workbench", "update-source-backups", $"v0.14-{DateTime.Now:yyyyMMdd-HHmmssfff}");
         var candidateDir = Path.Combine(repositoryRoot, "artifacts", $"app-v{confirmedPlan.TargetVersion}-gui-update");
         var semanticDir = Path.Combine(candidateDir, "semantic-host");
         var applied = false;
@@ -226,7 +230,7 @@ public sealed class BoundedUpdateApplyBuildService
             applied = true;
             ApplyExactStagedBytes(repositoryRoot, confirmedPlan.StagingRoot, changes);
             VerifyAppliedBytes(repositoryRoot, changes);
-            VerifyWorkingTreeDelta(repositoryRoot, changes, cancellationToken);
+            await VerifyWorkingTreeDeltaAsync(repositoryRoot, changes, cancellationToken).ConfigureAwait(false);
 
             if (Directory.Exists(candidateDir)) Directory.Delete(candidateDir, recursive: true);
             Directory.CreateDirectory(candidateDir);
@@ -244,12 +248,18 @@ public sealed class BoundedUpdateApplyBuildService
                 "publish", semanticProject, "-c", "Release", "--no-restore", "-o", semanticDir);
 
             VerifyAppliedBytes(repositoryRoot, changes);
-            VerifyWorkingTreeDelta(repositoryRoot, changes, cancellationToken);
+            await VerifyWorkingTreeDeltaAsync(repositoryRoot, changes, cancellationToken).ConfigureAwait(false);
 
             var candidateExe = Path.Combine(candidateDir, "Matawaka.Workbench.App.exe");
             var semanticExe = Path.Combine(semanticDir, "Matawaka.Workbench.SemanticHost.exe");
             if (!File.Exists(candidateExe) || !File.Exists(semanticExe))
                 throw new InvalidDataException("Fixed publish completed without the expected App/SemanticHost executable.");
+
+            // The semantic runtime verifies a byte-bound integrity manifest before any semantic input.
+            // GUI self-hosted publish must materialize that manifest just like the earlier bootstrap path did;
+            // a published executable by itself is deliberately not sufficient authority to run the host.
+            var semanticHostDigest = HashFile(semanticExe);
+            WriteSemanticHostIntegrityManifest(semanticExe, semanticHostDigest);
 
             var manifest = await WriteDynamicBuildSourceManifestAsync(repositoryRoot, confirmedPlan, changes, cancellationToken);
             var receipt = new WorkbenchUpdateApplyBuildReceipt(
@@ -279,9 +289,9 @@ public sealed class BoundedUpdateApplyBuildService
                 HashFile(semanticExe),
                 "CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED",
                 nonEffects,
-                "v0.13 applies only a freshly revalidated exact staged source delta and runs only fixed local dotnet build/publish with --no-restore after explicit human confirmation. The resulting candidate is byte-bound but is not accepted, checkpointed, published, or launched by this receipt.");
+                "v0.14 applies only a freshly revalidated exact staged source delta and runs only fixed local dotnet build/publish with --no-restore after explicit human confirmation. Git/dotnet maintenance subprocesses are timeout-bounded so UI causal liveness does not depend on an unbounded child process. The resulting candidate is byte-bound but is not accepted, checkpointed, published, or launched by this receipt.");
 
-            var receiptPath = Path.Combine(authorityDir, $"apply-build-v0.13-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
+            var receiptPath = Path.Combine(authorityDir, $"apply-build-v0.14-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
             await File.WriteAllTextAsync(receiptPath, JsonSerializer.Serialize(receipt, JsonOptions), new UTF8Encoding(false), cancellationToken);
             return (receipt, receiptPath, authorityPath);
         }
@@ -312,7 +322,7 @@ public sealed class BoundedUpdateApplyBuildService
         CancellationToken cancellationToken)
     {
         if (buildReceipt is null || !string.Equals(buildReceipt.Status, "CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED", StringComparison.Ordinal))
-            throw new InvalidDataException("A successful v0.13 apply/build receipt is required before candidate launch.");
+            throw new InvalidDataException("A successful v0.14 apply/build receipt is required before candidate launch.");
         var repositoryRoot = ResolveRepositoryRoot(workspaceRoot);
         var expectedPrefix = Path.GetFullPath(Path.Combine(repositoryRoot, "artifacts")) + Path.DirectorySeparatorChar;
         var candidate = Path.GetFullPath(buildReceipt.CandidateExecutablePath);
@@ -326,7 +336,7 @@ public sealed class BoundedUpdateApplyBuildService
         if (!string.Equals(head, buildReceipt.PredecessorCommit, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Workbench HEAD changed before candidate launch.");
         VerifyAppliedBytes(repositoryRoot, buildReceipt.SourceChanges);
-        VerifyWorkingTreeDelta(repositoryRoot, buildReceipt.SourceChanges, cancellationToken);
+        await VerifyWorkingTreeDeltaAsync(repositoryRoot, buildReceipt.SourceChanges, cancellationToken).ConfigureAwait(false);
         if (!File.Exists(buildReceipt.SemanticHostExecutablePath) ||
             !string.Equals(HashFile(buildReceipt.SemanticHostExecutablePath), buildReceipt.SemanticHostExecutableSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Receipt-bound SemanticHost changed or disappeared before candidate launch.");
@@ -377,7 +387,7 @@ public sealed class BoundedUpdateApplyBuildService
 
         var dir = Path.Combine(repositoryRoot, "artifacts", "update-applies");
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, $"candidate-launch-v0.13-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
+        var path = Path.Combine(dir, $"candidate-launch-v0.14-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(receipt, JsonOptions), new UTF8Encoding(false), cancellationToken);
         return (receipt, path);
     }
@@ -472,9 +482,9 @@ public sealed class BoundedUpdateApplyBuildService
         }
     }
 
-    private static void VerifyWorkingTreeDelta(string repositoryRoot, IReadOnlyList<WorkbenchStagedSourceChange> changes, CancellationToken cancellationToken)
+    private static async Task VerifyWorkingTreeDeltaAsync(string repositoryRoot, IReadOnlyList<WorkbenchStagedSourceChange> changes, CancellationToken cancellationToken)
     {
-        var result = RunGitReadOnlyAsync(repositoryRoot, cancellationToken, "status", "--porcelain=v1", "--untracked-files=all").GetAwaiter().GetResult();
+        var result = await RunGitReadOnlyAsync(repositoryRoot, cancellationToken, "status", "--porcelain=v1", "--untracked-files=all").ConfigureAwait(false);
         var actual = ParseStatusPaths(result);
         var expected = changes.Select(x => x.Path).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         if (!actual.SequenceEqual(expected, StringComparer.Ordinal))
@@ -496,6 +506,28 @@ public sealed class BoundedUpdateApplyBuildService
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(backup, destination, overwrite: true);
         }
+    }
+
+    private static void WriteSemanticHostIntegrityManifest(string semanticExecutablePath, string semanticHostSha256)
+    {
+        var semanticDirectory = Path.GetDirectoryName(semanticExecutablePath)
+            ?? throw new InvalidDataException("Published SemanticHost directory cannot be resolved.");
+        var manifestPath = Path.Combine(semanticDirectory, "semantic-host.integrity.json");
+        var integrityManifest = new
+        {
+            Schema = "matawaka.semantic-host-integrity-manifest/v0.7",
+            Executable = Path.GetFileName(semanticExecutablePath),
+            Sha256 = semanticHostSha256,
+            UuAapFrontier = "f5673a39ddeef05f82c828f6cff554518f5f8ef6"
+        };
+        File.WriteAllText(
+            manifestPath,
+            JsonSerializer.Serialize(integrityManifest, JsonOptions),
+            new UTF8Encoding(false));
+
+        // Fail closed if the manifest was not durably materialized beside the exact host.
+        if (!File.Exists(manifestPath))
+            throw new InvalidDataException("SemanticHost integrity manifest was not materialized after publish.");
     }
 
     private static async Task<(string Path, string Sha256)> WriteDynamicBuildSourceManifestAsync(
@@ -555,13 +587,21 @@ public sealed class BoundedUpdateApplyBuildService
         Directory.CreateDirectory(psi.Environment["DOTNET_CLI_HOME"]!);
         Directory.CreateDirectory(psi.Environment["TEMP"]!);
 
+        psi.Environment["DOTNET_CLI_USE_MSBUILD_SERVER"] = "0";
+        psi.Environment["MSBUILDDISABLENODEREUSE"] = "1";
+        psi.Environment["DOTNET_NOLOGO"] = "1";
+
         using var process = new Process { StartInfo = psi };
         if (!process.Start()) throw new InvalidDataException("Failed to start fixed local dotnet process.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await WaitForProcessExitBoundedAsync(
+            process,
+            cancellationToken,
+            DotnetProcessTimeout,
+            $"fixed offline dotnet operation ({string.Join(" ", args)})").ConfigureAwait(false);
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
         if (process.ExitCode != 0)
             throw new InvalidDataException($"Fixed offline dotnet operation failed ({string.Join(" ", args)}): {stderr.Trim()}\n{stdout.Trim()}");
     }
@@ -627,13 +667,54 @@ public sealed class BoundedUpdateApplyBuildService
         foreach (var arg in args) psi.ArgumentList.Add(arg);
         using var process = new Process { StartInfo = psi };
         if (!process.Start()) throw new InvalidDataException("Failed to start fixed read-only git process.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await WaitForProcessExitBoundedAsync(process, cancellationToken, GitProcessTimeout, "fixed read-only git operation").ConfigureAwait(false);
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
         if (process.ExitCode != 0) throw new InvalidDataException($"Fixed read-only git operation failed: {stderr.Trim()}");
         return stdout;
+    }
+
+    private static async Task WaitForProcessExitBoundedAsync(
+        Process process,
+        CancellationToken cancellationToken,
+        TimeSpan timeout,
+        string operation)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Best-effort kill. The caller still receives a bounded failure.
+            }
+
+            try
+            {
+                if (!process.HasExited)
+                    await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Preserve the primary cancellation/timeout result.
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+                throw;
+
+            throw new InvalidDataException($"{operation} timed out after {timeout.TotalSeconds:0} seconds; process tree termination was requested.");
+        }
     }
 
     private static IReadOnlyList<string> ParseStatusPaths(string stdout)

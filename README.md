@@ -1,6 +1,6 @@
-# Matawaka Workbench v0.13
+# Matawaka Workbench v0.14
 
-Windows/.NET 10 Workbench for bounded local Matawaka analysis and explicitly separated maintenance gates.
+Windows/.NET 10 Workbench for bounded local Matawaka analysis and authority-separated self-maintenance.
 
 Current path:
 
@@ -16,7 +16,8 @@ Current path:
 - explicit staging-only materialization;
 - read-only staged `Add/Replace/NoOp` plan;
 - explicit exact source apply + fixed local `dotnet --no-restore` build/publish;
-- separate receipt-bound candidate launch.
+- separate receipt-bound candidate launch;
+- v0.14 self-hosted GUI update loop checkpoint.
 
 ## Update authority chain
 
@@ -45,5 +46,9 @@ This gate requests no network operation, but does not claim OS network isolation
 ### Launch + accept
 
 **Запустить candidate** is a separate explicit action limited to the exact built executable digest. Launch is not acceptance. The candidate must separately pass Self-test and **Принять** before the Workbench repository receives a local accepted commit/tag.
+
+## v0.14 milestone
+
+v0.14 is the first successor intended to traverse the complete update chain using only Workbench GUI gates after the package file is present locally. The package schema remains the stable `matawaka.workbench-update-package/v0.10`; receipt schemas advance independently.
 
 No maintenance gate creates authority over Matawaka catalog repositories or Agent Execute. Workbench receipts are local evidence, not canonical UU-AAP conformance.

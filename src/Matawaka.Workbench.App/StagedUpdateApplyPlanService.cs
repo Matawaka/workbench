@@ -41,7 +41,7 @@ public sealed record WorkbenchStagedApplyPlanReceipt(
     string Note);
 
 /// <summary>
-/// v0.13 converts an already-authorized staging-only materialization into
+/// v0.14 converts an already-authorized staging-only materialization into
 /// a fresh read-only source-apply plan. It may inspect repository/staging bytes,
 /// run fixed read-only Git queries, and write a local plan receipt. It cannot
 /// overwrite tracked Workbench source, build, commit/tag, fetch/push, use the
@@ -49,8 +49,8 @@ public sealed record WorkbenchStagedApplyPlanReceipt(
 /// </summary>
 public sealed class StagedUpdateApplyPlanService
 {
-    public const string ReceiptSchema = "matawaka.workbench-staged-apply-plan-receipt/v0.13";
-    public const string Version = "0.13.0";
+    public const string ReceiptSchema = "matawaka.workbench-staged-apply-plan-receipt/v0.14";
+    public const string Version = "0.14.0";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -181,11 +181,11 @@ public sealed class StagedUpdateApplyPlanService
             false,
             addCount + replaceCount > 0 ? "READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY" : "NO_SOURCE_CHANGE",
             nonEffects,
-            "v0.13 proves the exact staged source delta without applying it and binds the predecessor tag carried by the materialization receipt. A READY receipt is evidence of a bounded possible source transition, not authority to mutate source, build, checkpoint, publish, mutate catalog repositories, or execute an agent action.");
+            "v0.14 proves the exact staged source delta without applying it and binds the predecessor tag carried by the materialization receipt. A READY receipt is evidence of a bounded possible source transition, not authority to mutate source, build, checkpoint, publish, mutate catalog repositories, or execute an agent action.");
 
         var artifactDir = Path.Combine(repositoryRoot, "artifacts", "update-apply-plans");
         Directory.CreateDirectory(artifactDir);
-        var artifactPath = Path.Combine(artifactDir, $"staged-apply-plan-v0.13-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
+        var artifactPath = Path.Combine(artifactDir, $"staged-apply-plan-v0.14-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
         await File.WriteAllTextAsync(
             artifactPath,
             JsonSerializer.Serialize(receipt, JsonOptions),

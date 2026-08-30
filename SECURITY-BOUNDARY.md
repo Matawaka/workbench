@@ -1,4 +1,4 @@
-# Matawaka Workbench v0.13 — Security boundary
+# Matawaka Workbench v0.14 — Security boundary
 
 The accepted v0.7 semantic security boundary remains unchanged: fixed verified semantic host, restricted Low-integrity token, Windows Job Object and child runtime attestation before semantic input. Maintenance surfaces do not widen semantic-provider authority.
 
@@ -18,34 +18,24 @@ The accepted v0.7 semantic security boundary remains unchanged: fixed verified s
 
 `Workbench maintenance authority != Catalog mutation authority != Agent Execute`
 
-## v0.13 materialization/planning
+## Self-hosted update loop
 
-Materialization receipts now carry the accepted predecessor tag explicitly. Staged planning uses that tag and commit directly and no longer relies on a transition-specific hard-coded predecessor map.
+v0.14 does not add a broader effect surface. Its purpose is to exercise the already-separated package-plan, staging materialization, staged planning, exact apply/build, launch, Self-test and local checkpoint gates as one successor transition while preserving a distinct receipt and explicit authority decision at each effectful boundary.
 
-The plan/materialization surfaces remain fail-closed on package SHA, predecessor, clean worktree, bounded staging root, exact file set and payload digest mismatches.
+A receipt from an earlier gate cannot be reused as authorization for a later gate. Every effectful step revalidates the byte-bound predecessor/evidence it consumes.
 
-## v0.13 exact source apply + build
+## Exact source apply + build
 
-Before source mutation the gate requires:
+Before source mutation the gate requires an in-process staging materialization, a READY staged plan artifact, a freshly regenerated equivalent plan, unchanged accepted predecessor HEAD/tag, a clean Workbench working tree, exact current/staged hashes for every changed path, and explicit **Применить + собрать** confirmation.
 
-1. an in-process staging-only materialization receipt;
-2. a READY staged apply plan artifact;
-3. a freshly regenerated equivalent plan;
-4. unchanged accepted predecessor HEAD/tag;
-5. a clean Workbench working tree;
-6. exact current/staged hashes for every `Add`/`Replace` path;
-7. explicit **Применить + собрать** confirmation.
-
-Allowed source effect is limited to the exact plan paths. Replacement bytes are backed up under ignored `.workbench/update-source-backups`. A failure during apply/build restores the predecessor source and requires a new authorization attempt.
+Allowed source effect is limited to the exact planned paths. Replacement bytes are backed up under ignored `.workbench/update-source-backups`. A failure during apply/build restores predecessor source and requires a new authorization attempt.
 
 Allowed build process is limited to the fixed workspace-local `.dotnet-sdk\dotnet.exe` and fixed `build/publish --no-restore` arguments for the Workbench solution, App and SemanticHost. No executable path or arguments are taken from command JSON.
 
-`--no-restore` and local cache roots mean the gate does not request package download. **OS network isolation is not enforced**, so this must not be described as a network sandbox.
+`--no-restore` means this gate requests no package restore. **OS network isolation is not enforced**, so this must not be described as a network sandbox.
 
-The apply/build receipt does not permit Git add/commit/tag/fetch/push, remote publication, catalog mutation, Agent Execute, ActionPermit or checkpoint creation.
+## Candidate launch and checkpoint
 
-## Candidate launch
+Launch has a separate confirmation and is limited to the exact receipt-bound candidate executable SHA-256. Launch creates no acceptance/checkpoint authority. The launched candidate must independently pass Self-test and receive a separate explicit **Принять** confirmation for the fixed local Workbench Git checkpoint gate.
 
-Launch has a separate confirmation. Only the exact receipt-bound candidate under Workbench artifacts may start, and its SHA-256 is reverified immediately before launch. Launch creates no acceptance/checkpoint authority and no authority over catalog repositories or Agent Execute.
-
-The launched candidate must independently pass Self-test and then receive a separate explicit **Принять** confirmation for the fixed local Workbench Git checkpoint gate.
+No update gate permits Git fetch/push or remote mutation, catalog mutation, Agent Execute/ActionPermit, Stable Core promotion, or arbitrary process paths supplied by JSON.
