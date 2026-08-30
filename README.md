@@ -1,49 +1,49 @@
-# Matawaka Workbench v0.11
+# Matawaka Workbench v0.13
 
 Windows/.NET 10 Workbench for bounded local Matawaka analysis and explicitly separated maintenance gates.
 
-Current surfaces:
+Current path:
 
-- persistent `K:\Matawaka` workspace;
-- local Matawaka catalog observation;
-- typed read-only agent authority;
-- balanced evidence frontier;
+- persistent `K:\Matawaka` workspace and local catalog observation;
+- typed read-only agent authority and balanced evidence frontier;
 - interchangeable offline semantic providers;
-- verified fixed `SemanticHost.exe`;
-- restricted Low-integrity Windows token + Job Object;
-- child runtime security attestation before semantic input;
+- fixed verified SemanticHost with restricted Low-integrity token, Job Object and runtime attestation;
 - PCL-compatible visible liveness;
 - automated two-provider + denied-Execute Self-test;
-- explicit GUI-local accepted checkpoint gate;
+- explicit GUI-local accepted checkpoint;
 - relevant UU-AAP source-set binding independent of unrelated repository HEAD drift;
-- bounded local update-package intake plan;
-- explicit GUI staging-only materialization gate.
+- bounded manifest update intake;
+- explicit staging-only materialization;
+- read-only staged `Add/Replace/NoOp` plan;
+- explicit exact source apply + fixed local `dotnet --no-restore` build/publish;
+- separate receipt-bound candidate launch.
 
-## v0.9 checkpoint gate
+## Update authority chain
 
-A passing Self-test enables **Принять**. The user sees the exact local Workbench files that will enter the checkpoint and must confirm again. Only then may Workbench execute a fixed local Git sequence for its own repository.
+A valid update never acquires downstream authority automatically:
 
-The checkpoint gate never performs `git fetch`, `git push`, remote mutation, catalog mutation, agent Execute, network model calls, arbitrary command execution, ActionPermit creation or catalog materialization authority creation.
+`Valid Package != Materialization Authority != Source Apply/Build Authority != Launch Authority != Checkpoint Authority`
 
-## v0.10 relevant source set + update plan
+### Plan
 
-Relevant UU-AAP protocol dependencies are verified as an exact byte-bound source set rather than requiring repository HEAD equality. The local **Пакет обновления** surface validates a bounded manifest ZIP and exact predecessor relationship but creates no materialization/build/checkpoint authority.
+**Пакет обновления** validates a bounded local ZIP, predecessor tag/commit, exact file set and SHA-256s. It creates no materialization/build/checkpoint authority.
 
-## v0.11 explicit staging materialization
+### Materialize
 
-A READY update plan may enable **Материализовать**. The user sees package SHA-256, predecessor, target and bounded payload size and must explicitly confirm.
+**Материализовать** requires a READY plan plus explicit human confirmation. Exact payload bytes are copied only under ignored `.workbench/update-materializations` and reverified.
 
-After confirmation Workbench re-verifies the same package, predecessor, clean working tree and every payload digest, then copies only the validated payload bytes into an ignored local staging area under `Workbench/.workbench/update-materializations`.
+### Plan source delta
 
-This is deliberately not an update apply/build gate:
+**План применения** re-verifies staging and reports exact `Add`, `Replace`, `NoOp` effects without changing tracked source.
 
-`Valid Plan != Materialization Authority != Build Authority != Source Apply Authority != Checkpoint Authority`
+### Apply + build
 
-v0.11 does not overwrite tracked Workbench source, run an installer, run `dotnet`, commit/tag, fetch/push, use the network, mutate Matawaka catalog repositories, or grant Agent Execute.
+**Применить + собрать** requires a fresh READY staged plan and another explicit confirmation. Only exact planned source paths may change. Replacements are backed up. The only build executable is `<workspace>/.dotnet-sdk/dotnet.exe`, with fixed `build/publish --no-restore` operations. Any failed transaction restores accepted predecessor source.
 
-Receipts remain Workbench-local evidence. They are not canonical UU-AAP conformance and do not make the Workbench repository authoritative over other Matawaka repositories.
+This gate requests no network operation, but does not claim OS network isolation.
 
+### Launch + accept
 
-## v0.12 staged source-apply plan
+**Запустить candidate** is a separate explicit action limited to the exact built executable digest. Launch is not acceptance. The candidate must separately pass Self-test and **Принять** before the Workbench repository receives a local accepted commit/tag.
 
-v0.12 adds a read-only plan over already materialized update bytes. It verifies the staging receipt, predecessor, clean working tree, exact staged file set and SHA-256s, then reports Add/Replace/NoOp effects without modifying Workbench source. Source apply, build and checkpoint remain separate future authority gates.
+No maintenance gate creates authority over Matawaka catalog repositories or Agent Execute. Workbench receipts are local evidence, not canonical UU-AAP conformance.

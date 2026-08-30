@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private readonly LocalUpdateIntakeService _updateIntakeService = new();
     private readonly LocalUpdateMaterializationService _updateMaterializationService;
     private readonly StagedUpdateApplyPlanService _stagedApplyPlanService = new();
+    private readonly BoundedUpdateApplyBuildService _applyBuildService;
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -26,6 +27,10 @@ public partial class MainWindow : Window
     private bool _lastUpdatePlanConsumed;
     private WorkbenchUpdateMaterializationReceipt? _lastMaterializationReceipt;
     private string? _lastMaterializationArtifactPath;
+    private WorkbenchStagedApplyPlanReceipt? _lastStagedApplyPlanReceipt;
+    private string? _lastStagedApplyPlanArtifactPath;
+    private WorkbenchUpdateApplyBuildReceipt? _lastApplyBuildReceipt;
+    private string? _lastApplyBuildArtifactPath;
     private CancellationTokenSource? _cts;
     private WorkbenchProgressReceipt? _lastProgressReceipt;
     private CommandTerminalState? _currentTerminalState;
@@ -36,6 +41,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _acceptanceHarness = new WorkbenchAcceptanceHarness(_router);
         _updateMaterializationService = new LocalUpdateMaterializationService(_updateIntakeService);
+        _applyBuildService = new BoundedUpdateApplyBuildService(_stagedApplyPlanService);
         var settings = WorkbenchSettingsStore.Load();
         WorkspaceRootBox.Text = settings.WorkspaceRoot;
         CatalogRootBox.Text = settings.CatalogRoot;
@@ -88,7 +94,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.12 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.13 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -98,7 +104,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.12-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.13-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -143,7 +149,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.12-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.13-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -171,7 +177,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.12", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.13", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -234,6 +240,12 @@ public partial class MainWindow : Window
             StagedApplyPlanButton.IsEnabled = false;
             _lastMaterializationReceipt = null;
             _lastMaterializationArtifactPath = null;
+            _lastStagedApplyPlanReceipt = null;
+            _lastStagedApplyPlanArtifactPath = null;
+            _lastApplyBuildReceipt = null;
+            _lastApplyBuildArtifactPath = null;
+            ApplyBuildUpdateButton.IsEnabled = false;
+            LaunchCandidateButton.IsEnabled = false;
 
             SaveSettings();
             BeginRun(id);
@@ -318,7 +330,13 @@ public partial class MainWindow : Window
             _lastUpdatePlanConsumed = true;
             _lastMaterializationReceipt = materialized.Receipt;
             _lastMaterializationArtifactPath = materialized.ArtifactPath;
+            _lastStagedApplyPlanReceipt = null;
+            _lastStagedApplyPlanArtifactPath = null;
+            _lastApplyBuildReceipt = null;
+            _lastApplyBuildArtifactPath = null;
             StagedApplyPlanButton.IsEnabled = true;
+            ApplyBuildUpdateButton.IsEnabled = false;
+            LaunchCandidateButton.IsEnabled = false;
             UpdatePlanTextBox.Text = CommandCodec.Serialize(new
             {
                 Plan = plan,
@@ -369,6 +387,13 @@ public partial class MainWindow : Window
                 WorkspaceRootBox.Text,
                 _cts!.Token);
 
+            _lastStagedApplyPlanReceipt = planned.Receipt;
+            _lastStagedApplyPlanArtifactPath = planned.ArtifactPath;
+            _lastApplyBuildReceipt = null;
+            _lastApplyBuildArtifactPath = null;
+            ApplyBuildUpdateButton.IsEnabled = string.Equals(planned.Receipt.Status, "READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY", StringComparison.Ordinal);
+            LaunchCandidateButton.IsEnabled = false;
+
             UpdatePlanTextBox.Text = CommandCodec.Serialize(new
             {
                 Materialization = _lastMaterializationReceipt,
@@ -398,6 +423,112 @@ public partial class MainWindow : Window
         {
             EndRun();
         }
+    }
+
+    private async void ApplyBuildUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"update-apply-build-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            if (_lastMaterializationReceipt is null || _lastStagedApplyPlanReceipt is null || string.IsNullOrWhiteSpace(_lastStagedApplyPlanArtifactPath))
+                throw new InvalidDataException("Create a fresh READY staged source-apply plan before applying/building an update candidate.");
+            if (!string.Equals(_lastStagedApplyPlanReceipt.Status, "READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY", StringComparison.Ordinal))
+                throw new InvalidDataException("The current staged source-apply plan is not READY.");
+
+            var plan = _lastStagedApplyPlanReceipt;
+            var preview = new StringBuilder();
+            preview.AppendLine("Применить точный staged source delta и собрать candidate?");
+            preview.AppendLine();
+            preview.AppendLine($"Predecessor: {plan.PredecessorCommit} / {plan.PredecessorTag}");
+            preview.AppendLine($"Target: {plan.TargetVersion} / {plan.TargetTag}");
+            preview.AppendLine($"Source delta: Add={plan.AddCount}; Replace={plan.ReplaceCount}; NoOp={plan.NoOpCount}");
+            preview.AppendLine();
+            foreach (var change in plan.SourceChanges.Where(item => item.Action is "Add" or "Replace").Take(30))
+                preview.AppendLine($"  {change.Action,-7} {change.Path}");
+            preview.AppendLine();
+            preview.AppendLine("Разрешается только exact source Add/Replace из materialized staging и фиксированные локальные dotnet build/publish с --no-restore. Git checkpoint/tag/push/fetch, catalog mutation, Agent Execute и запуск candidate НЕ разрешаются этим подтверждением. OS network isolation не создаётся.");
+
+            if (MessageBox.Show(this, preview.ToString(), "Применить + собрать Workbench candidate", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                return;
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: explicit exact source apply + fixed offline build";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.apply-build.requested target={plan.TargetVersion}; add={plan.AddCount}; replace={plan.ReplaceCount}");
+
+            var built = await _applyBuildService.ApplyAndBuildAsync(
+                _lastMaterializationReceipt,
+                plan,
+                _lastStagedApplyPlanArtifactPath,
+                WorkspaceRootBox.Text,
+                _cts!.Token);
+
+            _lastApplyBuildReceipt = built.Receipt;
+            _lastApplyBuildArtifactPath = built.ArtifactPath;
+            LaunchCandidateButton.IsEnabled = true;
+            UpdatePlanTextBox.Text = CommandCodec.Serialize(new
+            {
+                Materialization = _lastMaterializationReceipt,
+                MaterializationReceiptPath = _lastMaterializationArtifactPath,
+                ApplyPlan = plan,
+                ApplyPlanArtifactPath = _lastStagedApplyPlanArtifactPath,
+                ApplyBuild = built.Receipt,
+                ApplyBuildReceiptPath = built.ArtifactPath,
+                ApplyBuildAuthorityPath = built.AuthorityPath,
+                CandidateLaunchAvailable = true
+            });
+            OutputTabs.SelectedItem = UpdatePlanTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = CommandTerminalState.Completed;
+            StatusText.Text = $"COMPLETED: {built.Receipt.Status}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.apply-build.completed candidate={built.Receipt.CandidateExecutablePath}; checkpoint=false; launch=false");
+        }
+        catch (OperationCanceledException) { ShowCancelled(); }
+        catch (InvalidDataException ex) { ShowInvalid(ex); }
+        catch (Exception ex) { ShowFailure(ex); }
+        finally { EndRun(); }
+    }
+
+    private async void LaunchCandidateButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"update-launch-candidate-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            if (_lastApplyBuildReceipt is null || string.IsNullOrWhiteSpace(_lastApplyBuildArtifactPath))
+                throw new InvalidDataException("Build a byte-bound candidate before launch.");
+
+            var receipt = _lastApplyBuildReceipt;
+            var preview = new StringBuilder();
+            preview.AppendLine("Запустить точный собранный Workbench candidate?");
+            preview.AppendLine();
+            preview.AppendLine($"Target: {receipt.TargetVersion} / {receipt.TargetTag}");
+            preview.AppendLine($"Executable: {receipt.CandidateExecutablePath}");
+            preview.AppendLine($"SHA-256: {receipt.CandidateExecutableSha256}");
+            preview.AppendLine();
+            preview.AppendLine("Запуск candidate не означает acceptance. Новый Workbench должен отдельно пройти Self-test и получить отдельное подтверждение Принять. Git/network/catalog/Agent Execute authority этим действием не создаются.");
+            if (MessageBox.Show(this, preview.ToString(), "Запустить Workbench candidate", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            BeginRun(id);
+            StatusText.Text = "RUNNING: exact receipt-bound candidate launch";
+            var launched = await _applyBuildService.LaunchCandidateAsync(receipt, WorkspaceRootBox.Text, _cts!.Token);
+            UpdatePlanTextBox.Text = CommandCodec.Serialize(new
+            {
+                ApplyBuild = receipt,
+                ApplyBuildReceiptPath = _lastApplyBuildArtifactPath,
+                Launch = launched.Receipt,
+                LaunchReceiptPath = launched.ArtifactPath
+            });
+            OutputTabs.SelectedItem = UpdatePlanTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = CommandTerminalState.Completed;
+            StatusText.Text = $"COMPLETED: {launched.Receipt.Status}; pid={launched.Receipt.ProcessId}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.candidate.launched    pid={launched.Receipt.ProcessId}; accepted=false; checkpoint=false");
+        }
+        catch (OperationCanceledException) { ShowCancelled(); }
+        catch (InvalidDataException ex) { ShowInvalid(ex); }
+        catch (Exception ex) { ShowFailure(ex); }
+        finally { EndRun(); }
     }
 
     private bool IsMaterializationReady()
@@ -562,6 +693,9 @@ public partial class MainWindow : Window
         AcceptCheckpointButton.IsEnabled = false;
         UpdatePlanButton.IsEnabled = false;
         MaterializeUpdateButton.IsEnabled = false;
+        StagedApplyPlanButton.IsEnabled = false;
+        ApplyBuildUpdateButton.IsEnabled = false;
+        LaunchCandidateButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -586,6 +720,9 @@ public partial class MainWindow : Window
         AcceptCheckpointButton.IsEnabled = _lastAcceptanceReceipt?.Passed == true && !_lastAcceptanceConsumed && !string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath);
         UpdatePlanButton.IsEnabled = true;
         MaterializeUpdateButton.IsEnabled = IsMaterializationReady();
+        StagedApplyPlanButton.IsEnabled = _lastMaterializationReceipt is not null;
+        ApplyBuildUpdateButton.IsEnabled = _lastStagedApplyPlanReceipt is not null && string.Equals(_lastStagedApplyPlanReceipt.Status, "READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY", StringComparison.Ordinal) && _lastApplyBuildReceipt is null;
+        LaunchCandidateButton.IsEnabled = _lastApplyBuildReceipt is not null;
         CancelButton.IsEnabled = false;
     }
 

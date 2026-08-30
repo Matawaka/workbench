@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.12",
-            "0.12.0",
+            "matawaka.workbench-acceptance-receipt/v0.13",
+            "0.13.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.12 retains the accepted v0.7 semantic security boundary, v0.10 relevant-source-set verification, and v0.11 staging-only materialization boundary. The new staged source-apply plan is read-only and does not grant source mutation, build, checkpoint, publication, catalog, network, or Agent Execute authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.13 retains the accepted v0.7 semantic security boundary, v0.10 relevant-source-set verification, v0.11 staging-only materialization, and v0.12 read-only staged source-apply planning. The new maintenance path can create an explicit human-authorized exact source-apply plus fixed offline build/publish transaction for a separately planned and materialized update; Self-test does not invoke or grant that authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)

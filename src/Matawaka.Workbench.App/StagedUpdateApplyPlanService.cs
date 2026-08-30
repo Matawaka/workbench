@@ -19,6 +19,7 @@ public sealed record WorkbenchStagedApplyPlanReceipt(
     DateTimeOffset ObservedAt,
     string TargetVersion,
     string TargetTag,
+    string PredecessorTag,
     string PredecessorCommit,
     string CurrentHead,
     string StagingRoot,
@@ -40,7 +41,7 @@ public sealed record WorkbenchStagedApplyPlanReceipt(
     string Note);
 
 /// <summary>
-/// v0.12 converts an already-authorized v0.11 staging-only materialization into
+/// v0.13 converts an already-authorized staging-only materialization into
 /// a fresh read-only source-apply plan. It may inspect repository/staging bytes,
 /// run fixed read-only Git queries, and write a local plan receipt. It cannot
 /// overwrite tracked Workbench source, build, commit/tag, fetch/push, use the
@@ -48,8 +49,8 @@ public sealed record WorkbenchStagedApplyPlanReceipt(
 /// </summary>
 public sealed class StagedUpdateApplyPlanService
 {
-    public const string ReceiptSchema = "matawaka.workbench-staged-apply-plan-receipt/v0.12";
-    public const string Version = "0.12.0";
+    public const string ReceiptSchema = "matawaka.workbench-staged-apply-plan-receipt/v0.13";
+    public const string Version = "0.13.0";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -83,7 +84,7 @@ public sealed class StagedUpdateApplyPlanService
 
         var currentTags = (await RunGitReadOnlyAsync(repositoryRoot, cancellationToken, "tag", "--points-at", "HEAD"))
             .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-        if (!currentTags.Contains(materialization.Authority is null ? "" : InferPredecessorTag(materialization), StringComparer.Ordinal))
+        if (!currentTags.Contains(materialization.PredecessorTag, StringComparer.Ordinal))
             throw new InvalidDataException("The accepted predecessor tag no longer points at Workbench HEAD.");
 
         var status = await RunGitReadOnlyAsync(repositoryRoot, cancellationToken, "status", "--porcelain=v1", "--untracked-files=all");
@@ -161,6 +162,7 @@ public sealed class StagedUpdateApplyPlanService
             DateTimeOffset.Now,
             materialization.TargetVersion,
             materialization.TargetTag,
+            materialization.PredecessorTag,
             materialization.PredecessorCommit,
             currentHead,
             stagingRoot,
@@ -179,11 +181,11 @@ public sealed class StagedUpdateApplyPlanService
             false,
             addCount + replaceCount > 0 ? "READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY" : "NO_SOURCE_CHANGE",
             nonEffects,
-            "v0.12 proves the exact staged source delta without applying it. A READY receipt is evidence of a bounded possible source transition, not authority to mutate source, build, checkpoint, publish, mutate catalog repositories, or execute an agent action.");
+            "v0.13 proves the exact staged source delta without applying it and binds the predecessor tag carried by the materialization receipt. A READY receipt is evidence of a bounded possible source transition, not authority to mutate source, build, checkpoint, publish, mutate catalog repositories, or execute an agent action.");
 
         var artifactDir = Path.Combine(repositoryRoot, "artifacts", "update-apply-plans");
         Directory.CreateDirectory(artifactDir);
-        var artifactPath = Path.Combine(artifactDir, $"staged-apply-plan-v0.12-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
+        var artifactPath = Path.Combine(artifactDir, $"staged-apply-plan-v0.13-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
         await File.WriteAllTextAsync(
             artifactPath,
             JsonSerializer.Serialize(receipt, JsonOptions),
@@ -191,18 +193,6 @@ public sealed class StagedUpdateApplyPlanService
             cancellationToken);
 
         return (receipt, artifactPath);
-    }
-
-    private static string InferPredecessorTag(WorkbenchUpdateMaterializationReceipt materialization)
-    {
-        // v0.11 materialization is tied to the accepted predecessor encoded in
-        // the package plan. For the v0.12 transition this is the v0.11 accepted tag.
-        // Future versions should carry predecessor tag explicitly in the
-        // materialization receipt instead of extending this compatibility bridge.
-        if (string.Equals(materialization.PredecessorCommit, "990df6a47ea3b4b7f321d4b9eeff6ecf884ebaf3", StringComparison.OrdinalIgnoreCase))
-            return "workbench-v0.11-accepted";
-
-        throw new InvalidDataException("Unsupported materialization predecessor for v0.12 apply planning.");
     }
 
     private static string ResolveRepositoryRoot(string workspaceRoot)

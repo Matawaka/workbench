@@ -1,61 +1,51 @@
-# Matawaka Workbench v0.11 — Security boundary
+# Matawaka Workbench v0.13 — Security boundary
 
-The accepted v0.7 semantic security boundary remains unchanged: fixed verified semantic host, restricted Low-integrity token, Windows Job Object and child runtime attestation before semantic input. Later maintenance surfaces do not widen semantic-provider authority.
+The accepted v0.7 semantic security boundary remains unchanged: fixed verified semantic host, restricted Low-integrity token, Windows Job Object and child runtime attestation before semantic input. Maintenance surfaces do not widen semantic-provider authority.
 
-## Local checkpoint authority
-
-Checkpoint acceptance remains explicit human maintenance authority for the Workbench repository only. It requires a passing in-process Self-test, byte-bound build-source manifest, exact accepted predecessor tag, exact changed-file preview and a separate **Принять** confirmation. Only fixed local `git add` / fixed commit / fixed annotated tag operations are allowed.
+## Invariants
 
 `Self-test PASS != Checkpoint authority`
 
-`Checkpoint authority != Catalog mutation authority`
+`Valid package != Materialization authority`
 
-`Checkpoint authority != Remote publication authority`
+`Staging materialization != Source apply/build authority`
 
-`Checkpoint authority != Agent Execute`
+`READY source plan != Source mutation authority`
 
-## v0.10 source-set and update-intake boundaries
+`Apply/build authority != Candidate launch authority`
 
-- `Repository HEAD != Relevant Source Set`: unrelated repository movement is observable but does not replace exact bound-file verification.
-- Relevant-source verification is fail-closed and performs no fetch or repository mutation.
-- `Update Package Valid != Materialization Authority`: intake only reads/validates a local ZIP and writes a plan receipt.
-- ZIP traversal, unmanifested payload files, digest mismatch, oversized payloads and packages requesting network/catalog/Execute/arbitrary-process/installer-script authority are rejected.
+`Candidate launch != Acceptance`
 
-## v0.11 staging materialization boundary
+`Workbench maintenance authority != Catalog mutation authority != Agent Execute`
 
-Materialization is a separate human-confirmed authority gate and consumes only a READY plan from the current Workbench process.
+## v0.13 materialization/planning
 
-Before any staging write v0.11 requires:
+Materialization receipts now carry the accepted predecessor tag explicitly. Staged planning uses that tag and commit directly and no longer relies on a transition-specific hard-coded predecessor map.
 
-1. exact package SHA-256 still equals the planned package;
-2. the bounded intake verifier re-plans the package successfully;
-3. target/predecessor/file set still equals the confirmed plan;
-4. current HEAD and accepted predecessor tag still match;
-5. tracked Workbench working tree is clean;
-6. the user explicitly confirms **Материализовать**.
+The plan/materialization surfaces remain fail-closed on package SHA, predecessor, clean worktree, bounded staging root, exact file set and payload digest mismatches.
 
-Allowed effect is limited to creating validated payload bytes under `Workbench/.workbench/update-materializations` plus a receipt under `Workbench/artifacts/update-materializations`.
+## v0.13 exact source apply + build
 
-The gate explicitly does **not** authorize:
+Before source mutation the gate requires:
 
-- overwrite of tracked Workbench source;
-- `dotnet restore/build/publish`;
-- installer or arbitrary process execution;
-- Git add/commit/tag/fetch/push;
-- network access;
-- Matawaka catalog mutation;
-- Agent Execute or ActionPermit;
-- later build/apply/checkpoint authority inferred from the materialization receipt.
+1. an in-process staging-only materialization receipt;
+2. a READY staged apply plan artifact;
+3. a freshly regenerated equivalent plan;
+4. unchanged accepted predecessor HEAD/tag;
+5. a clean Workbench working tree;
+6. exact current/staged hashes for every `Add`/`Replace` path;
+7. explicit **Применить + собрать** confirmation.
 
-`Valid Plan != Explicit Materialization Authority`
+Allowed source effect is limited to the exact plan paths. Replacement bytes are backed up under ignored `.workbench/update-source-backups`. A failure during apply/build restores the predecessor source and requires a new authorization attempt.
 
-`Staging Materialization != Source Apply`
+Allowed build process is limited to the fixed workspace-local `.dotnet-sdk\dotnet.exe` and fixed `build/publish --no-restore` arguments for the Workbench solution, App and SemanticHost. No executable path or arguments are taken from command JSON.
 
-`Staging Materialization != Build Authority`
+`--no-restore` and local cache roots mean the gate does not request package download. **OS network isolation is not enforced**, so this must not be described as a network sandbox.
 
-`Staging Materialization != Checkpoint Authority`
+The apply/build receipt does not permit Git add/commit/tag/fetch/push, remote publication, catalog mutation, Agent Execute, ActionPermit or checkpoint creation.
 
+## Candidate launch
 
-## v0.12 staged source-apply plan
+Launch has a separate confirmation. Only the exact receipt-bound candidate under Workbench artifacts may start, and its SHA-256 is reverified immediately before launch. Launch creates no acceptance/checkpoint authority and no authority over catalog repositories or Agent Execute.
 
-A successful staged apply plan does not authorize source mutation. The service may read Workbench source, read the ignored staging area, run fixed read-only Git queries, and write a local plan receipt under artifacts/update-apply-plans. It cannot overwrite tracked source, build, commit/tag, fetch/push, use network, mutate the catalog, or grant Agent Execute.
+The launched candidate must independently pass Self-test and then receive a separate explicit **Принять** confirmation for the fixed local Workbench Git checkpoint gate.

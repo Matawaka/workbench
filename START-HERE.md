@@ -1,26 +1,19 @@
-# Start here — Workbench v0.11
+# Start here — Workbench v0.13
 
-## Acceptance
+## Normal acceptance
 
-1. Enable the agent for the read-only Self-test.
+1. Enable **Агент включен** for the read-only acceptance matrix.
 2. Click **Self-test** and require `Passed=true`.
-3. Click **Принять** only when you intend to create the local accepted Workbench checkpoint.
-4. Review the exact changed-file list and confirm.
+3. Click **Принять**, review the exact Workbench changed-file list, and explicitly confirm.
 
-The checkpoint performs no remote push/fetch or Matawaka catalog mutation.
+## Local update cycle
 
-## Local update package
+1. **Пакет обновления** → require `READY_FOR_SEPARATE_MATERIALIZATION_AUTHORITY`.
+2. **Материализовать** → explicitly confirm → require `MATERIALIZED_STAGING_ONLY`.
+3. **План применения** → require `READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY` and inspect `Add/Replace/NoOp`.
+4. **Применить + собрать** → explicitly confirm the exact source delta and fixed local offline build/publish.
+5. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
+6. **Запустить candidate** → explicitly confirm the exact executable SHA-256.
+7. In the launched candidate run **Self-test**; only after PASS use **Принять**.
 
-1. Click **Пакет обновления** and select a manifest-based Workbench update ZIP.
-2. Require `READY_FOR_SEPARATE_MATERIALIZATION_AUTHORITY` in **Update Plan**.
-3. A READY plan alone changes no update payload bytes.
-4. Click **Материализовать** only if you want to create a local staging copy.
-5. Review package SHA-256, predecessor, target, file count and byte count, then confirm.
-6. Require `MATERIALIZED_STAGING_ONLY` in the resulting receipt.
-
-The v0.11 materialization gate writes only to ignored Workbench-local staging and artifacts. It does not apply source changes, build, execute installers, commit/tag, access the network, mutate catalog repositories, or grant Agent Execute.
-
-
-## v0.12 staged source-apply plan
-
-After an update package has been explicitly materialized to `.workbench`, use **План применения** to calculate the exact bounded source delta. A READY apply plan is still non-authorizing: no tracked source is changed until a later, separate source-apply gate exists.
+No earlier receipt automatically authorizes a later step. Git remote publication, Matawaka catalog mutation and Agent Execute remain outside this update chain.

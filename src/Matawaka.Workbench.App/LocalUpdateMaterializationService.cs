@@ -37,6 +37,7 @@ public sealed record WorkbenchUpdateMaterializationReceipt(
     string PackageSha256,
     string TargetVersion,
     string TargetTag,
+    string PredecessorTag,
     string PredecessorCommit,
     string CurrentHead,
     string StagingRoot,
@@ -53,7 +54,7 @@ public sealed record WorkbenchUpdateMaterializationReceipt(
     string Note);
 
 /// <summary>
-/// v0.11 consumes a READY v0.10 update plan only after explicit UI confirmation.
+/// v0.13 consumes a READY bounded update plan only after explicit UI confirmation.
 /// The only material effect is bounded payload-byte creation under
 /// Workbench/.workbench/update-materializations. It does not overwrite tracked
 /// source, build, execute installers, commit, tag, fetch, push, use the network,
@@ -61,9 +62,9 @@ public sealed record WorkbenchUpdateMaterializationReceipt(
 /// </summary>
 public sealed class LocalUpdateMaterializationService
 {
-    public const string ReceiptSchema = "matawaka.workbench-update-materialization-receipt/v0.11";
-    public const string AuthoritySchema = "matawaka.workbench-update-materialization-authority-receipt/v0.11";
-    public const string Version = "0.11.0";
+    public const string ReceiptSchema = "matawaka.workbench-update-materialization-receipt/v0.13";
+    public const string AuthoritySchema = "matawaka.workbench-update-materialization-authority-receipt/v0.13";
+    public const string Version = "0.13.0";
 
     private readonly LocalUpdateIntakeService _intakeService;
 
@@ -218,6 +219,7 @@ public sealed class LocalUpdateMaterializationService
                 packageSha,
                 authorizedPlan.TargetVersion,
                 authorizedPlan.TargetTag,
+                authorizedPlan.PredecessorTag,
                 authorizedPlan.PredecessorCommit,
                 currentHead,
                 stagingRoot,
@@ -231,11 +233,11 @@ public sealed class LocalUpdateMaterializationService
                 true,
                 "MATERIALIZED_STAGING_ONLY",
                 nonEffects,
-                "v0.11 materialization is a reversible staging effect only. The validated bytes are copied to an ignored Workbench-local staging area after explicit human confirmation. No build, tracked-source apply, Git checkpoint, network, catalog mutation, or Agent Execute authority is inferred.");
+                "v0.13 materialization is a reversible staging effect only and carries its predecessor tag explicitly. The validated bytes are copied to an ignored Workbench-local staging area after explicit human confirmation. No build, tracked-source apply, Git checkpoint, network, catalog mutation, or Agent Execute authority is inferred.");
 
             var artifactDir = Path.Combine(repositoryRoot, "artifacts", "update-materializations");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"materialization-v0.11-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
+            var artifactPath = Path.Combine(artifactDir, $"materialization-v0.13-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
             await File.WriteAllTextAsync(artifactPath, JsonSerializer.Serialize(receipt, JsonOptions), new UTF8Encoding(false), cancellationToken);
             return (receipt, artifactPath);
         }
