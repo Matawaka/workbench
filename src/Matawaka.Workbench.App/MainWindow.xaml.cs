@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using Matawaka.Workbench.Protocol;
 using Matawaka.Workbench.Runtime;
@@ -12,6 +13,9 @@ public partial class MainWindow : Window
 {
     private readonly ICommandRunner _router = new CommandRouter();
     private CancellationTokenSource? _cts;
+    private WorkbenchProgressReceipt? _lastProgressReceipt;
+    private CommandTerminalState? _currentTerminalState;
+    private int _runEpoch;
 
     public MainWindow()
     {
@@ -40,7 +44,15 @@ public partial class MainWindow : Window
         {
             var command = CommandCodec.Parse(JsonTextBox.Text);
             Log(new WorkbenchProgress(command.Id, "command.valid", 0, $"{command.Kind} -> {command.Target}", DateTimeOffset.Now));
-            StatusText.Text = "JSON корректен";
+            StatusText.Text = "VALID";
+        }
+        catch (JsonException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
         }
         catch (Exception ex)
         {
@@ -55,10 +67,17 @@ public partial class MainWindow : Window
             var command = CommandCodec.Parse(JsonTextBox.Text);
             await RunCommandAsync(command);
         }
+        catch (JsonException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
         catch (OperationCanceledException)
         {
-            StatusText.Text = "Остановлено";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  command.cancelled");
+            ShowCancelled();
         }
         catch (Exception ex)
         {
@@ -80,7 +99,7 @@ public partial class MainWindow : Window
 
             var result = await _router.RunAsync(command, context, progress, _cts!.Token);
             RenderResult(result);
-            StatusText.Text = result.Summary;
+            ApplyTerminalState(result.TerminalState, result.Summary);
         }
         finally
         {
@@ -102,6 +121,10 @@ public partial class MainWindow : Window
         {
             await RunCommandAsync(command);
         }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
         catch (Exception ex)
         {
             ShowFailure(ex);
@@ -122,9 +145,13 @@ public partial class MainWindow : Window
         {
             await RunCommandAsync(command);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            ShowDenied(ex.Message);
+        }
         catch (OperationCanceledException)
         {
-            StatusText.Text = "Остановлено";
+            ShowCancelled();
         }
         catch (Exception ex)
         {
@@ -143,7 +170,11 @@ public partial class MainWindow : Window
                 CatalogRootBox.Text = Path.Combine(WorkspaceRootBox.Text, "Catalog");
 
             SaveSettings();
-            StatusText.Text = $"Настройки сохранены: {WorkbenchSettingsStore.SettingsPath}";
+            StatusText.Text = $"COMPLETED: настройки сохранены — {WorkbenchSettingsStore.SettingsPath}";
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
         }
         catch (Exception ex)
         {
@@ -179,10 +210,15 @@ public partial class MainWindow : Window
         RunButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
-        StatusText.Text = $"Выполняется: {id}";
+        StatusText.Text = $"RUNNING: {id}";
         ResultTextBox.Clear();
         EvidenceTextBox.Clear();
+        AuthorityTextBox.Clear();
+        LivenessTextBox.Clear();
         AgentTextBox.Clear();
+        _lastProgressReceipt = null;
+        _currentTerminalState = null;
+        _runEpoch++;
     }
 
     private void EndRun()
@@ -194,14 +230,30 @@ public partial class MainWindow : Window
     private void Log(WorkbenchProgress e)
     {
         ProgressBar.Value = Math.Clamp(e.Percent, 0, 100);
-        StatusText.Text = e.Message;
         var line = $"{e.Timestamp:HH:mm:ss}  {e.Percent,3}%  {e.Event,-28} {e.Message}";
         EventList.Items.Add(line);
         if (EventList.Items.Count > 0)
             EventList.ScrollIntoView(EventList.Items[EventList.Items.Count - 1]);
 
-        if (e.Event.StartsWith("agent.", StringComparison.OrdinalIgnoreCase) ||
-            e.Event.StartsWith("authority.", StringComparison.OrdinalIgnoreCase))
+        if (e.Event.Equals("command.completed", StringComparison.OrdinalIgnoreCase))
+            _currentTerminalState = CommandTerminalState.Completed;
+        else if (e.Event.Equals("command.denied", StringComparison.OrdinalIgnoreCase) ||
+                 e.Event.Equals("agent.denied", StringComparison.OrdinalIgnoreCase))
+            _currentTerminalState = CommandTerminalState.Denied;
+
+        if (PclCompatibleProgress.IsTrackable(e))
+        {
+            _lastProgressReceipt = PclCompatibleProgress.Create(e, _lastProgressReceipt, _runEpoch);
+            RenderLiveness(_currentTerminalState);
+        }
+
+        if (e.Event.StartsWith("authority.", StringComparison.OrdinalIgnoreCase))
+        {
+            AuthorityTextBox.AppendText(line + Environment.NewLine);
+            AuthorityTextBox.ScrollToEnd();
+        }
+        else if (e.Event.StartsWith("agent.", StringComparison.OrdinalIgnoreCase) ||
+                 e.Event.StartsWith("semantic.", StringComparison.OrdinalIgnoreCase))
         {
             AgentTextBox.AppendText(line + Environment.NewLine);
             AgentTextBox.ScrollToEnd();
@@ -215,22 +267,89 @@ public partial class MainWindow : Window
             : CommandCodec.Serialize(result.Data);
 
         EvidenceTextBox.Text = result.Evidence is null
-            ? "No evidence payload for this command."
+            ? "No evidence receipt for this command."
             : CommandCodec.Serialize(result.Evidence);
+
+        AuthorityTextBox.Text = result.Authority is null
+            ? "No authority receipt for this command."
+            : CommandCodec.Serialize(result.Authority);
 
         if (result.Agent is not null)
         {
-            AgentTextBox.AppendText(Environment.NewLine + "--- RECEIPT ---" + Environment.NewLine);
+            if (AgentTextBox.Text.Length > 0)
+                AgentTextBox.AppendText(Environment.NewLine);
+            AgentTextBox.AppendText("--- RECEIPT ---" + Environment.NewLine);
             AgentTextBox.AppendText(CommandCodec.Serialize(result.Agent));
         }
 
-        OutputTabs.SelectedItem = result.Evidence is not null ? EvidenceTab : ResultTab;
+        OutputTabs.SelectedItem = result.TerminalState switch
+        {
+            CommandTerminalState.Denied when result.Authority is not null => AuthorityTab,
+            CommandTerminalState.Completed when result.Evidence is not null => EvidenceTab,
+            _ => ResultTab
+        };
+    }
+
+    private void ApplyTerminalState(CommandTerminalState state, string summary)
+    {
+        ProgressBar.Value = 100;
+        _currentTerminalState = state;
+        StatusText.Text = $"{state.ToString().ToUpperInvariant()}: {summary}";
+        RenderLiveness(state);
+    }
+
+    private void RenderLiveness(CommandTerminalState? terminalState)
+    {
+        if (_lastProgressReceipt is null)
+        {
+            LivenessTextBox.Text = "No PCL-compatible progress receipt for this run.";
+            return;
+        }
+
+        var view = PclCompatibleProgress.ToHumanView(_lastProgressReceipt, terminalState);
+        LivenessTextBox.Text = CommandCodec.Serialize(new
+        {
+            ProgressReceipt = _lastProgressReceipt,
+            HumanView = view,
+            Note = "Workbench v0.2 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+        });
+    }
+
+    private void ShowDenied(string message)
+    {
+        ApplyTerminalState(CommandTerminalState.Denied, message);
+        EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  command.denied               {message}");
+        OutputTabs.SelectedItem = EventsTab;
+        EndRun();
+    }
+
+    private void ShowInvalid(Exception ex)
+    {
+        ProgressBar.Value = 0;
+        _currentTerminalState = CommandTerminalState.Invalid;
+        StatusText.Text = $"INVALID: {ex.Message}";
+        if (_lastProgressReceipt is not null) RenderLiveness(CommandTerminalState.Invalid);
+        EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  command.invalid              {ex.Message}");
+        OutputTabs.SelectedItem = EventsTab;
+        EndRun();
     }
 
     private void ShowFailure(Exception ex)
     {
-        StatusText.Text = "Ошибка";
-        EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  ERROR  {ex.Message}");
+        _currentTerminalState = CommandTerminalState.Failed;
+        StatusText.Text = $"FAILED: {ex.Message}";
+        if (_lastProgressReceipt is not null) RenderLiveness(CommandTerminalState.Failed);
+        EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  command.failed               {ex.Message}");
+        OutputTabs.SelectedItem = EventsTab;
+        EndRun();
+    }
+
+    private void ShowCancelled()
+    {
+        _currentTerminalState = CommandTerminalState.Cancelled;
+        StatusText.Text = "CANCELLED";
+        if (_lastProgressReceipt is not null) RenderLiveness(CommandTerminalState.Cancelled);
+        EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  command.cancelled");
         OutputTabs.SelectedItem = EventsTab;
         EndRun();
     }
@@ -238,7 +357,7 @@ public partial class MainWindow : Window
     private const string DefaultCommand = """
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-observe-001",
+  "id": "game-companion-propose-v020",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",

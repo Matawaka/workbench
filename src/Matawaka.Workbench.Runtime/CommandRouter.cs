@@ -10,11 +10,21 @@ public sealed record RuntimeContext(
     bool AgentEnabled,
     bool AllowGitFetch);
 
+public sealed record EvidenceReceipt(
+    string Schema,
+    string CommandId,
+    IReadOnlyList<CatalogRepository> CatalogSnapshot,
+    AgentEvidenceCoverage Coverage,
+    IReadOnlyList<AgentEvidence> Items,
+    IReadOnlyList<string> NonEffects);
+
 public sealed record CommandResult(
     string Kind,
+    CommandTerminalState TerminalState,
     string Summary,
     object? Data = null,
     object? Evidence = null,
+    object? Authority = null,
     object? Agent = null);
 
 public interface ICommandRunner
@@ -48,51 +58,78 @@ public sealed class CommandRouter : ICommandRunner
         IProgress<WorkbenchProgress>? progress,
         CancellationToken cancellationToken)
     {
-        progress?.Report(new WorkbenchProgress(command.Id, "command.accepted", 0, command.Kind, DateTimeOffset.Now));
+        progress?.Report(new WorkbenchProgress(
+            command.Id, "command.accepted", 0, command.Kind, DateTimeOffset.Now,
+            "ROUTING", "COMMAND_ACCEPTED", "NONE",
+            command.Kind.Equals("agent.run", StringComparison.OrdinalIgnoreCase) ? "AUTHORITY_DECISION" : "COMMAND_HANDLER",
+            $"command:{command.Id}"));
 
         CommandResult result;
         switch (command.Kind.ToLowerInvariant())
         {
             case "analysis.run":
                 var decision = await _engine.EvaluateAsync(command.Payload, cancellationToken);
-                result = new CommandResult(command.Kind, $"Ranked {decision.Ranked.Count} options.", decision);
+                result = new CommandResult(
+                    command.Kind,
+                    CommandTerminalState.Completed,
+                    $"Ranked {decision.Ranked.Count} options.",
+                    decision);
                 break;
 
             case "catalog.inspect":
                 var repos = await _catalog.InspectAsync(context.CatalogRoot, progress, command.Id, cancellationToken);
-                result = new CommandResult(command.Kind, $"Found {repos.Count} repositories.", repos);
+                result = new CommandResult(
+                    command.Kind,
+                    CommandTerminalState.Completed,
+                    $"Found {repos.Count} repositories.",
+                    repos);
                 break;
 
             case "catalog.fetch":
                 await _catalog.FetchAsync(context.CatalogRoot, context.AllowGitFetch, progress, command.Id, cancellationToken);
-                result = new CommandResult(command.Kind, "Catalog refs fetched.");
+                result = new CommandResult(
+                    command.Kind,
+                    CommandTerminalState.Completed,
+                    "Catalog refs fetched.");
                 break;
 
             case "agent.run":
                 var snapshot = await _catalog.InspectAsync(context.CatalogRoot, progress, command.Id, cancellationToken);
                 var receipt = await _agent.RunAsync(command, snapshot, context.AgentEnabled, progress, cancellationToken);
+                var authorityReceipt = new CapabilityReceipt(
+                    "matawaka.capability-receipt/v1",
+                    receipt.CapabilityRequest,
+                    receipt.CapabilityDecision);
 
                 if (string.Equals(receipt.Status, "denied", StringComparison.OrdinalIgnoreCase))
                 {
                     result = new CommandResult(
                         command.Kind,
+                        CommandTerminalState.Denied,
                         $"Agent {receipt.Mode} denied by typed capability policy; mutations=0.",
                         receipt.CapabilityDecision,
                         null,
+                        authorityReceipt,
                         receipt);
                 }
                 else
                 {
                     object agentData = receipt.Proposal is not null ? receipt.Proposal : receipt.Findings;
+                    var evidenceReceipt = new EvidenceReceipt(
+                        "matawaka.evidence-receipt/v1",
+                        command.Id,
+                        receipt.CatalogSnapshot,
+                        receipt.Coverage,
+                        receipt.Evidence,
+                        receipt.CapabilityDecision.NonEffects);
+
                     result = new CommandResult(
                         command.Kind,
+                        CommandTerminalState.Completed,
                         $"Agent {receipt.Mode} checkpoint completed with {receipt.Evidence.Count} balanced evidence items from {receipt.Coverage.RepositoriesRepresented} repositories and {receipt.Mutations.Count} mutations.",
                         agentData,
-                        new
-                        {
-                            receipt.Coverage,
-                            Items = receipt.Evidence
-                        },
+                        evidenceReceipt,
+                        authorityReceipt,
                         receipt);
                 }
                 break;
@@ -101,7 +138,22 @@ public sealed class CommandRouter : ICommandRunner
                 throw new InvalidDataException($"Unsupported command kind: {command.Kind}");
         }
 
-        progress?.Report(new WorkbenchProgress(command.Id, "command.completed", 100, result.Summary, DateTimeOffset.Now));
+        var terminalEvent = result.TerminalState == CommandTerminalState.Denied
+            ? "command.denied"
+            : "command.completed";
+
+        progress?.Report(new WorkbenchProgress(
+            command.Id,
+            terminalEvent,
+            100,
+            result.Summary,
+            DateTimeOffset.Now,
+            "TERMINAL",
+            result.TerminalState.ToString().ToUpperInvariant(),
+            "NONE",
+            "NONE",
+            $"command:{command.Id}"));
+
         return result;
     }
 }

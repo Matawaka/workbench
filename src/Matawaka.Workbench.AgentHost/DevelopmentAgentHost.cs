@@ -51,6 +51,7 @@ public sealed record DevelopmentAgentReceipt(
     AgentEvidenceCoverage Coverage,
     IReadOnlyList<AgentEvidence> Evidence,
     AgentProposal? Proposal,
+    SemanticProviderBoundaryReceipt? SemanticProviderBoundary,
     IReadOnlyList<string> Mutations,
     string Limitation);
 
@@ -74,11 +75,11 @@ public interface ICapabilityPolicy
 /// <summary>
 /// Workbench-local bridge inspired by FREESHIELD's authority boundary.
 /// It is intentionally not represented as canonical FREESHIELD policy.
-/// v0.1.3 can grant only read-only Observe/Propose authority.
+/// v0.2 can grant only read-only Observe/Propose authority.
 /// </summary>
 public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 {
-    private const string PolicyId = "freeshield-read-only-bridge/v0.1.3";
+    private const string PolicyId = "freeshield-read-only-bridge/v0.2";
 
     public CapabilityRequest CreateRequest(CommandEnvelope command)
     {
@@ -125,6 +126,9 @@ public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
             "no git fetch",
             "no network model call",
             "no arbitrary process execution",
+            "no materialization authority created",
+            "no execution authority created",
+            "no ActionPermit created",
             "no self-expansion of authority"
         };
 
@@ -142,7 +146,7 @@ public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 
         if (string.Equals(request.Operation, "execute", StringComparison.OrdinalIgnoreCase))
         {
-            return Deny(request, "execute-not-available-in-v0.1.3", nonEffects);
+            return Deny(request, "execute-not-available-in-v0.2", nonEffects);
         }
 
         if (request.RequestedMutationBudget != 0 ||
@@ -237,6 +241,13 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         "companion", "solver", "hint", "attention", "agent", "reversible"
     ];
 
+    private readonly ISemanticProvider _semanticProvider;
+
+    public ReadOnlyDevelopmentProvider(ISemanticProvider? semanticProvider = null)
+    {
+        _semanticProvider = semanticProvider ?? new DeterministicSemanticProvider();
+    }
+
     public async Task<DevelopmentAgentReceipt> ObserveProposeAsync(
         CommandEnvelope command,
         IReadOnlyList<CatalogRepository> catalog,
@@ -266,7 +277,9 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
 
         progress?.Report(new WorkbenchProgress(
             command.Id, "agent.observe.started", 0,
-            $"Balanced read-only evidence scan: {selected.Length} repositories", DateTimeOffset.Now));
+            $"Balanced read-only evidence scan: {selected.Length} repositories", DateTimeOffset.Now,
+            "EVIDENCE_COLLECTION", "OBSERVATION_BOUND", "LOCAL_CATALOG",
+            "REPOSITORY_EVIDENCE", $"catalog:{command.Id}"));
 
         for (var repoIndex = 0; repoIndex < selected.Length; repoIndex++)
         {
@@ -274,7 +287,9 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
             var repo = selected[repoIndex];
             progress?.Report(new WorkbenchProgress(
                 command.Id, "agent.repository.started",
-                ScanPercent(repoIndex, selected.Length), repo.Name, DateTimeOffset.Now));
+                ScanPercent(repoIndex, selected.Length), repo.Name, DateTimeOffset.Now,
+                "EVIDENCE_COLLECTION", "REPOSITORY_SCAN", repo.Name,
+                "REPOSITORY_EVIDENCE", $"repo:{repo.Name}:{repo.Head}"));
 
             var inspected = 0;
             var repoCandidates = new List<AgentEvidence>();
@@ -328,7 +343,9 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
                 command.Id, "agent.repository.completed",
                 ScanPercent(repoIndex + 1, selected.Length),
                 $"{repo.Name}: {repoCandidates.Count} candidates from {inspected} files",
-                DateTimeOffset.Now));
+                DateTimeOffset.Now,
+                "EVIDENCE_COLLECTION", "REPOSITORY_EVIDENCE_BOUND", "LOCAL_CATALOG",
+                "NEXT_REPOSITORY_OR_FRONTIER", $"repo:{repo.Name}:{repo.Head}"));
         }
 
         var evidence = SelectBalancedEvidence(selected, candidatesByRepository, options.MaxEvidenceItems);
@@ -376,24 +393,44 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         progress?.Report(new WorkbenchProgress(
             command.Id, "agent.evidence.selected", 91,
             $"Balanced frontier: {coverage.TotalSelected}/{coverage.TotalBudget} items across {coverage.RepositoriesRepresented}/{selected.Length} repositories",
-            DateTimeOffset.Now));
+            DateTimeOffset.Now,
+            "EVIDENCE_FRONTIER", "EVIDENCE_BOUND", "NONE",
+            "SEMANTIC_PROVIDER", $"evidence:{command.Id}"));
 
         AgentProposal? proposal = null;
+        SemanticProviderBoundaryReceipt? semanticBoundary = null;
         if (string.Equals(options.Mode, "propose", StringComparison.OrdinalIgnoreCase))
         {
-            progress?.Report(new WorkbenchProgress(
-                command.Id, "agent.propose.started", 94,
-                "Preparing a reversible typed-authority checkpoint", DateTimeOffset.Now));
+            var authorityReceipt = new CapabilityReceipt(
+                "matawaka.capability-receipt/v1",
+                capabilityRequest,
+                capabilityDecision);
 
-            proposal = BuildProposal(findings, coverage);
+            var packet = new SemanticEvidencePacket(
+                "matawaka.semantic-evidence-packet/v0.2",
+                command.Id,
+                command.Target,
+                findings.Select(item => new SemanticRepositoryRef(
+                    item.Repository,
+                    item.Branch,
+                    item.Head,
+                    item.SelectedEvidenceItems,
+                    item.TopTerms)).ToArray(),
+                coverage,
+                evidence,
+                authorityReceipt);
 
-            progress?.Report(new WorkbenchProgress(
-                command.Id, "agent.propose.completed", 98,
-                proposal.Title, DateTimeOffset.Now));
+            var semantic = await _semanticProvider.AnalyzeAsync(
+                packet,
+                progress,
+                cancellationToken);
+
+            proposal = semantic.Proposal;
+            semanticBoundary = semantic.Boundary;
         }
 
         return new DevelopmentAgentReceipt(
-            "deterministic-read-only-v0.1.3",
+            "deterministic-read-only-v0.2",
             "completed",
             options.Mode,
             capabilityDecision.AuthorityGranted,
@@ -404,8 +441,9 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
             coverage,
             evidence,
             proposal,
+            semanticBoundary,
             Array.Empty<string>(),
-            "Evidence detection is deterministic keyword/file inspection with a balanced repository frontier, not semantic LLM reasoning. The capability policy is a Workbench-local FREESHIELD bridge, not a claim of canonical FREESHIELD policy. No repository writes or network actions are performed.");
+            "Evidence collection remains deterministic and read-only. Proposal derivation is now behind an interchangeable semantic-provider interface that receives only an evidence packet plus typed authority receipt, not repository roots, file handles, process execution, network access, or mutation authority. UU-AAP protocol bindings are exact-frontier references and do not claim canonical implementation execution.");
     }
 
     private static IReadOnlyList<AgentEvidence> SelectBalancedEvidence(
@@ -588,28 +626,36 @@ public sealed class DevelopmentAgentHost
         CancellationToken cancellationToken)
     {
         progress?.Report(new WorkbenchProgress(
-            command.Id, "agent.started", 0, command.Target, DateTimeOffset.Now));
+            command.Id, "agent.started", 0, command.Target, DateTimeOffset.Now,
+            "AUTHORITY_GATE", "RUN_STARTED", "AUTHORITY_DECISION",
+            "AUTHORITY_DECISION", $"authority:{command.Id}"));
 
         var request = _capabilityPolicy.CreateRequest(command);
         progress?.Report(new WorkbenchProgress(
             command.Id, "authority.requested", 0,
             $"{request.Capability}; authority={request.RequestedAuthority}; mutationBudget={request.RequestedMutationBudget}",
-            DateTimeOffset.Now));
+            DateTimeOffset.Now,
+            "AUTHORITY_GATE", "AUTHORITY_REQUEST_BOUND", "AUTHORITY_DECISION",
+            "AUTHORITY_DECISION", request.Id));
 
         var decision = _capabilityPolicy.Decide(request, enabled);
         progress?.Report(new WorkbenchProgress(
             command.Id, "authority.decided", 0,
             $"{decision.Decision}; authority={decision.AuthorityGranted}; mutationBudget={decision.MutationBudgetGranted}; policy={decision.Policy}",
-            DateTimeOffset.Now));
+            DateTimeOffset.Now,
+            "AUTHORITY_GATE", "AUTHORITY_DECISION_BOUND", "NONE",
+            string.Equals(decision.Decision, "allow", StringComparison.OrdinalIgnoreCase) ? "EVIDENCE_COLLECTION" : "STOP_DENIED",
+            request.Id));
 
         if (!string.Equals(decision.Decision, "allow", StringComparison.OrdinalIgnoreCase))
         {
             progress?.Report(new WorkbenchProgress(
                 command.Id, "agent.denied", 100,
-                string.Join(", ", decision.Reasons), DateTimeOffset.Now));
+                string.Join(", ", decision.Reasons), DateTimeOffset.Now,
+                "TERMINAL", "DENIED", "NONE", "NONE", request.Id));
 
             return new DevelopmentAgentReceipt(
-                "authority-gate-v0.1.3",
+                "authority-gate-v0.2",
                 "denied",
                 request.Operation,
                 "none",
@@ -626,8 +672,9 @@ public sealed class DevelopmentAgentHost
                     Array.Empty<AgentRepositoryCoverage>()),
                 Array.Empty<AgentEvidence>(),
                 null,
+                null,
                 Array.Empty<string>(),
-                "The provider was not invoked because the typed authority decision denied the request. No repository writes, network actions, git fetch, or arbitrary processes were performed.");
+                "The provider was not invoked because the typed authority decision denied the request. No repository writes, network actions, git fetch, arbitrary processes, materialization authority, execution authority, or ActionPermit were created.");
         }
 
         var receipt = await _provider.ObserveProposeAsync(
@@ -641,7 +688,8 @@ public sealed class DevelopmentAgentHost
         progress?.Report(new WorkbenchProgress(
             command.Id, "agent.completed", 100,
             $"{receipt.Mode} completed; authority={receipt.AuthorityUsed}; evidence={receipt.Evidence.Count}; mutations={receipt.Mutations.Count}",
-            DateTimeOffset.Now));
+            DateTimeOffset.Now,
+            "TERMINAL", "COMPLETED", "NONE", "NONE", $"agent:{command.Id}"));
 
         return receipt;
     }

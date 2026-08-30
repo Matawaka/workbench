@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Matawaka.Workbench.Protocol;
 
@@ -17,7 +18,22 @@ public sealed record WorkbenchProgress(
     string Event,
     int Percent,
     string Message,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    string? Phase = null,
+    string? ProgressKind = null,
+    string? WaitingOn = null,
+    string? NextObservableEvent = null,
+    string? CheckpointRef = null);
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CommandTerminalState
+{
+    Completed,
+    Denied,
+    Invalid,
+    Failed,
+    Cancelled
+}
 
 public sealed record DecisionScore(string Id, double Score);
 
@@ -52,6 +68,50 @@ public sealed record CapabilityDecision(
     bool ArbitraryProcessExecutionGranted,
     IReadOnlyList<string> Reasons,
     IReadOnlyList<string> NonEffects);
+
+public sealed record CapabilityReceipt(
+    string Schema,
+    CapabilityRequest Request,
+    CapabilityDecision Decision);
+
+public sealed record ProtocolSourceBinding(
+    string Repository,
+    string Frontier,
+    string Path,
+    string BlobSha,
+    string AdapterMode);
+
+public sealed record WorkbenchProgressReceipt(
+    string Schema,
+    ProtocolSourceBinding SourceBinding,
+    string RunId,
+    int RunEpoch,
+    DateTimeOffset ObservedAt,
+    string? CurrentPhase,
+    string? ProgressKind,
+    string? WaitingOn,
+    string? NextObservableEvent,
+    string? CheckpointRef,
+    bool MeaningfulProgress,
+    bool ExtendsLivenessLease,
+    bool HiddenReasoningDisclosed,
+    bool ExternalEffectAuthorityCreated,
+    string ReceiptDigest);
+
+public sealed record WorkbenchHumanLivenessView(
+    string Schema,
+    ProtocolSourceBinding SourceBinding,
+    string RunId,
+    int RunEpoch,
+    string State,
+    DateTimeOffset? LastConfirmedProgressAt,
+    string? CurrentPhase,
+    string? WaitingOn,
+    string? NextObservableEvent,
+    bool TerminalStateCertain,
+    string NextSafeAction,
+    bool HiddenReasoningDisclosed,
+    bool ExternalEffectAuthorityCreated);
 
 public static class CommandCodec
 {
