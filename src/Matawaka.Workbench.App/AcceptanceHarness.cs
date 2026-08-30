@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.14",
-            "0.14.0",
+            "matawaka.workbench-acceptance-receipt/v0.15",
+            "0.15.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.14 retains the accepted v0.7 semantic security boundary and the separated v0.10-v0.13 maintenance gates. v0.14 is the first candidate intended to be reached entirely through the Workbench GUI package-plan, materialization, staged-plan, exact apply/build, separate candidate-launch, Self-test, and checkpoint sequence. Self-test itself does not invoke or retroactively grant any maintenance authority, and passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.15 is a repeatability checkpoint over the accepted v0.14 updater. It intentionally adds no new maintenance authority: the purpose is to prove that package-plan, materialization, staged-plan, exact apply/build, separate candidate-launch, Self-test, and local checkpoint can repeat from an already accepted self-hosted predecessor without an external bootstrap or repair. Self-test itself does not invoke or retroactively grant maintenance authority, and passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)
