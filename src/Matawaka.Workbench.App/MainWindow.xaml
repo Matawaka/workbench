@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.10.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
+        Title="Matawaka Workbench v0.11.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -21,10 +21,11 @@
             <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestButton_Click"/>
             <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointButton_Click"/>
             <Button x:Name="UpdatePlanButton" Content="Пакет обновления" Width="130" Margin="0,0,8,0" Click="UpdatePlanButton_Click"/>
+            <Button x:Name="MaterializeUpdateButton" Content="Материализовать" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="MaterializeUpdateButton_Click"/>
             <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
             <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
             <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <TextBlock Text="v0.10: relevant-source-set binding + local update intake plan; materialization still separate" VerticalAlignment="Center" FontStyle="Italic"/>
+            <TextBlock Text="v0.11: explicit staging materialization gate; build/apply/checkpoint remain separate" VerticalAlignment="Center" FontStyle="Italic"/>
         </StackPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">

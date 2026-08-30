@@ -1,15 +1,21 @@
-# Start here — Workbench v0.9
+# Start here — Workbench v0.11
 
-1. Enable the agent for read-only Self-test.
-2. Click **Self-test**.
-3. Require `Passed=true` in Acceptance.
-4. Click **Принять** only if you want to create the local accepted Workbench checkpoint.
-5. Review the exact changed-file list in the confirmation dialog.
-6. Confirm to create a local commit + `workbench-v0.9-accepted` tag.
+## Acceptance
 
-No remote push/fetch or Matawaka catalog mutation is performed by the checkpoint gate.
+1. Enable the agent for the read-only Self-test.
+2. Click **Self-test** and require `Passed=true`.
+3. Click **Принять** only when you intend to create the local accepted Workbench checkpoint.
+4. Review the exact changed-file list and confirm.
 
+The checkpoint performs no remote push/fetch or Matawaka catalog mutation.
 
-## Workbench v0.10
+## Local update package
 
-Relevant UU-AAP protocol dependencies are now verified as an exact byte-bound source set rather than requiring repository HEAD equality. A new local Update Plan intake surface validates bounded future update packages but creates no materialization/build/checkpoint authority.
+1. Click **Пакет обновления** and select a manifest-based Workbench update ZIP.
+2. Require `READY_FOR_SEPARATE_MATERIALIZATION_AUTHORITY` in **Update Plan**.
+3. A READY plan alone changes no update payload bytes.
+4. Click **Материализовать** only if you want to create a local staging copy.
+5. Review package SHA-256, predecessor, target, file count and byte count, then confirm.
+6. Require `MATERIALIZED_STAGING_ONLY` in the resulting receipt.
+
+The v0.11 materialization gate writes only to ignored Workbench-local staging and artifacts. It does not apply source changes, build, execute installers, commit/tag, access the network, mutate catalog repositories, or grant Agent Execute.
