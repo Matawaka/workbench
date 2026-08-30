@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.21",
-            "0.21.0",
+            "matawaka.workbench-acceptance-receipt/v0.22",
+            "0.22.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.21 retains the proven self-hosted update loop, bounded recovery assessment/plan/execution gates, isolated positive recovery drill, and read-only recovery capability admission. v0.21 adds only an isolated negative-control matrix that runs after acceptance against nested fixtures; Self-test does not invoke that matrix and does not grant recovery, rollback, deletion, build, checkpoint, network, catalog, Agent Execute, general-recovery-claim, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.22 retains the proven self-hosted update loop, bounded recovery assessment/plan/execution gates, positive isolated recovery drill, read-only capability admission, and v0.21 negative-control refusal matrix. v0.22 adds only a read-only byte-bound recovery evidence closure surface that runs after acceptance; Self-test does not invoke closure and does not grant recovery, rollback, deletion, source mutation, build, checkpoint, network, catalog, Agent Execute, general-recovery-claim, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)
