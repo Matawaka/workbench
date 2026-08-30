@@ -333,7 +333,7 @@ public partial class MainWindow : Window
         {
             ProgressReceipt = _lastProgressReceipt,
             HumanView = view,
-            Note = "Workbench v0.6 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+            Note = "Workbench v0.7 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
         });
     }
 
@@ -379,7 +379,7 @@ public partial class MainWindow : Window
     private const string DefaultCommand = """
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v040",
+  "id": "game-companion-propose-v070",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",

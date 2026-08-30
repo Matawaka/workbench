@@ -16,8 +16,32 @@ internal static class Program
 
     public static async Task<int> Main(string[] args)
     {
-        if (args.Length != 1 || !string.Equals(args[0], "--stdio-v0.6", StringComparison.Ordinal))
-            return await FailAsync("semantic host requires --stdio-v0.6");
+        if (args.Length != 1 || !string.Equals(args[0], "--stdio-v0.7", StringComparison.Ordinal))
+            return await FailAsync("semantic host requires --stdio-v0.7");
+
+        SemanticHostSecurityAttestation securityAttestation;
+        try
+        {
+            securityAttestation = WindowsSecurityContextObserver.CaptureCurrentProcess();
+            var attestationEnvelope = new SemanticHostAttestationEnvelope(
+                "matawaka.semantic-host-attestation-envelope/v0.7",
+                true,
+                securityAttestation,
+                null);
+            await Console.Out.WriteLineAsync(JsonSerializer.Serialize(attestationEnvelope, JsonOptions));
+            await Console.Out.FlushAsync();
+        }
+        catch (Exception ex)
+        {
+            var attestationEnvelope = new SemanticHostAttestationEnvelope(
+                "matawaka.semantic-host-attestation-envelope/v0.7",
+                false,
+                null,
+                ex.Message);
+            await Console.Out.WriteLineAsync(JsonSerializer.Serialize(attestationEnvelope, JsonOptions));
+            await Console.Out.FlushAsync();
+            return 3;
+        }
 
         try
         {
@@ -28,7 +52,7 @@ internal static class Program
             var request = JsonSerializer.Deserialize<SemanticHostRequest>(input, JsonOptions)
                 ?? throw new InvalidDataException("semantic host request is empty");
 
-            if (!string.Equals(request.Schema, "matawaka.semantic-host-request/v0.6", StringComparison.Ordinal))
+            if (!string.Equals(request.Schema, "matawaka.semantic-host-request/v0.7", StringComparison.Ordinal))
                 throw new InvalidDataException("unsupported semantic host request schema");
 
             if (!SemanticProviderCatalog.ProviderIds.Contains(request.Provider, StringComparer.OrdinalIgnoreCase))
@@ -50,7 +74,7 @@ internal static class Program
                 computation.Signals);
 
             var response = new SemanticHostResponse(
-                "matawaka.semantic-host-response/v0.6",
+                "matawaka.semantic-host-response/v0.7",
                 true,
                 request.Provider,
                 request.InputDigest,
@@ -90,7 +114,7 @@ internal static class Program
         return new SemanticHostComputation(
             proposal,
             signals,
-            "Deterministic v0.2 provider executed inside the restricted v0.6 semantic host process. The provider logic is offline and receives only the sanitized semantic evidence packet.");
+            "Deterministic v0.2 provider executed inside the restricted v0.7 semantic host process. The provider logic is offline and receives only the sanitized semantic evidence packet.");
     }
 
     private static SemanticHostComputation AnalyzeLocalContractSynthesis(SemanticEvidencePacket packet)
@@ -133,13 +157,13 @@ internal static class Program
         return new SemanticHostComputation(
             proposal,
             signals,
-            "Local contract synthesis executed inside the restricted v0.6 semantic host process. It remains deterministic, categorical and offline; restricted-token, low-integrity, Job Object, and process isolation are not represented as an OS or network sandbox.");
+            "Local contract synthesis executed inside the restricted v0.7 semantic host process. It remains deterministic, categorical and offline; restricted-token, low-integrity, Job Object, runtime-attestation, and process isolation are not represented as an OS or network sandbox.");
     }
 
     private static async Task<int> FailAsync(string message)
     {
         var response = new SemanticHostResponse(
-            "matawaka.semantic-host-response/v0.6",
+            "matawaka.semantic-host-response/v0.7",
             false,
             string.Empty,
             string.Empty,

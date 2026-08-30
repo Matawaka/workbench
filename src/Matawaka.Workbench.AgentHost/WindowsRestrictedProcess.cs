@@ -8,7 +8,7 @@ namespace Matawaka.Workbench.AgentHost;
 
 /// <summary>
 /// Starts the fixed semantic host with a restricted primary token derived from
-/// the current Workbench process token. v0.6 removes maximum privileges and
+/// the current Workbench process token. v0.7 preserves maximum-privilege removal and
 /// lowers the child token integrity level before process creation. The child is
 /// created suspended so the Job Object can be assigned before any provider code
 /// resumes. This is a bounded Windows security-context reduction, not a network,

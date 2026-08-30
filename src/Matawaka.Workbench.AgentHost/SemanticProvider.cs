@@ -53,6 +53,7 @@ public sealed record SemanticProviderSelectionReceipt(
     bool RestrictedToken,
     bool MaximumPrivilegesDisabled,
     bool LowIntegrityLevel,
+    bool RuntimeAttestationRequired,
     bool OsSandbox,
     bool SameUserIdentity,
     bool SameUserSecurityContext,
@@ -89,6 +90,9 @@ public sealed record SemanticProcessBoundaryReceipt(
     string IntegrityLevelSid,
     bool CreatedSuspended,
     bool JobAssignmentBeforeResume,
+    bool RuntimeSecurityAttestationVerified,
+    bool AttestationBeforeSemanticInput,
+    SemanticHostSecurityAttestation RuntimeAttestation,
     bool NetworkIsolationEnforced,
     bool OsSandbox,
     bool SameUserIdentity,
@@ -131,6 +135,12 @@ public sealed record SemanticHostRequest(
     string InputDigest,
     SemanticEvidencePacket Packet);
 
+public sealed record SemanticHostAttestationEnvelope(
+    string Schema,
+    bool Success,
+    SemanticHostSecurityAttestation? Attestation,
+    string? Error);
+
 public sealed record SemanticHostResponse(
     string Schema,
     bool Success,
@@ -150,7 +160,7 @@ internal sealed record SemanticHostIntegrityManifest(
 
 public static class SemanticProviderCatalog
 {
-    public const string RegistryVersion = "workbench-local-semantic-provider-registry/v0.6";
+    public const string RegistryVersion = "workbench-local-semantic-provider-registry/v0.7";
     public const string LocalContractSynthesisId = "local-contract-synthesis-v0.3";
     public const string DeterministicEvidenceId = "deterministic-evidence-semantic-v0.2";
     public const string DefaultProvider = LocalContractSynthesisId;
@@ -176,13 +186,13 @@ public interface ISemanticProviderClient
 }
 
 /// <summary>
-/// v0.6 invokes only one fixed built-in semantic host executable. The provider
+/// v0.7 invokes only one fixed built-in semantic host executable. The provider
 /// id is data, not an executable path. The child receives one sanitized JSON
 /// packet on stdin and returns one JSON receipt on stdout. The fixed binary is
 /// launched with a restricted primary token whose maximum privileges are removed
 /// and integrity level is lowered before process creation. The process is created
 /// suspended, assigned to the existing Job Object boundary, then resumed before
-/// semantic stdin is written. This is stronger than v0.5 but is explicitly not an
+/// semantic stdin is written. The child attests its effective token and Job membership before semantic input. This remains explicitly not an
 /// AppContainer, filesystem ACL sandbox, VM, or network sandbox.
 /// </summary>
 public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
@@ -225,14 +235,15 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
                 $"Unknown semanticProvider '{requested}'. Available: {string.Join(", ", ProviderIds)}");
 
         return new SemanticProviderSelectionReceipt(
-            "matawaka.semantic-provider-selection-receipt/v0.6",
+            "matawaka.semantic-provider-selection-receipt/v0.7",
             RegistryVersion,
             requested,
             selected,
             true,
             true,
             false,
-            "fixed semantic host + verified binary + restricted low-integrity token + Windows Job Object containment; same user identity; no network sandbox",
+            "fixed semantic host + verified binary + restricted low-integrity token + Job Object + child runtime attestation before semantic input; same user identity; no network sandbox",
+            true,
             true,
             true,
             true,
@@ -260,7 +271,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
         var observedUuAap = SemanticProviderSupport.RequireExactSourceFrontier(packet);
         var inputDigest = SemanticProviderSupport.ComputeInputDigest(packet);
         var request = new SemanticHostRequest(
-            "matawaka.semantic-host-request/v0.6",
+            "matawaka.semantic-host-request/v0.7",
             selection.SelectedProvider,
             inputDigest,
             packet);
@@ -303,23 +314,67 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
             var restrictedEnvironment = BuildEnvironmentAllowlist(runtimeRoot);
             using var restrictedProcess = WindowsRestrictedProcess.Start(
                 hostPath,
-                "--stdio-v0.6",
+                "--stdio-v0.7",
                 runtimeRoot,
                 restrictedEnvironment);
             var process = restrictedProcess.ChildProcess;
 
-            var stdoutTask = restrictedProcess.StandardOutput.ReadToEndAsync();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ProviderTimeoutMilliseconds);
             var stderrTask = restrictedProcess.StandardError.ReadToEndAsync();
 
-            // Semantic data is written only after fixed-binary verification,
-            // restricted-token creation, low-integrity lowering, suspended process
-            // creation, Job Object assignment, and primary-thread resume.
+            string? attestationLine;
+            try
+            {
+                attestationLine = await restrictedProcess.StandardOutput.ReadLineAsync().WaitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                TryKill(process);
+                throw new TimeoutException($"Semantic host runtime attestation exceeded {ProviderTimeoutMilliseconds} ms timeout.");
+            }
+
+            if (string.IsNullOrWhiteSpace(attestationLine))
+                throw new InvalidDataException("Semantic host returned no pre-input runtime attestation.");
+            if (Encoding.UTF8.GetByteCount(attestationLine) > 64 * 1024)
+                throw new InvalidDataException("Semantic host runtime attestation exceeds 64 KiB.");
+
+            SemanticHostAttestationEnvelope attestationEnvelope;
+            try
+            {
+                attestationEnvelope = JsonSerializer.Deserialize<SemanticHostAttestationEnvelope>(attestationLine, JsonOptions)
+                    ?? throw new InvalidDataException("Semantic host runtime attestation was empty JSON.");
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidDataException("Semantic host returned invalid runtime-attestation JSON.", ex);
+            }
+
+            if (!string.Equals(attestationEnvelope.Schema, "matawaka.semantic-host-attestation-envelope/v0.7", StringComparison.Ordinal))
+                throw new InvalidDataException("Semantic host runtime-attestation envelope schema mismatch.");
+            if (!attestationEnvelope.Success || attestationEnvelope.Attestation is null)
+                throw new InvalidDataException($"Semantic host runtime attestation failed: {attestationEnvelope.Error ?? "unknown error"}");
+
+            var runtimeAttestation = VerifyRuntimeAttestation(attestationEnvelope.Attestation);
+            progress?.Report(new WorkbenchProgress(
+                packet.CommandId,
+                "semantic.security.attested",
+                94,
+                $"runtime token attested before semantic input; integrity={runtimeAttestation.IntegrityLevelSid}; inJob={runtimeAttestation.ProcessInJob}",
+                DateTimeOffset.Now,
+                "SEMANTIC_ANALYSIS",
+                "RUNTIME_SECURITY_ATTESTED",
+                "NONE",
+                "SEMANTIC_INPUT",
+                $"semantic-attestation:{packet.CommandId}:{selection.SelectedProvider}"));
+
+            // Only after the child has attested its effective restricted/low-integrity
+            // token and Job membership do we transmit the sanitized semantic packet.
             await restrictedProcess.StandardInput.WriteAsync(requestJson);
             await restrictedProcess.StandardInput.FlushAsync();
             restrictedProcess.StandardInput.Close();
 
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(ProviderTimeoutMilliseconds);
+            var stdoutTask = restrictedProcess.StandardOutput.ReadToEndAsync();
 
             try
             {
@@ -364,7 +419,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
                 throw new InvalidDataException(
                     $"Semantic host denied/failed provider execution: {response.Error ?? CompactError(stderr)}");
 
-            if (!string.Equals(response.Schema, "matawaka.semantic-host-response/v0.6", StringComparison.Ordinal) ||
+            if (!string.Equals(response.Schema, "matawaka.semantic-host-response/v0.7", StringComparison.Ordinal) ||
                 !string.Equals(response.Provider, selection.SelectedProvider, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(response.InputDigest, inputDigest, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Semantic host response identity/input digest mismatch.");
@@ -379,7 +434,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
                 throw new InvalidDataException("Semantic host output digest failed parent-process verification.");
 
                 var analysis = new SemanticAnalysisReceipt(
-                    "matawaka.semantic-analysis-receipt/v0.6",
+                    "matawaka.semantic-analysis-receipt/v0.7",
                     selection.SelectedProvider,
                     inputDigest,
                     verifiedOutputDigest,
@@ -389,7 +444,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
                     SemanticProviderSupport.CommonInvariants,
                     SemanticProviderSupport.ProviderNonEffects);
 
-                var processBoundary = BuildProcessBoundary(hostDigest);
+                var processBoundary = BuildProcessBoundary(hostDigest, runtimeAttestation);
                 var boundary = SemanticProviderSupport.BuildBoundary(
                     selection.SelectedProvider,
                     packet,
@@ -422,6 +477,28 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
         }
     }
 
+    private static SemanticHostSecurityAttestation VerifyRuntimeAttestation(SemanticHostSecurityAttestation attestation)
+    {
+        if (!string.Equals(attestation.Schema, "matawaka.semantic-host-security-attestation/v0.7", StringComparison.Ordinal))
+            throw new InvalidDataException("Semantic host runtime-attestation schema mismatch.");
+        if (!attestation.TokenHasRestrictions)
+            throw new InvalidDataException("Semantic host token does not report TokenHasRestrictions.");
+        if (!string.Equals(attestation.IntegrityLevelSid, WindowsRestrictedProcess.LowIntegritySid, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Semantic host integrity level mismatch: {attestation.IntegrityLevelSid}.");
+        if (!attestation.ProcessInJob)
+            throw new InvalidDataException("Semantic host does not observe itself inside a Job Object.");
+        if (attestation.IsAppContainer)
+            throw new InvalidDataException("v0.7 does not authorize or claim AppContainer execution.");
+        if (!attestation.NoEnabledPrivilegesBeyondChangeNotify)
+            throw new InvalidDataException($"Semantic host reports unexpected enabled privileges: {string.Join(", ", attestation.EnabledPrivileges)}");
+
+        var parentUserSid = WindowsSecurityContextObserver.GetCurrentUserSid();
+        if (!string.Equals(attestation.UserSid, parentUserSid, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Semantic host user SID differs from Workbench user identity.");
+
+        return attestation;
+    }
+
     private static string VerifyHostIntegrity(string hostPath)
     {
         var manifestPath = Path.Combine(Path.GetDirectoryName(hostPath)!, IntegrityManifestFile);
@@ -432,7 +509,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
             File.ReadAllText(manifestPath),
             JsonOptions) ?? throw new InvalidDataException("Semantic host integrity manifest is empty.");
 
-        if (!string.Equals(manifest.Schema, "matawaka.semantic-host-integrity-manifest/v0.6", StringComparison.Ordinal) ||
+        if (!string.Equals(manifest.Schema, "matawaka.semantic-host-integrity-manifest/v0.7", StringComparison.Ordinal) ||
             !string.Equals(manifest.Executable, Path.GetFileName(hostPath), StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(manifest.UuAapFrontier, PclCompatibleProgress.UuAapFrontier, StringComparison.OrdinalIgnoreCase))
         {
@@ -447,9 +524,9 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
         return digest;
     }
 
-    private static SemanticProcessBoundaryReceipt BuildProcessBoundary(string hostDigest)
+    private static SemanticProcessBoundaryReceipt BuildProcessBoundary(string hostDigest, SemanticHostSecurityAttestation runtimeAttestation)
         => new(
-            "matawaka.semantic-process-boundary-receipt/v0.6",
+            "matawaka.semantic-process-boundary-receipt/v0.7",
             "Matawaka.Workbench.SemanticHost.exe",
             hostDigest,
             IntegrityManifestFile,
@@ -476,6 +553,9 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
             WindowsRestrictedProcess.LowIntegritySid,
             true,
             true,
+            true,
+            true,
+            runtimeAttestation,
             false,
             false,
             true,
@@ -550,13 +630,13 @@ public static class SemanticProviderSupport
         "no file handle included in semantic IPC packet",
         "no network endpoint/client/credential supplied to semantic provider",
         "built-in semantic providers perform no network model call",
-        "OS network isolation is not claimed or enforced in v0.6",
+        "OS network isolation is not claimed or enforced in v0.7",
         "no arbitrary executable/path accepted from command JSON",
         "fixed semantic host executable only",
         "semantic host SHA-256 verified against build manifest before launch input",
         "child environment reduced to an explicit allowlist",
         "Windows Job Object active-process/memory/kill-on-close limits applied before semantic input",
-        "restricted primary token is created before semantic host launch; maximum privileges are disabled and integrity is lowered to low",
+        "restricted primary token is created before semantic host launch; maximum privileges are disabled and integrity is lowered to low; child runtime token/Job state is attested and parent-verified before semantic input",
         "no materialization authority created",
         "no execution authority created",
         "no ActionPermit created",
@@ -565,7 +645,7 @@ public static class SemanticProviderSupport
         "no Stable Core or interface-registry promotion",
         "no canonical UU-AAP conformance claim from this adapter",
         "no hidden reasoning disclosure",
-        "restricted token + low integrity + Job Object containment are not represented as an OS sandbox"
+        "restricted token + low integrity + Job Object containment + runtime attestation are not represented as an OS sandbox"
     ];
 
     public static string ComputeInputDigest(SemanticEvidencePacket packet)
@@ -674,7 +754,7 @@ public static class SemanticProviderSupport
         };
 
         return new SemanticProviderBoundaryReceipt(
-            "matawaka.semantic-provider-boundary-receipt/v0.6",
+            "matawaka.semantic-provider-boundary-receipt/v0.7",
             providerId,
             SemanticProviderCatalog.RegistryVersion,
             packet.Schema,
@@ -686,7 +766,7 @@ public static class SemanticProviderSupport
             bindings,
             true,
             false,
-            "fixed semantic host + verified binary + restricted low-integrity token + Windows Job Object containment; same user identity; no network sandbox",
+            "fixed semantic host + verified binary + restricted low-integrity token + Job Object + child runtime attestation before semantic input; same user identity; no network sandbox",
             false,
             false,
             false,
@@ -709,6 +789,8 @@ public static class SemanticProviderSupport
         "Process Isolation != OS Sandbox",
         "Fixed Process Invocation != Arbitrary Process Authority",
         "Restricted Token != OS Sandbox",
+        "Launch Configuration != Runtime Security Observation",
+        "Runtime Attestation != OS Sandbox",
         "Low Integrity != Network Isolation",
         "Same User Identity != Same Security Context",
         "Resource Limit != Authority Grant",

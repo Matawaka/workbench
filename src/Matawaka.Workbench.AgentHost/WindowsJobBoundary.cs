@@ -8,7 +8,7 @@ namespace Matawaka.Workbench.AgentHost;
 /// <summary>
 /// Workbench-local Windows Job Object containment for the fixed semantic host.
 /// This bounds the already-fixed child process with kill-on-close, an active
-/// process limit and a per-process committed-memory limit. v0.6 composes this
+/// process limit and a per-process committed-memory limit. v0.7 composes this
 /// with a separately-created restricted Low-integrity token. The Job itself does
 /// not create filesystem ACL, AppContainer, VM, or network sandbox semantics.
 /// </summary>
