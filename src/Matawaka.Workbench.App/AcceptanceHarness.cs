@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.24",
-            "0.24.0",
+            "matawaka.workbench-acceptance-receipt/v0.25",
+            "0.25.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.24 retains the proven self-hosted update loop and the bounded recovery evidence chain through v0.23. v0.24 adds only a post-acceptance local relocation drill over an already-created v0.23 replay capsule: exact capsule JSON bytes may be copied to a separate Workbench-local relocation root and replayed there without dereferencing the source replay capsule, retained source evidence, or historical fixture paths. Self-test does not invoke relocation and does not grant recovery, rollback, deletion, source mutation, build, checkpoint, network, catalog, Agent Execute, cross-machine portability, general-recovery-claim, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.25 retains the proven self-hosted update loop and bounded recovery evidence chain through v0.24. v0.25 adds only post-acceptance local evidence transport export and verify-only import boundaries over an already-proven relocated replay capsule. Self-test does not export or import evidence and does not grant recovery, rollback, deletion, source mutation, build, checkpoint, network, catalog, Agent Execute, producer-authentication, cross-machine portability, general-recovery-claim, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)
