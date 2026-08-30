@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.18",
-            "0.18.0",
+            "matawaka.workbench-acceptance-receipt/v0.19",
+            "0.19.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.18 retains the proven self-hosted update loop, observation-only recovery assessment, and read-only recovery planning gate, and adds a separately confirmed bounded recovery execution capability. Recovery execution is eligible only for a fresh BOUNDED_DIRTY_UPDATE_CANDIDATE plan and must byte-bind every dirty path to one exact staged apply-plan receipt before restoring tracked bytes from the current accepted HEAD or removing exact untracked candidate additions. Self-test does not invoke or grant recovery execution authority, build/checkpoint/network/catalog/Agent Execute remain separate or forbidden, and passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.19 retains the proven self-hosted update loop and bounded recovery assessment/plan/execution gates, and adds an explicit isolated recovery drill capability. The drill is not invoked by Self-test: after v0.19 is accepted, a separate human-confirmed action may create a nested disposable Git fixture under .workbench/recovery-drills, synthesize one exact bounded interrupted candidate, run the real recovery assessment/plan/execution services against that fixture, and prove convergence back to the fixture accepted HEAD without mutating the main Workbench source tree. Self-test does not grant drill or recovery authority, build/checkpoint/network/catalog/Agent Execute remain separate or forbidden, and passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)
