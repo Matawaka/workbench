@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly RecoveryCapabilityAdmissionService _recoveryCapabilityAdmissionService = new();
     private readonly RecoveryNegativeControlMatrixService _recoveryNegativeControlMatrixService = new();
     private readonly RecoveryEvidenceClosureService _recoveryEvidenceClosureService = new();
+    private readonly RecoveryEvidenceReplayService _recoveryEvidenceReplayService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -107,7 +108,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.22 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.23 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -117,7 +118,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.22-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.23-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -162,7 +163,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.22-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.23-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -190,7 +191,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.22", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.23", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -676,7 +677,7 @@ public partial class MainWindow : Window
             var receipt = await _recoveryAssessmentService.AssessAsync(WorkspaceRootBox.Text, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-assessments");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.22-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.23-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -733,7 +734,7 @@ public partial class MainWindow : Window
 
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-plans");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.22-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"recovery-plan-v0.23-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -800,7 +801,7 @@ public partial class MainWindow : Window
             preview.AppendLine("Разрешается только вернуть exact tracked candidate bytes к текущему accepted HEAD и удалить exact byte-reverified untracked candidate additions. Build/checkpoint/network/catalog/Agent Execute не разрешаются.");
             preview.AppendLine("После выполнения потребуется новый Recovery check.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Recovery execute v0.22", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Recovery execute v0.23", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
 
             SaveSettings();
@@ -999,6 +1000,49 @@ public partial class MainWindow : Window
         }
     }
 
+
+    private async void RecoveryEvidenceReplayButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"recovery-evidence-replay-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: portable replay of byte-bound recovery evidence";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.replay.started     closure=v0.22; fixturePathDereference=false; authorityExpansion=false");
+
+            var result = await _recoveryEvidenceReplayService.ReplayAsync(WorkspaceRootBox.Text, _cts!.Token);
+            RecoveryTextBox.Text = CommandCodec.Serialize(new
+            {
+                Replay = result.Receipt,
+                ReplayArtifactPath = result.ArtifactPath
+            });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = result.Receipt.Replayed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = result.Receipt.Replayed
+                ? $"COMPLETED: recovery evidence replay {result.Receipt.Status}; liveAuthority=false"
+                : $"FAILED: recovery evidence replay {result.Receipt.Status}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.replay.{(result.Receipt.Replayed ? "completed" : "failed"),-9} status={result.Receipt.Status}; digestReproduced={result.Receipt.ClosureDigestReproduced}; fixturePathDereference=false");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
     private void SaveWorkspaceButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -1061,6 +1105,7 @@ public partial class MainWindow : Window
         RecoveryAdmissionButton.IsEnabled = false;
         RecoveryNegativeControlsButton.IsEnabled = false;
         RecoveryEvidenceClosureButton.IsEnabled = false;
+        RecoveryEvidenceReplayButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -1098,6 +1143,7 @@ public partial class MainWindow : Window
         RecoveryAdmissionButton.IsEnabled = true;
         RecoveryNegativeControlsButton.IsEnabled = true;
         RecoveryEvidenceClosureButton.IsEnabled = true;
+        RecoveryEvidenceReplayButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 
