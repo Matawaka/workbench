@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private readonly RecoveryTransportAdversarialControlMatrixService _recoveryTransportAdversarialControlMatrixService = new();
     private readonly RecoveryTransportAdversarialEvidenceClosureService _recoveryTransportAdversarialEvidenceClosureService = new();
     private readonly ProducerKeyProvenanceBoundaryService _producerKeyProvenanceBoundaryService = new();
+    private readonly ProducerKeyRotationContinuityBoundaryService _producerKeyRotationContinuityBoundaryService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -114,7 +115,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.29 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.30 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -124,7 +125,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.29-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.30-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -169,7 +170,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.29-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.30-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -197,7 +198,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.29", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.30", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -1430,6 +1431,63 @@ public partial class MainWindow : Window
             EndRun();
         }
     }
+
+    private async void ProducerKeyRotationContinuityBoundaryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"key-continuity-v0.30-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            var preview = new StringBuilder();
+            preview.AppendLine("Verify the v0.30 fixture cryptographic predecessor-to-successor key continuity boundary?");
+            preview.AppendLine();
+            preview.AppendLine("The predecessor public key verifies one exact successor-binding signature.");
+            preview.AppendLine("The successor public key independently verifies one exact possession signature.");
+            preview.AppendLine("No private key is present or requested. No signing, key activation, or revocation occurs.");
+            preview.AppendLine("A PASS proves neither real-world identity/common controller nor trust, trusted time ordering, revocation, delegation/action authority, portability, or Stable Core status.");
+
+            if (MessageBox.Show(this, preview.ToString(), "Key continuity v0.30", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: fixture key rotation continuity boundary";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  key.continuity.started       v0.30 fixture; privateKey=false; signing=false");
+
+            var result = await _producerKeyRotationContinuityBoundaryService.VerifyAsync(
+                WorkspaceRootBox.Text,
+                true,
+                _cts!.Token);
+
+            RecoveryTextBox.Text = CommandCodec.Serialize(new
+            {
+                KeyContinuity = result.Receipt,
+                KeyContinuityArtifactPath = result.ArtifactPath
+            });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = result.Receipt.Passed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = result.Receipt.Passed
+                ? $"COMPLETED: fixture key continuity VERIFIED; identity=false; authority=false; {result.ArtifactPath}"
+                : $"FAILED: fixture key continuity verification failed; {result.ArtifactPath}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  key.continuity.{(result.Receipt.Passed ? "completed" : "failed"),-10} predecessorSig={result.Receipt.PredecessorRotationSignatureVerified}; successorSig={result.Receipt.SuccessorPossessionSignatureVerified}; identity={result.Receipt.ProducerIdentityProven}; authorityExpansion={result.Receipt.AuthorityExpansionDetected}");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
     private void SaveWorkspaceButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -1498,6 +1556,7 @@ public partial class MainWindow : Window
         RecoveryTransportAdversarialControlsButton.IsEnabled = false;
         RecoveryTransportAdversarialEvidenceClosureButton.IsEnabled = false;
         ProducerKeyProvenanceBoundaryButton.IsEnabled = false;
+        ProducerKeyRotationContinuityBoundaryButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -1541,6 +1600,7 @@ public partial class MainWindow : Window
         RecoveryTransportAdversarialControlsButton.IsEnabled = true;
         RecoveryTransportAdversarialEvidenceClosureButton.IsEnabled = true;
         ProducerKeyProvenanceBoundaryButton.IsEnabled = true;
+        ProducerKeyRotationContinuityBoundaryButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 
