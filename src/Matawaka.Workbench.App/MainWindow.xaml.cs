@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private readonly LocalUpdateMaterializationService _updateMaterializationService;
     private readonly StagedUpdateApplyPlanService _stagedApplyPlanService = new();
     private readonly BoundedUpdateApplyBuildService _applyBuildService;
+    private readonly MaintenanceRecoveryAssessmentService _recoveryAssessmentService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -94,7 +95,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.15 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.16 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -104,7 +105,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.15-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.16-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -149,7 +150,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.15-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.16-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -177,7 +178,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.15", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.16", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -640,6 +641,51 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void RecoveryCheckButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"recovery-assessment-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: read-only maintenance recovery assessment";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.assessment.started  observation-only");
+
+            var receipt = await _recoveryAssessmentService.AssessAsync(WorkspaceRootBox.Text, _cts!.Token);
+            var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "recovery-assessments");
+            Directory.CreateDirectory(artifactDir);
+            var artifactPath = Path.Combine(artifactDir, $"recovery-assessment-v0.16-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            await File.WriteAllTextAsync(
+                artifactPath,
+                CommandCodec.Serialize(receipt),
+                new UTF8Encoding(false),
+                _cts.Token);
+
+            RecoveryTextBox.Text = CommandCodec.Serialize(new { Receipt = receipt, ArtifactPath = artifactPath });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = CommandTerminalState.Completed;
+            StatusText.Text = $"COMPLETED: recovery assessment {receipt.Classification}; actionAuthorized=false";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  recovery.assessment.completed classification={receipt.Classification}; actionAuthorized=false");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
     private void SaveWorkspaceButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -696,6 +742,7 @@ public partial class MainWindow : Window
         StagedApplyPlanButton.IsEnabled = false;
         ApplyBuildUpdateButton.IsEnabled = false;
         LaunchCandidateButton.IsEnabled = false;
+        RecoveryCheckButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -708,6 +755,7 @@ public partial class MainWindow : Window
         AgentTextBox.Clear();
         AcceptanceTextBox.Clear();
         UpdatePlanTextBox.Clear();
+        RecoveryTextBox.Clear();
         _lastProgressReceipt = null;
         _currentTerminalState = null;
         _runEpoch++;
@@ -723,6 +771,7 @@ public partial class MainWindow : Window
         StagedApplyPlanButton.IsEnabled = _lastMaterializationReceipt is not null;
         ApplyBuildUpdateButton.IsEnabled = _lastStagedApplyPlanReceipt is not null && string.Equals(_lastStagedApplyPlanReceipt.Status, "READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY", StringComparison.Ordinal) && _lastApplyBuildReceipt is null;
         LaunchCandidateButton.IsEnabled = _lastApplyBuildReceipt is not null;
+        RecoveryCheckButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 

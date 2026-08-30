@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.15.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
+        Title="Matawaka Workbench v0.16.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -25,10 +25,11 @@
             <Button x:Name="StagedApplyPlanButton" Content="План применения" Width="125" Margin="0,0,8,0" IsEnabled="False" Click="StagedApplyPlanButton_Click"/>
             <Button x:Name="ApplyBuildUpdateButton" Content="Применить + собрать" Width="150" Margin="0,0,8,0" IsEnabled="False" Click="ApplyBuildUpdateButton_Click"/>
             <Button x:Name="LaunchCandidateButton" Content="Запустить candidate" Width="145" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateButton_Click"/>
+            <Button x:Name="RecoveryCheckButton" Content="Recovery check" Width="120" Margin="0,0,8,0" Click="RecoveryCheckButton_Click"/>
             <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
             <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
             <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <TextBlock Text="v0.15: self-hosted GUI update repeatability proof; no new authority" VerticalAlignment="Center" FontStyle="Italic"/>
+            <TextBlock Text="v0.16: recovery assessment observes maintenance state; no rollback authority" VerticalAlignment="Center" FontStyle="Italic"/>
         </WrapPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
@@ -111,6 +112,11 @@
             </TabItem>
             <TabItem x:Name="UpdatePlanTab" Header="Update Plan">
                 <TextBox x:Name="UpdatePlanTextBox" IsReadOnly="True" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" TextWrapping="NoWrap"/>
+            </TabItem>
+            <TabItem x:Name="RecoveryTab" Header="Recovery">
+                <TextBox x:Name="RecoveryTextBox" IsReadOnly="True" AcceptsReturn="True"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          FontFamily="Consolas" TextWrapping="NoWrap"/>
             </TabItem>
