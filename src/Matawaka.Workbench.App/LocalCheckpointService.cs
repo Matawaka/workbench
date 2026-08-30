@@ -71,10 +71,10 @@ public sealed record LocalCheckpointReceipt(
 /// </summary>
 public sealed class LocalCheckpointService
 {
-    public const string Version = "0.23.0";
-    public const string ExpectedPredecessorTag = "workbench-v0.22-accepted";
-    public const string TargetTag = "workbench-v0.23-accepted";
-    public const string CommitMessage = "Checkpoint Workbench v0.23 accepted recovery evidence replay gate";
+    public const string Version = "0.24.0";
+    public const string ExpectedPredecessorTag = "workbench-v0.23-accepted";
+    public const string TargetTag = "workbench-v0.24-accepted";
+    public const string CommitMessage = "Checkpoint Workbench v0.24 accepted relocatable recovery replay drill";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -164,7 +164,7 @@ public sealed class LocalCheckpointService
 
             await RunGitAsync(repositoryRoot, cancellationToken,
                 "tag", "-a", candidate.TargetTag,
-                "-m", "Accepted Workbench v0.23: the closed bounded recovery evidence envelope can be replayed from exact capsule-local receipt bytes without turning historical evidence into live recovery or Stable Core authority");
+                "-m", "Accepted Workbench v0.24: an accepted v0.23 replay capsule can be copied to a separate local root and replayed from exact relocated bytes without turning portable evidence into live recovery or Stable Core authority");
             tagCreated = true;
 
             var cleanStatus = (await RunGitAsync(repositoryRoot, cancellationToken, "status", "--porcelain=v1")).Stdout;
@@ -172,7 +172,7 @@ public sealed class LocalCheckpointService
                 throw new InvalidDataException("Workbench working tree is not clean after checkpoint commit.");
 
             var authority = new LocalCheckpointAuthorityReceipt(
-                "matawaka.workbench-local-checkpoint-authority-receipt/v0.23",
+                "matawaka.workbench-local-checkpoint-authority-receipt/v0.24",
                 "human-operator-at-workbench-ui",
                 "git.local-checkpoint.accept",
                 repositoryRoot,
@@ -183,7 +183,7 @@ public sealed class LocalCheckpointService
                 false,
                 false,
                 false,
-                new[] { "git add -A -- .", "git commit -m <fixed-v0.23-message>", "git tag -a <fixed-v0.23-tag>" },
+                new[] { "git add -A -- .", "git commit -m <fixed-v0.24-message>", "git tag -a <fixed-v0.24-tag>" },
                 new[]
                 {
                     "no catalog repository mutation",
@@ -198,7 +198,7 @@ public sealed class LocalCheckpointService
                 });
 
             return new LocalCheckpointReceipt(
-                "matawaka.workbench-local-checkpoint-receipt/v0.23",
+                "matawaka.workbench-local-checkpoint-receipt/v0.24",
                 Version,
                 DateTimeOffset.Now,
                 candidate.PreviousHead,
@@ -237,7 +237,7 @@ public sealed class LocalCheckpointService
     {
         var directory = Path.Combine(ResolveRepositoryRoot(workspaceRoot), "artifacts", "acceptance");
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"checkpoint-v0.23-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+        var path = Path.Combine(directory, $"checkpoint-v0.24-{DateTime.Now:yyyyMMdd-HHmmss}.json");
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(receipt, JsonOptions), new UTF8Encoding(false), cancellationToken);
         return path;
     }
@@ -284,18 +284,18 @@ public sealed class LocalCheckpointService
     {
         var checkpointDir = Path.Combine(repositoryRoot, "artifacts", "checkpoints");
         var manifestPath = Directory.Exists(checkpointDir)
-            ? Directory.GetFiles(checkpointDir, "v0.23.0-source-manifest*.json", SearchOption.TopDirectoryOnly)
+            ? Directory.GetFiles(checkpointDir, "v0.24.0-source-manifest*.json", SearchOption.TopDirectoryOnly)
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault()
             : null;
         if (string.IsNullOrWhiteSpace(manifestPath))
-            throw new InvalidDataException("v0.23 build source manifest is missing. Refusing to checkpoint source that is not byte-bound to the built candidate.");
+            throw new InvalidDataException("v0.24 build source manifest is missing. Refusing to checkpoint source that is not byte-bound to the built candidate.");
 
         var manifest = JsonSerializer.Deserialize<BuildSourceManifest>(File.ReadAllText(manifestPath, Encoding.UTF8), JsonOptions)
-            ?? throw new InvalidDataException("v0.23 build source manifest could not be parsed.");
-        if (!string.Equals(manifest.Schema, "matawaka.workbench-build-source-manifest/v0.23", StringComparison.Ordinal) ||
+            ?? throw new InvalidDataException("v0.24 build source manifest could not be parsed.");
+        if (!string.Equals(manifest.Schema, "matawaka.workbench-build-source-manifest/v0.24", StringComparison.Ordinal) ||
             !string.Equals(manifest.Version, Version, StringComparison.Ordinal))
-            throw new InvalidDataException("Unexpected v0.23 build source manifest schema/version.");
+            throw new InvalidDataException("Unexpected v0.24 build source manifest schema/version.");
         if (!string.Equals(manifest.PredecessorGitSha, predecessorHead, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Build source manifest predecessor does not match current accepted HEAD.");
 

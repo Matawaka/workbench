@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.23",
-            "0.23.0",
+            "matawaka.workbench-acceptance-receipt/v0.24",
+            "0.24.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.23 retains the proven self-hosted update loop and the bounded recovery evidence chain through v0.22. v0.23 adds only a post-acceptance local evidence portability/replay surface: exact retained closure/evidence bytes may be copied into a replay capsule and replayed without dereferencing historical fixture paths. Self-test does not invoke replay and does not grant recovery, rollback, deletion, source mutation, build, checkpoint, network, catalog, Agent Execute, general-recovery-claim, cross-machine-portability, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.24 retains the proven self-hosted update loop and the bounded recovery evidence chain through v0.23. v0.24 adds only a post-acceptance local relocation drill over an already-created v0.23 replay capsule: exact capsule JSON bytes may be copied to a separate Workbench-local relocation root and replayed there without dereferencing the source replay capsule, retained source evidence, or historical fixture paths. Self-test does not invoke relocation and does not grant recovery, rollback, deletion, source mutation, build, checkpoint, network, catalog, Agent Execute, cross-machine portability, general-recovery-claim, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)
