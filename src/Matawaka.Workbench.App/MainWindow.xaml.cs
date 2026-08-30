@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private readonly RecoveryEvidenceTransportIndependenceDrillService _recoveryTransportIndependenceDrillService = new();
     private readonly RecoveryTransportAdversarialControlMatrixService _recoveryTransportAdversarialControlMatrixService = new();
     private readonly RecoveryTransportAdversarialEvidenceClosureService _recoveryTransportAdversarialEvidenceClosureService = new();
+    private readonly ProducerKeyProvenanceBoundaryService _producerKeyProvenanceBoundaryService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -113,7 +114,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.28 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.29 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -123,7 +124,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.28-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.29-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -168,7 +169,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.28-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.29-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -196,7 +197,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.28", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.29", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -1374,6 +1375,61 @@ public partial class MainWindow : Window
             EndRun();
         }
     }
+    private async void ProducerKeyProvenanceBoundaryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"producer-key-provenance-v0.29-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            var preview = new StringBuilder();
+            preview.AppendLine("Verify the v0.29 detached-signature key-possession fixture bound to the exact accepted v0.28 closure?");
+            preview.AppendLine();
+            preview.AppendLine("The action imports public keys only and performs signature verification plus three in-memory negative controls.");
+            preview.AppendLine("No private key is present or requested. No signing occurs.");
+            preview.AppendLine("A PASS proves neither real-world producer identity nor a trust anchor, certificate chain, timestamp authority, portability, Agent Execute, or Stable Core authority.");
+
+            if (MessageBox.Show(this, preview.ToString(), "Key provenance v0.29", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: detached key-possession provenance boundary";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  key.provenance.started       v0.29 fixture; privateKey=false; signing=false");
+
+            var result = await _producerKeyProvenanceBoundaryService.VerifyAsync(
+                WorkspaceRootBox.Text,
+                true,
+                _cts!.Token);
+
+            RecoveryTextBox.Text = CommandCodec.Serialize(new
+            {
+                Provenance = result.Receipt,
+                ProvenanceArtifactPath = result.ArtifactPath
+            });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = result.Receipt.Passed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = result.Receipt.Passed
+                ? $"COMPLETED: key-possession fixture VERIFIED; identityProven=false; {result.ArtifactPath}"
+                : $"FAILED: key-possession fixture verification failed; {result.ArtifactPath}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  key.provenance.{(result.Receipt.Passed ? "completed" : "failed"),-10} signature={result.Receipt.DetachedSignatureVerified}; keyPossession={result.Receipt.KeyPossessionFixtureDemonstrated}; identity={result.Receipt.ProducerIdentityProven}; authorityExpansion={result.Receipt.AuthorityExpansionDetected}");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
     private void SaveWorkspaceButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -1438,6 +1494,10 @@ public partial class MainWindow : Window
         RecoveryEvidenceClosureButton.IsEnabled = false;
         RecoveryEvidenceReplayButton.IsEnabled = false;
         RecoveryEvidenceRelocationButton.IsEnabled = false;
+        RecoveryTransportIndependenceButton.IsEnabled = false;
+        RecoveryTransportAdversarialControlsButton.IsEnabled = false;
+        RecoveryTransportAdversarialEvidenceClosureButton.IsEnabled = false;
+        ProducerKeyProvenanceBoundaryButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -1477,6 +1537,10 @@ public partial class MainWindow : Window
         RecoveryEvidenceClosureButton.IsEnabled = true;
         RecoveryEvidenceReplayButton.IsEnabled = true;
         RecoveryEvidenceRelocationButton.IsEnabled = true;
+        RecoveryTransportIndependenceButton.IsEnabled = true;
+        RecoveryTransportAdversarialControlsButton.IsEnabled = true;
+        RecoveryTransportAdversarialEvidenceClosureButton.IsEnabled = true;
+        ProducerKeyProvenanceBoundaryButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 
