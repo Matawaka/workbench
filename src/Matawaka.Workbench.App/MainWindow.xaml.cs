@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly LocalCheckpointService _checkpointService = new();
     private readonly LocalUpdateIntakeService _updateIntakeService = new();
     private readonly LocalUpdateMaterializationService _updateMaterializationService;
+    private readonly StagedUpdateApplyPlanService _stagedApplyPlanService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -23,6 +24,8 @@ public partial class MainWindow : Window
     private string? _lastUpdatePlanArtifactPath;
     private string? _lastUpdatePackagePath;
     private bool _lastUpdatePlanConsumed;
+    private WorkbenchUpdateMaterializationReceipt? _lastMaterializationReceipt;
+    private string? _lastMaterializationArtifactPath;
     private CancellationTokenSource? _cts;
     private WorkbenchProgressReceipt? _lastProgressReceipt;
     private CommandTerminalState? _currentTerminalState;
@@ -85,7 +88,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.11 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.12 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -95,7 +98,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.11-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.12-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -140,7 +143,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.11-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.12-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -168,7 +171,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.11", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.12", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -228,6 +231,9 @@ public partial class MainWindow : Window
             _lastUpdatePackagePath = null;
             _lastUpdatePlanConsumed = true;
             MaterializeUpdateButton.IsEnabled = false;
+            StagedApplyPlanButton.IsEnabled = false;
+            _lastMaterializationReceipt = null;
+            _lastMaterializationArtifactPath = null;
 
             SaveSettings();
             BeginRun(id);
@@ -310,18 +316,71 @@ public partial class MainWindow : Window
                 _cts!.Token);
 
             _lastUpdatePlanConsumed = true;
+            _lastMaterializationReceipt = materialized.Receipt;
+            _lastMaterializationArtifactPath = materialized.ArtifactPath;
+            StagedApplyPlanButton.IsEnabled = true;
             UpdatePlanTextBox.Text = CommandCodec.Serialize(new
             {
                 Plan = plan,
                 PlanArtifactPath = _lastUpdatePlanArtifactPath,
                 Materialization = materialized.Receipt,
-                MaterializationReceiptPath = materialized.ArtifactPath
+                MaterializationReceiptPath = materialized.ArtifactPath,
+                StagedApplyPlanAvailable = true
             });
             OutputTabs.SelectedItem = UpdatePlanTab;
             ProgressBar.Value = 100;
             _currentTerminalState = CommandTerminalState.Completed;
             StatusText.Text = $"COMPLETED: staging materialized -> {materialized.Receipt.StagingRoot}";
             EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.materialization.completed stagingOnly=true; files={materialized.Receipt.PayloadFileCount}; build=false; sourceMutation=false");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
+    private async void StagedApplyPlanButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"update-apply-plan-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            if (_lastMaterializationReceipt is null || string.IsNullOrWhiteSpace(_lastMaterializationArtifactPath))
+                throw new InvalidDataException("Materialize a validated update package in this Workbench process before creating a staged source-apply plan.");
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: read-only staged source-apply plan";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.apply-plan.started    target={_lastMaterializationReceipt.TargetVersion}");
+
+            var planned = await _stagedApplyPlanService.PlanAsync(
+                _lastMaterializationReceipt,
+                WorkspaceRootBox.Text,
+                _cts!.Token);
+
+            UpdatePlanTextBox.Text = CommandCodec.Serialize(new
+            {
+                Materialization = _lastMaterializationReceipt,
+                MaterializationReceiptPath = _lastMaterializationArtifactPath,
+                ApplyPlan = planned.Receipt,
+                ApplyPlanArtifactPath = planned.ArtifactPath
+            });
+            OutputTabs.SelectedItem = UpdatePlanTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = CommandTerminalState.Completed;
+            StatusText.Text = $"COMPLETED: {planned.Receipt.Status}; sourceMutation=false; build=false";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.apply-plan.completed  {planned.Receipt.Status}; add={planned.Receipt.AddCount}; replace={planned.Receipt.ReplaceCount}; noop={planned.Receipt.NoOpCount}; sourceMutation=false");
         }
         catch (OperationCanceledException)
         {

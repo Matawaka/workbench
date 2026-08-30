@@ -42,3 +42,8 @@ This is deliberately not an update apply/build gate:
 v0.11 does not overwrite tracked Workbench source, run an installer, run `dotnet`, commit/tag, fetch/push, use the network, mutate Matawaka catalog repositories, or grant Agent Execute.
 
 Receipts remain Workbench-local evidence. They are not canonical UU-AAP conformance and do not make the Workbench repository authoritative over other Matawaka repositories.
+
+
+## v0.12 staged source-apply plan
+
+v0.12 adds a read-only plan over already materialized update bytes. It verifies the staging receipt, predecessor, clean working tree, exact staged file set and SHA-256s, then reports Add/Replace/NoOp effects without modifying Workbench source. Source apply, build and checkpoint remain separate future authority gates.

@@ -54,3 +54,8 @@ The gate explicitly does **not** authorize:
 `Staging Materialization != Build Authority`
 
 `Staging Materialization != Checkpoint Authority`
+
+
+## v0.12 staged source-apply plan
+
+A successful staged apply plan does not authorize source mutation. The service may read Workbench source, read the ignored staging area, run fixed read-only Git queries, and write a local plan receipt under artifacts/update-apply-plans. It cannot overwrite tracked source, build, commit/tag, fetch/push, use network, mutate the catalog, or grant Agent Execute.

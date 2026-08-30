@@ -19,3 +19,8 @@ The checkpoint performs no remote push/fetch or Matawaka catalog mutation.
 6. Require `MATERIALIZED_STAGING_ONLY` in the resulting receipt.
 
 The v0.11 materialization gate writes only to ignored Workbench-local staging and artifacts. It does not apply source changes, build, execute installers, commit/tag, access the network, mutate catalog repositories, or grant Agent Execute.
+
+
+## v0.12 staged source-apply plan
+
+After an update package has been explicitly materialized to `.workbench`, use **План применения** to calculate the exact bounded source delta. A READY apply plan is still non-authorizing: no tracked source is changed until a later, separate source-apply gate exists.
