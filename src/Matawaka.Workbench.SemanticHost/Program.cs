@@ -52,11 +52,18 @@ internal static class Program
             var request = JsonSerializer.Deserialize<SemanticHostRequest>(input, JsonOptions)
                 ?? throw new InvalidDataException("semantic host request is empty");
 
-            if (!string.Equals(request.Schema, "matawaka.semantic-host-request/v0.7", StringComparison.Ordinal))
+            if (!string.Equals(request.Schema, "matawaka.semantic-host-request/v0.10", StringComparison.Ordinal))
                 throw new InvalidDataException("unsupported semantic host request schema");
 
             if (!SemanticProviderCatalog.ProviderIds.Contains(request.Provider, StringComparer.OrdinalIgnoreCase))
                 throw new InvalidDataException("requested provider is not built into this semantic host");
+
+            if (request.SourceSetVerification is null ||
+                !request.SourceSetVerification.SourceSetMatched ||
+                request.SourceSetVerification.Files is null ||
+                request.SourceSetVerification.Files.Count == 0 ||
+                request.SourceSetVerification.Files.Any(item => !item.Matched))
+                throw new InvalidDataException("parent-verified relevant source-set receipt is required before semantic analysis");
 
             var recomputedInput = SemanticProviderSupport.ComputeInputDigest(request.Packet);
             if (!string.Equals(recomputedInput, request.InputDigest, StringComparison.OrdinalIgnoreCase))
@@ -95,7 +102,6 @@ internal static class Program
 
     private static SemanticHostComputation AnalyzeDeterministic(SemanticEvidencePacket packet)
     {
-        SemanticProviderSupport.RequireExactSourceFrontier(packet);
         var signals = SemanticProviderSupport.BuildSignals(packet);
         var represented = packet.Repositories.Count(item => item.SelectedEvidenceItems > 0);
 
@@ -114,12 +120,11 @@ internal static class Program
         return new SemanticHostComputation(
             proposal,
             signals,
-            "Deterministic v0.2 provider executed inside the restricted v0.7 semantic host process. The provider logic is offline and receives only the sanitized semantic evidence packet.");
+            "Deterministic v0.2 provider executed inside the restricted v0.10 semantic host process. The provider logic is offline and receives only the sanitized semantic evidence packet.");
     }
 
     private static SemanticHostComputation AnalyzeLocalContractSynthesis(SemanticEvidencePacket packet)
     {
-        SemanticProviderSupport.RequireExactSourceFrontier(packet);
         var inputDigest = SemanticProviderSupport.ComputeInputDigest(packet);
         var signals = SemanticProviderSupport.BuildSignals(packet);
         var actions = new List<string>
@@ -157,7 +162,7 @@ internal static class Program
         return new SemanticHostComputation(
             proposal,
             signals,
-            "Local contract synthesis executed inside the restricted v0.7 semantic host process. It remains deterministic, categorical and offline; restricted-token, low-integrity, Job Object, runtime-attestation, and process isolation are not represented as an OS or network sandbox.");
+            "Local contract synthesis executed inside the restricted v0.10 semantic host process. It remains deterministic, categorical and offline; restricted-token, low-integrity, Job Object, runtime-attestation, relevant-source-set verification, and process isolation are not represented as an OS or network sandbox.");
     }
 
     private static async Task<int> FailAsync(string message)

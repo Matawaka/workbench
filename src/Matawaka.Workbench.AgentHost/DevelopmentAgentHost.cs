@@ -46,6 +46,7 @@ public sealed record DevelopmentAgentReceipt(
     string AuthorityUsed,
     CapabilityRequest CapabilityRequest,
     CapabilityDecision CapabilityDecision,
+    ProtocolSourceSetVerification? SourceSetVerification,
     IReadOnlyList<CatalogRepository> CatalogSnapshot,
     IReadOnlyList<AgentRepositoryFinding> Findings,
     AgentEvidenceCoverage Coverage,
@@ -77,7 +78,7 @@ public interface ICapabilityPolicy
 /// <summary>
 /// Workbench-local bridge inspired by FREESHIELD's authority boundary.
 /// It is intentionally not represented as canonical FREESHIELD policy.
-/// v0.7 can grant only read-only Observe/Propose authority; restricted semantic-host process invocation does not grant arbitrary process authority.
+/// v0.10 still grants only read-only Observe/Propose authority; restricted semantic-host process invocation does not grant arbitrary process authority.
 /// </summary>
 public sealed class FreeShieldReadOnlyCapabilityPolicy : ICapabilityPolicy
 {
@@ -286,6 +287,18 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         if (selected.Length == 0)
             throw new InvalidDataException("No focus repositories were found in the selected Matawaka catalog.");
 
+        ProtocolSourceSetVerification? sourceSetVerification = null;
+        if (string.Equals(options.Mode, "propose", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceSetVerification = ProtocolSourceSetVerifier.Verify(catalog);
+            progress?.Report(new WorkbenchProgress(
+                command.Id, "source-set.verified", 0,
+                $"uu-aap relevant source set matched; observedHead={sourceSetVerification.ObservedRepositoryHead[..Math.Min(12, sourceSetVerification.ObservedRepositoryHead.Length)]}; headMatchesOrigin={sourceSetVerification.RepositoryHeadMatchesOrigin}",
+                DateTimeOffset.Now,
+                "SOURCE_BINDING", "RELEVANT_SOURCE_SET_VERIFIED", "NONE",
+                "EVIDENCE_COLLECTION", $"source-set:{command.Id}"));
+        }
+
         var candidatesByRepository = new Dictionary<string, List<AgentEvidence>>(StringComparer.OrdinalIgnoreCase);
         var filesInspectedByRepository = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -422,7 +435,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
                 capabilityDecision);
 
             var packet = new SemanticEvidencePacket(
-                "matawaka.semantic-evidence-packet/v0.7",
+                "matawaka.semantic-evidence-packet/v0.10",
                 command.Id,
                 command.Target,
                 findings.Select(item => new SemanticRepositoryRef(
@@ -438,9 +451,13 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
             if (semanticSelection is null)
                 throw new InvalidDataException("Semantic provider selection is required for propose mode.");
 
+            if (sourceSetVerification is null)
+                throw new InvalidDataException("Relevant UU-AAP source-set verification is required before semantic analysis.");
+
             var semantic = await _semanticProviders.AnalyzeAsync(
                 semanticSelection,
                 packet,
+                sourceSetVerification,
                 progress,
                 cancellationToken);
 
@@ -450,12 +467,13 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
         }
 
         return new DevelopmentAgentReceipt(
-            "read-only-provider-host-v0.7",
+            "read-only-provider-host-v0.10",
             "completed",
             options.Mode,
             capabilityDecision.AuthorityGranted,
             capabilityRequest,
             capabilityDecision,
+            sourceSetVerification,
             selected,
             findings,
             coverage,
@@ -465,7 +483,7 @@ public sealed class ReadOnlyDevelopmentProvider : IDevelopmentAgentProvider
             semanticBoundary,
             semanticAnalysis,
             Array.Empty<string>(),
-            "Evidence collection remains deterministic and read-only. v0.7 verifies the fixed SemanticHost executable against a build-generated SHA-256 manifest, creates a restricted primary token with maximum privileges disabled, lowers the child token to low integrity, creates the process suspended, assigns the existing Job Object limits before resume, resumes it, verifies a child-observed runtime security attestation (filtered token, low integrity, Job membership, same user SID, no unexpected enabled privileges), and only then sends bounded semantic stdin. No repository roots, file handles, network clients/credentials, materialization authority, mutation authority or arbitrary executable path are supplied through the semantic interface. The child preserves the same Windows user identity but not the same unrestricted security context. No filesystem ACL sandbox, AppContainer, VM or OS network sandbox is claimed. Exact UU-AAP source bindings are fail-closed inputs, not claims of canonical evaluator execution or Stable Core admission.");
+            "Evidence collection remains deterministic and read-only. v0.10 additionally verifies the exact relevant UU-AAP source-file set by Git blob identity so unrelated repository HEAD movement does not create a false semantic invalidation. The accepted v0.7 security boundary still verifies the fixed SemanticHost executable against a build-generated SHA-256 manifest, creates a restricted primary token with maximum privileges disabled, lowers the child token to low integrity, creates the process suspended, assigns the existing Job Object limits before resume, resumes it, verifies a child-observed runtime security attestation (filtered token, low integrity, Job membership, same user SID, no unexpected enabled privileges), and only then sends bounded semantic stdin. No repository roots, file handles, network clients/credentials, materialization authority, mutation authority or arbitrary executable path are supplied through the semantic interface. The child preserves the same Windows user identity but not the same unrestricted security context. No filesystem ACL sandbox, AppContainer, VM or OS network sandbox is claimed. Relevant UU-AAP source bindings are byte-verified fail-closed inputs; repository HEAD equality is separately observable but is not required when the bound source set is unchanged. This is not a claim of canonical evaluator execution or Stable Core admission.");
     }
 
     private static IReadOnlyList<AgentEvidence> SelectBalancedEvidence(
@@ -679,12 +697,13 @@ public sealed class DevelopmentAgentHost
                 "TERMINAL", "DENIED", "NONE", "NONE", request.Id));
 
             return new DevelopmentAgentReceipt(
-                "authority-gate-v0.7",
+                "authority-gate-v0.10",
                 "denied",
                 request.Operation,
                 "none",
                 request,
                 decision,
+                null,
                 catalog,
                 Array.Empty<AgentRepositoryFinding>(),
                 new AgentEvidenceCoverage(

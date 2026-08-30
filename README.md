@@ -23,3 +23,8 @@ A passing Self-test enables **Принять**. The user sees the exact local Wo
 The gate never performs `git fetch`, `git push`, remote mutation, catalog mutation, agent Execute, network model calls, arbitrary command execution, ActionPermit creation or materialization authority creation.
 
 The checkpoint receipt is Workbench-local evidence. It is not canonical UU-AAP conformance and does not make the Workbench repository authoritative over other Matawaka repositories.
+
+
+## Workbench v0.10
+
+Relevant UU-AAP protocol dependencies are now verified as an exact byte-bound source set rather than requiring repository HEAD equality. A new local Update Plan intake surface validates bounded future update packages but creates no materialization/build/checkpoint authority.

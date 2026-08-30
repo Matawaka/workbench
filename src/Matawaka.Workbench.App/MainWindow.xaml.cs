@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private readonly ICommandRunner _router = new CommandRouter();
     private readonly WorkbenchAcceptanceHarness _acceptanceHarness;
     private readonly LocalCheckpointService _checkpointService = new();
+    private readonly LocalUpdateIntakeService _updateIntakeService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -78,7 +79,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.9 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.10 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -88,7 +89,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.9-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.10-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -133,7 +134,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.9-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.10-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -161,7 +162,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.9", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.10", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -184,6 +185,58 @@ public partial class MainWindow : Window
             _currentTerminalState = CommandTerminalState.Completed;
             StatusText.Text = $"COMPLETED: {receipt.Tag} -> {receipt.NewHead}";
             EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  checkpoint.completed        {receipt.Tag} -> {receipt.NewHead}; remotePush=false; catalogMutation=false");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
+
+    private async void UpdatePlanButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = "Workbench update package (*.zip)|*.zip|Все файлы (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        var id = $"update-plan-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: local update package intake (plan only)";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.plan.started          {Path.GetFileName(dialog.FileName)}");
+
+            var planned = await _updateIntakeService.PlanAsync(
+                dialog.FileName,
+                WorkspaceRootBox.Text,
+                _cts!.Token);
+
+            UpdatePlanTextBox.Text = CommandCodec.Serialize(new
+            {
+                Receipt = planned.Receipt,
+                ArtifactPath = planned.ArtifactPath
+            });
+            OutputTabs.SelectedItem = UpdatePlanTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = CommandTerminalState.Completed;
+            StatusText.Text = $"COMPLETED: update intake {planned.Receipt.Status}; materialization=false";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  update.plan.completed        {planned.Receipt.Status}; materialization=false; {planned.ArtifactPath}");
         }
         catch (OperationCanceledException)
         {
@@ -353,6 +406,7 @@ public partial class MainWindow : Window
         RunButton.IsEnabled = false;
         SelfTestButton.IsEnabled = false;
         AcceptCheckpointButton.IsEnabled = false;
+        UpdatePlanButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -364,6 +418,7 @@ public partial class MainWindow : Window
         ProcessBoundaryTextBox.Clear();
         AgentTextBox.Clear();
         AcceptanceTextBox.Clear();
+        UpdatePlanTextBox.Clear();
         _lastProgressReceipt = null;
         _currentTerminalState = null;
         _runEpoch++;
@@ -374,6 +429,7 @@ public partial class MainWindow : Window
         RunButton.IsEnabled = true;
         SelfTestButton.IsEnabled = true;
         AcceptCheckpointButton.IsEnabled = _lastAcceptanceReceipt?.Passed == true && !_lastAcceptanceConsumed && !string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath);
+        UpdatePlanButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 
@@ -481,7 +537,7 @@ public partial class MainWindow : Window
         {
             ProgressReceipt = _lastProgressReceipt,
             HumanView = view,
-            Note = "Workbench v0.9 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+            Note = "Workbench v0.10 compatibility projection; relevant UU-AAP source files are byte-verified separately from repository HEAD, canonical JavaScript implementation not executed."
         });
     }
 
@@ -527,7 +583,7 @@ public partial class MainWindow : Window
     private const string DefaultCommand = """
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v090",
+  "id": "game-companion-propose-v0100",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",

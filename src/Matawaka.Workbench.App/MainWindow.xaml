@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.9.0" Height="820" Width="1240" MinHeight="680" MinWidth="940"
+        Title="Matawaka Workbench v0.10.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -20,10 +20,11 @@
             <Button x:Name="RunButton" Content="Запустить" Width="100" Margin="0,0,8,0" Click="RunButton_Click"/>
             <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestButton_Click"/>
             <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointButton_Click"/>
+            <Button x:Name="UpdatePlanButton" Content="Пакет обновления" Width="130" Margin="0,0,8,0" Click="UpdatePlanButton_Click"/>
             <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
             <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
             <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <TextBlock Text="v0.9: Self-test + explicit GUI-local Git checkpoint acceptance; agent Execute still denied" VerticalAlignment="Center" FontStyle="Italic"/>
+            <TextBlock Text="v0.10: relevant-source-set binding + local update intake plan; materialization still separate" VerticalAlignment="Center" FontStyle="Italic"/>
         </StackPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
@@ -101,6 +102,11 @@
             </TabItem>
             <TabItem x:Name="AcceptanceTab" Header="Acceptance">
                 <TextBox x:Name="AcceptanceTextBox" IsReadOnly="True" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" TextWrapping="NoWrap"/>
+            </TabItem>
+            <TabItem x:Name="UpdatePlanTab" Header="Update Plan">
+                <TextBox x:Name="UpdatePlanTextBox" IsReadOnly="True" AcceptsReturn="True"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          FontFamily="Consolas" TextWrapping="NoWrap"/>
             </TabItem>

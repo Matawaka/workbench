@@ -20,6 +20,8 @@ public sealed record WorkbenchAcceptanceProviderObservation(
     string OutputDigest,
     string UuAapFrontier,
     bool SourceFrontierMatched,
+    bool SourceSetMatched,
+    string SourceSetDigest,
     bool RuntimeSecurityAttestationVerified,
     bool AttestationBeforeSemanticInput,
     bool RestrictedToken,
@@ -114,8 +116,13 @@ public sealed class WorkbenchAcceptanceHarness
                 $"{observationA.EvidenceDigest} / {observationB.EvidenceDigest}", "same evidence receipt digest"),
             Check("authority-identical", string.Equals(observationA.AuthorityDigest, observationB.AuthorityDigest, StringComparison.OrdinalIgnoreCase),
                 $"{observationA.AuthorityDigest} / {observationB.AuthorityDigest}", "same authority receipt digest"),
-            Check("source-frontier-matched", observationA.SourceFrontierMatched && observationB.SourceFrontierMatched,
-                $"A={observationA.SourceFrontierMatched}; B={observationB.SourceFrontierMatched}", "true / true"),
+            Check("relevant-source-set-matched", observationA.SourceSetMatched && observationB.SourceSetMatched,
+                $"A={observationA.SourceSetMatched}; B={observationB.SourceSetMatched}", "true / true"),
+            Check("relevant-source-set-identical", string.Equals(observationA.SourceSetDigest, observationB.SourceSetDigest, StringComparison.OrdinalIgnoreCase),
+                $"{observationA.SourceSetDigest} / {observationB.SourceSetDigest}", "same source-set verification digest"),
+            Check("repository-head-drift-does-not-mint-authority", true,
+                $"A headMatchOrigin={observationA.SourceFrontierMatched}; B headMatchOrigin={observationB.SourceFrontierMatched}",
+                "HEAD equality is observable but not an authority condition when source set matches"),
             Check("runtime-attestation-verified", observationA.RuntimeSecurityAttestationVerified && observationB.RuntimeSecurityAttestationVerified,
                 $"A={observationA.RuntimeSecurityAttestationVerified}; B={observationB.RuntimeSecurityAttestationVerified}", "true / true"),
             Check("attestation-before-input", observationA.AttestationBeforeSemanticInput && observationB.AttestationBeforeSemanticInput,
@@ -142,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.9",
-            "0.9.0",
+            "matawaka.workbench-acceptance-receipt/v0.10",
+            "0.10.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -162,9 +169,10 @@ public sealed class WorkbenchAcceptanceHarness
                 "no ActionPermit created",
                 "no materialization authority created",
                 "no Stable Core or interface-registry promotion",
-                "self-test artifact write is limited to Workbench/artifacts/acceptance"
+                "self-test artifact write is limited to Workbench/artifacts/acceptance",
+                "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation retained in v0.9 over existing v0.7 boundaries. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.10 retains the accepted v0.7 security boundary and adds relevant-source-set verification so unrelated repository HEAD drift does not create a false semantic failure. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)
@@ -223,6 +231,8 @@ public sealed class WorkbenchAcceptanceHarness
             analysis.GetProperty("OutputDigest").GetString() ?? string.Empty,
             boundary.GetProperty("ObservedUuAapFrontier").GetString() ?? string.Empty,
             boundary.GetProperty("SourceFrontierMatched").GetBoolean(),
+            boundary.GetProperty("SourceSetMatched").GetBoolean(),
+            HashJson(JsonSerializer.Deserialize<object>(boundary.GetProperty("SourceSetVerification").GetRawText())!),
             process.GetProperty("RuntimeSecurityAttestationVerified").GetBoolean(),
             process.GetProperty("AttestationBeforeSemanticInput").GetBoolean(),
             process.GetProperty("RestrictedToken").GetBoolean(),
@@ -238,7 +248,8 @@ public sealed class WorkbenchAcceptanceHarness
         => new(id, passed, observed, expected);
 
     private static bool IsPostAuthorityPipelineEvent(string eventName)
-        => eventName.Equals("agent.observe.started", StringComparison.OrdinalIgnoreCase) ||
+        => eventName.StartsWith("source-set.", StringComparison.OrdinalIgnoreCase) ||
+           eventName.Equals("agent.observe.started", StringComparison.OrdinalIgnoreCase) ||
            eventName.Equals("agent.evidence.selected", StringComparison.OrdinalIgnoreCase) ||
            eventName.StartsWith("semantic.", StringComparison.OrdinalIgnoreCase);
 

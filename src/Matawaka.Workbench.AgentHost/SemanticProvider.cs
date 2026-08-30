@@ -111,6 +111,8 @@ public sealed record SemanticProviderBoundaryReceipt(
     string ExpectedUuAapFrontier,
     string? ObservedUuAapFrontier,
     bool SourceFrontierMatched,
+    bool SourceSetMatched,
+    ProtocolSourceSetVerification SourceSetVerification,
     IReadOnlyList<ProtocolSourceBinding> SourceBindings,
     bool OfflineOnly,
     bool DynamicProviderLoadingAllowed,
@@ -133,6 +135,7 @@ public sealed record SemanticHostRequest(
     string Schema,
     string Provider,
     string InputDigest,
+    ProtocolSourceSetVerification SourceSetVerification,
     SemanticEvidencePacket Packet);
 
 public sealed record SemanticHostAttestationEnvelope(
@@ -160,7 +163,7 @@ internal sealed record SemanticHostIntegrityManifest(
 
 public static class SemanticProviderCatalog
 {
-    public const string RegistryVersion = "workbench-local-semantic-provider-registry/v0.7";
+    public const string RegistryVersion = "workbench-local-semantic-provider-registry/v0.10";
     public const string LocalContractSynthesisId = "local-contract-synthesis-v0.3";
     public const string DeterministicEvidenceId = "deterministic-evidence-semantic-v0.2";
     public const string DefaultProvider = LocalContractSynthesisId;
@@ -181,12 +184,13 @@ public interface ISemanticProviderClient
     Task<SemanticProviderResult> AnalyzeAsync(
         SemanticProviderSelectionReceipt selection,
         SemanticEvidencePacket packet,
+        ProtocolSourceSetVerification sourceSetVerification,
         IProgress<WorkbenchProgress>? progress,
         CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// v0.7 invokes only one fixed built-in semantic host executable. The provider
+/// v0.10 keeps the accepted v0.7 fixed built-in semantic host executable and adds relevant source-set verification before provider invocation. The provider
 /// id is data, not an executable path. The child receives one sanitized JSON
 /// packet on stdin and returns one JSON receipt on stdout. The fixed binary is
 /// launched with a restricted primary token whose maximum privileges are removed
@@ -235,7 +239,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
                 $"Unknown semanticProvider '{requested}'. Available: {string.Join(", ", ProviderIds)}");
 
         return new SemanticProviderSelectionReceipt(
-            "matawaka.semantic-provider-selection-receipt/v0.7",
+            "matawaka.semantic-provider-selection-receipt/v0.10",
             RegistryVersion,
             requested,
             selected,
@@ -261,6 +265,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
     public async Task<SemanticProviderResult> AnalyzeAsync(
         SemanticProviderSelectionReceipt selection,
         SemanticEvidencePacket packet,
+        ProtocolSourceSetVerification sourceSetVerification,
         IProgress<WorkbenchProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -268,12 +273,16 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
             !ProviderIds.Contains(selection.SelectedProvider, StringComparer.OrdinalIgnoreCase))
             throw new InvalidDataException($"Semantic provider is not available: {selection.SelectedProvider}");
 
-        var observedUuAap = SemanticProviderSupport.RequireExactSourceFrontier(packet);
+        if (!sourceSetVerification.SourceSetMatched)
+            throw new InvalidDataException("Relevant UU-AAP source-set verification must pass before semantic provider invocation.");
+
+        var observedUuAap = sourceSetVerification.ObservedRepositoryHead;
         var inputDigest = SemanticProviderSupport.ComputeInputDigest(packet);
         var request = new SemanticHostRequest(
-            "matawaka.semantic-host-request/v0.7",
+            "matawaka.semantic-host-request/v0.10",
             selection.SelectedProvider,
             inputDigest,
+            sourceSetVerification,
             packet);
 
         var requestJson = JsonSerializer.Serialize(request, JsonOptions);
@@ -434,7 +443,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
                 throw new InvalidDataException("Semantic host output digest failed parent-process verification.");
 
                 var analysis = new SemanticAnalysisReceipt(
-                    "matawaka.semantic-analysis-receipt/v0.7",
+                    "matawaka.semantic-analysis-receipt/v0.10",
                     selection.SelectedProvider,
                     inputDigest,
                     verifiedOutputDigest,
@@ -451,6 +460,7 @@ public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
                     inputDigest,
                     verifiedOutputDigest,
                     observedUuAap,
+                    sourceSetVerification,
                     processBoundary);
 
                 progress?.Report(new WorkbenchProgress(
@@ -643,6 +653,8 @@ public static class SemanticProviderSupport
         "no provider self-selection after authority decision",
         "no dynamic provider assembly/path loading from JSON",
         "no Stable Core or interface-registry promotion",
+        "relevant UU-AAP source files are byte-verified by Git object identity before semantic input",
+        "repository HEAD drift outside the relevant source set is observable but does not by itself invalidate the adapter",
         "no canonical UU-AAP conformance claim from this adapter",
         "no hidden reasoning disclosure",
         "restricted token + low integrity + Job Object containment + runtime attestation are not represented as an OS sandbox"
@@ -723,25 +735,13 @@ public static class SemanticProviderSupport
             .ToArray();
     }
 
-    public static string RequireExactSourceFrontier(SemanticEvidencePacket packet)
-    {
-        var observed = packet.Repositories
-            .FirstOrDefault(item => string.Equals(item.Name, "uu-aap", StringComparison.OrdinalIgnoreCase))
-            ?.Head;
-
-        if (!string.Equals(observed, PclCompatibleProgress.UuAapFrontier, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException(
-                $"Semantic source frontier mismatch. Expected uu-aap {PclCompatibleProgress.UuAapFrontier}, observed {observed ?? "<missing>"}.");
-
-        return observed!;
-    }
-
     public static SemanticProviderBoundaryReceipt BuildBoundary(
         string providerId,
         SemanticEvidencePacket packet,
         string inputDigest,
         string outputDigest,
         string observedUuAap,
+        ProtocolSourceSetVerification sourceSetVerification,
         SemanticProcessBoundaryReceipt processBoundary)
     {
         var bindings = new[]
@@ -754,7 +754,7 @@ public static class SemanticProviderSupport
         };
 
         return new SemanticProviderBoundaryReceipt(
-            "matawaka.semantic-provider-boundary-receipt/v0.7",
+            "matawaka.semantic-provider-boundary-receipt/v0.10",
             providerId,
             SemanticProviderCatalog.RegistryVersion,
             packet.Schema,
@@ -762,7 +762,9 @@ public static class SemanticProviderSupport
             outputDigest,
             PclCompatibleProgress.UuAapFrontier,
             observedUuAap,
-            true,
+            sourceSetVerification.RepositoryHeadMatchesOrigin,
+            sourceSetVerification.SourceSetMatched,
+            sourceSetVerification,
             bindings,
             true,
             false,
@@ -785,6 +787,8 @@ public static class SemanticProviderSupport
         "Materialization Authority != Execution Authority",
         "Supported Evidence != ActionPermit",
         "Semantic Similarity != Stable Core Admission",
+        "Repository HEAD != Relevant Source Set",
+        "Source-set Match != Canonical Conformance",
         "Visible Progress != Hidden Reasoning",
         "Process Isolation != OS Sandbox",
         "Fixed Process Invocation != Arbitrary Process Authority",

@@ -7,7 +7,7 @@ namespace Matawaka.Workbench.Protocol;
 /// <summary>
 /// Workbench-local compatibility projection over the PCL v0.1 progress fields.
 /// It does not execute the UU-AAP JavaScript implementation and does not claim
-/// canonical conformance. The exact source frontier is carried in every receipt.
+/// canonical conformance. The source-origin frontier and exact bound source file are carried in every receipt; v0.10 separately verifies the relevant source set against local bytes.
 /// </summary>
 public static class PclCompatibleProgress
 {
@@ -48,6 +48,15 @@ public static class PclCompatibleProgress
         "e0efb6ad4b65e91360d039dc8842cafafc5079bb",
         "reference-only; NO_ADMISSION guard against premature shared abstraction");
 
+    public static readonly IReadOnlyList<ProtocolSourceBinding> RelevantSources = new[]
+    {
+        ProgressSource,
+        HumanViewSource,
+        ScopedAuthoritySource,
+        MaterializationAuthoritySource,
+        ReusableAdmissionAuditSource
+    };
+
     public static bool IsTrackable(WorkbenchProgress progress)
         => progress.Phase is not null ||
            progress.ProgressKind is not null ||
@@ -84,7 +93,7 @@ public static class PclCompatibleProgress
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
 
         return new WorkbenchProgressReceipt(
-            "matawaka.workbench.progress-receipt/v0.7",
+            "matawaka.workbench.progress-receipt/v0.10",
             ProgressSource,
             input.CommandId,
             runEpoch,
@@ -120,7 +129,7 @@ public static class PclCompatibleProgress
         };
 
         return new WorkbenchHumanLivenessView(
-            "matawaka.workbench.human-liveness-view/v0.7",
+            "matawaka.workbench.human-liveness-view/v0.10",
             HumanViewSource,
             receipt.RunId,
             receipt.RunEpoch,

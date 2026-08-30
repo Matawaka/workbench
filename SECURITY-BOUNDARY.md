@@ -25,3 +25,12 @@ Only fixed local operations are available: `git add`, one fixed commit, one fixe
 `Checkpoint authority != Remote publication authority`
 
 `Checkpoint authority != Agent Execute`
+
+
+## v0.10 source-set and update-intake boundaries
+
+- `Repository HEAD != Relevant Source Set`: unrelated repository movement is observable but does not replace exact bound-file verification.
+- Relevant-source verification computes Git blob identity locally from bytes; it performs no fetch and no repository mutation.
+- `Update Package Valid != Materialization Authority`: v0.10 only reads/validates a local ZIP and writes a plan receipt under Workbench artifacts.
+- ZIP traversal, unmanifested payload files, digest mismatch, oversized payloads and packages requesting network/catalog/Execute/arbitrary-process/installer-script authority are rejected.
+- No update payload is extracted or executed in v0.10.
