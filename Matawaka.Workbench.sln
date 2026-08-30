@@ -1,0 +1,48 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.Protocol", "src\Matawaka.Workbench.Protocol\Matawaka.Workbench.Protocol.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F11111}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.Engine", "src\Matawaka.Workbench.Engine\Matawaka.Workbench.Engine.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F22222}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.Catalog", "src\Matawaka.Workbench.Catalog\Matawaka.Workbench.Catalog.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F33333}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.AgentHost", "src\Matawaka.Workbench.AgentHost\Matawaka.Workbench.AgentHost.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F44444}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.Runtime", "src\Matawaka.Workbench.Runtime\Matawaka.Workbench.Runtime.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F66666}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.App", "src\Matawaka.Workbench.App\Matawaka.Workbench.App.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F11111}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F11111}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F11111}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F11111}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F22222}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F22222}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F22222}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F22222}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F33333}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F33333}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F33333}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F33333}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F44444}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F44444}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F44444}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F44444}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F66666}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F66666}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F66666}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F66666}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

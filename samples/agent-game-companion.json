@@ -1,0 +1,30 @@
+{
+  "schema": "matawaka.command/v1",
+  "id": "game-companion-observe-001",
+  "kind": "agent.run",
+  "target": "game-intellectual-companion",
+  "policyProfile": "uu-aap-bridge-v0",
+  "payload": {
+    "mode": "propose",
+    "mutationBudget": 0,
+    "networkAccess": false,
+    "arbitraryProcessExecution": false,
+    "focusRepositories": ["FREESHIELD", "kontur", "uu-aap"],
+    "terms": [
+      "authority",
+      "capability",
+      "evidence",
+      "receipt",
+      "intent",
+      "availability",
+      "possibility",
+      "companion",
+      "solver",
+      "hint",
+      "attention",
+      "reversible"
+    ],
+    "maxFilesPerRepository": 160,
+    "maxEvidenceItems": 80
+  }
+}

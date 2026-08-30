@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Matawaka.Workbench.Protocol\Matawaka.Workbench.Protocol.csproj" />
+    <ProjectReference Include="..\Matawaka.Workbench.Engine\Matawaka.Workbench.Engine.csproj" />
+    <ProjectReference Include="..\Matawaka.Workbench.Catalog\Matawaka.Workbench.Catalog.csproj" />
+    <ProjectReference Include="..\Matawaka.Workbench.AgentHost\Matawaka.Workbench.AgentHost.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,87 @@
+<Window x:Class="Matawaka.Workbench.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Matawaka Workbench v0.1.3" Height="820" Width="1240" MinHeight="680" MinWidth="940"
+        Closing="Window_Closing">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="2*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button x:Name="PasteButton" Content="Вставить JSON" Width="120" Margin="0,0,8,0" Click="PasteButton_Click"/>
+            <Button x:Name="FileButton" Content="Из файла" Width="100" Margin="0,0,8,0" Click="FileButton_Click"/>
+            <Button x:Name="ValidateButton" Content="Проверить" Width="100" Margin="0,0,8,0" Click="ValidateButton_Click"/>
+            <Button x:Name="RunButton" Content="Запустить" Width="100" Margin="0,0,8,0" Click="RunButton_Click"/>
+            <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
+            <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
+            <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
+            <TextBlock Text="Agent v0.1.3: balanced evidence + typed authority" VerticalAlignment="Center" FontStyle="Italic"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Рабочее пространство:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="WorkspaceRootBox" Grid.Column="1" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+            <Button Grid.Column="2" Content="Сохранить" Width="100" Click="SaveWorkspaceButton_Click"/>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Каталог Matawaka:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="CatalogRootBox" Grid.Column="1" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+            <Button Grid.Column="2" Content="Сканировать" Width="110" Margin="0,0,8,0" Click="InspectCatalogButton_Click"/>
+            <Button Grid.Column="3" Content="Обновить refs" Width="110" Click="FetchCatalogButton_Click"/>
+        </Grid>
+
+        <TextBox x:Name="JsonTextBox" Grid.Row="3" AcceptsReturn="True" AcceptsTab="True"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                 FontFamily="Consolas" TextWrapping="NoWrap"/>
+
+        <Grid Grid.Row="4" Margin="0,8,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Прогресс" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <ProgressBar x:Name="ProgressBar" Grid.Column="1" Height="20" Minimum="0" Maximum="100"/>
+            <TextBlock x:Name="StatusText" Grid.Column="2" Text="Готов" VerticalAlignment="Center" Margin="12,0,0,0"/>
+        </Grid>
+
+        <TabControl x:Name="OutputTabs" Grid.Row="5">
+            <TabItem x:Name="EventsTab" Header="События">
+                <ListBox x:Name="EventList" FontFamily="Consolas"/>
+            </TabItem>
+            <TabItem x:Name="ResultTab" Header="Результат">
+                <TextBox x:Name="ResultTextBox" IsReadOnly="True" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" TextWrapping="NoWrap"/>
+            </TabItem>
+            <TabItem x:Name="EvidenceTab" Header="Evidence">
+                <TextBox x:Name="EvidenceTextBox" IsReadOnly="True" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" TextWrapping="NoWrap"/>
+            </TabItem>
+            <TabItem x:Name="AgentTab" Header="Agent">
+                <TextBox x:Name="AgentTextBox" IsReadOnly="True" AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" TextWrapping="NoWrap"/>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

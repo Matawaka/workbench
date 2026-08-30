@@ -1,0 +1,15 @@
+{
+  "schema": "matawaka.engine-profile/v1",
+  "id": "uu-aap-bridge-v0",
+  "status": "non-normative-bridge",
+  "description": "Interim tunable profile. It is intentionally external to the engine and must not be treated as canonical UU-AAP semantics.",
+  "weights": {
+    "utility": 0.24,
+    "availability": 0.20,
+    "evidence": 0.18,
+    "reversibility": 0.14,
+    "learning": 0.10,
+    "riskPenalty": 0.20,
+    "costPenalty": 0.10
+  }
+}

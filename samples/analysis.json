@@ -1,0 +1,13 @@
+{
+  "schema": "matawaka.command/v1",
+  "id": "analysis-demo-001",
+  "kind": "analysis.run",
+  "target": "game-companion-development",
+  "policyProfile": "uu-aap-bridge-v0",
+  "payload": {
+    "options": [
+      { "id": "observe-first", "utility": 0.72, "availability": 0.95, "evidence": 0.80, "reversibility": 0.98, "learning": 0.92, "risk": 0.12, "cost": 0.20 },
+      { "id": "direct-answer", "utility": 0.55, "availability": 0.98, "evidence": 0.90, "reversibility": 0.50, "learning": 0.30, "risk": 0.52, "cost": 0.10 }
+    ]
+  }
+}

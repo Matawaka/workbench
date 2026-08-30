@@ -1,0 +1,8 @@
+{
+  "schema": "matawaka.command/v1",
+  "id": "catalog-inspect-001",
+  "kind": "catalog.inspect",
+  "target": "Matawaka",
+  "policyProfile": "default-deny",
+  "payload": {}
+}

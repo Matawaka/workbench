@@ -1,0 +1,8 @@
+{
+  "schema": "matawaka.command/v1",
+  "id": "catalog-fetch-001",
+  "kind": "catalog.fetch",
+  "target": "Matawaka",
+  "policyProfile": "default-deny",
+  "payload": {}
+}
