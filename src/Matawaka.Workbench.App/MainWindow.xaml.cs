@@ -216,6 +216,7 @@ public partial class MainWindow : Window
         AuthorityTextBox.Clear();
         LivenessTextBox.Clear();
         SemanticTextBox.Clear();
+        ProcessBoundaryTextBox.Clear();
         AgentTextBox.Clear();
         _lastProgressReceipt = null;
         _currentTerminalState = null;
@@ -257,6 +258,11 @@ public partial class MainWindow : Window
         {
             SemanticTextBox.AppendText(line + Environment.NewLine);
             SemanticTextBox.ScrollToEnd();
+            if (e.Event.StartsWith("semantic.process.", StringComparison.OrdinalIgnoreCase))
+            {
+                ProcessBoundaryTextBox.AppendText(line + Environment.NewLine);
+                ProcessBoundaryTextBox.ScrollToEnd();
+            }
             AgentTextBox.AppendText(line + Environment.NewLine);
             AgentTextBox.ScrollToEnd();
         }
@@ -284,6 +290,10 @@ public partial class MainWindow : Window
         SemanticTextBox.Text = result.Semantic is null
             ? "No semantic-provider receipt for this command."
             : CommandCodec.Serialize(result.Semantic);
+
+        ProcessBoundaryTextBox.Text = result.ProcessBoundary is null
+            ? "No semantic process-boundary receipt for this command."
+            : CommandCodec.Serialize(result.ProcessBoundary);
 
         if (result.Agent is not null)
         {
@@ -323,7 +333,7 @@ public partial class MainWindow : Window
         {
             ProgressReceipt = _lastProgressReceipt,
             HumanView = view,
-            Note = "Workbench v0.3 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
+            Note = "Workbench v0.4 compatibility projection; bound to exact UU-AAP source frontier, canonical JavaScript implementation not executed."
         });
     }
 
@@ -369,7 +379,7 @@ public partial class MainWindow : Window
     private const string DefaultCommand = """
 {
   "schema": "matawaka.command/v1",
-  "id": "game-companion-propose-v030",
+  "id": "game-companion-propose-v040",
   "kind": "agent.run",
   "target": "game-intellectual-companion",
   "policyProfile": "uu-aap-bridge-v0",

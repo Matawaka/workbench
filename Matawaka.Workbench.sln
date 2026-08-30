@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.Runtime"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.App", "src\Matawaka.Workbench.App\Matawaka.Workbench.App.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Matawaka.Workbench.SemanticHost", "src\Matawaka.Workbench.SemanticHost\Matawaka.Workbench.SemanticHost.csproj", "{D6BA69EE-BA8A-4AF4-AD56-EF3E66F77777}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,5 +46,9 @@ Global
 		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F55555}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F77777}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F77777}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F77777}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6BA69EE-BA8A-4AF4-AD56-EF3E66F77777}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

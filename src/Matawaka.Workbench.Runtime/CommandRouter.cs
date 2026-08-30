@@ -26,7 +26,8 @@ public sealed record CommandResult(
     object? Evidence = null,
     object? Authority = null,
     object? Agent = null,
-    object? Semantic = null);
+    object? Semantic = null,
+    object? ProcessBoundary = null);
 
 public interface ICommandRunner
 {
@@ -141,7 +142,8 @@ public sealed class CommandRouter : ICommandRunner
                         evidenceReceipt,
                         authorityReceipt,
                         receipt,
-                        semanticReceipt);
+                        semanticReceipt,
+                        receipt.SemanticProviderBoundary?.ProcessBoundary);
                 }
                 break;
 

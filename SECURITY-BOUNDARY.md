@@ -1,4 +1,4 @@
-# Security boundary — Workbench v0.3
+# Security boundary — Workbench v0.4
 
 ## Allowed
 
@@ -7,19 +7,25 @@
 - explicit fixed git fetch through the catalog gate;
 - read-only evidence collection;
 - deterministic balanced evidence selection;
-- offline provider selection from a fixed Workbench-local registry;
-- local semantic analysis over sanitized evidence only;
-- typed capability/provider/semantic receipts;
-- PCL-compatible visible progress;
-- cancellation.
+- offline selection from a closed provider-id registry;
+- one fixed semantic child-process launch after read-only authority ALLOW;
+- stdin JSON semantic packet / stdout JSON receipt IPC;
+- reduced child environment allowlist;
+- isolated temporary child working directory;
+- timeout/cancellation and bounded IPC sizes;
+- parent-side semantic digest verification;
+- typed capability/provider/process/semantic receipts;
+- PCL-compatible visible progress.
 
-## Not authorized
+## Not authorized through the command/provider interface
 
 - repository mutation by `agent.run`;
+- executable/DLL/script/path selection from JSON;
 - arbitrary shell/process execution from JSON;
 - network model/provider calls;
-- ambient filesystem access by semantic providers;
-- provider self-registration/self-selection after the authority decision;
+- repository root or file-handle transfer to semantic IPC;
+- inherited credentials/secrets outside the explicit child environment allowlist;
+- provider self-registration after authority decision;
 - materialization authority creation;
 - execution authority creation;
 - ActionPermit creation;
@@ -27,18 +33,27 @@
 - game control;
 - self-expansion of authority.
 
-## Provider isolation
+## Process boundary
 
-Semantic providers receive no repository roots, file handles, process runner, network client or mutation capability. They receive a bounded evidence packet plus typed authority receipt.
+Semantic provider algorithms run in `Matawaka.Workbench.SemanticHost.exe`, not in the WPF/Runtime process. The executable path is fixed by Workbench and cannot be supplied by the command JSON.
 
-The default provider registry contains built-in providers only and JSON cannot load an assembly, executable, script or provider path. Unknown provider ids fail closed.
+Child environment keys are limited to:
 
-The v0.3 provider boundary is in-process. Not passing repository roots/process/network clients is an interface-level isolation property, **not** an OS sandbox for hostile provider code. The shipped built-in providers are local deterministic code and perform no provider-side filesystem, network or process operations.
+- `SystemRoot`;
+- `WINDIR`;
+- `DOTNET_ROOT`;
+- `DOTNET_MULTILEVEL_LOOKUP`;
+- `TEMP`;
+- `TMP`.
 
-## Exact source binding
+The child receives no repository root in the semantic packet and starts in an isolated temp directory. Output is accepted only after schema/provider/input/output-digest verification by the parent.
 
-Semantic provider execution requires the local `uu-aap` focus HEAD to equal the exact Workbench compatibility frontier. A mismatch fails before semantic analysis rather than silently using stale protocol assumptions.
+This is **not** hostile-code containment. The child runs with the same Windows user token and can in principle use OS facilities available to that account if future provider code were malicious. v0.4 does not claim AppContainer, restricted token, filesystem ACL isolation or network sandboxing.
+
+`Interface Non-Transfer != OS Denial`
+
+`Process Isolation != OS Sandbox`
 
 ## Deny semantics
 
-`DENIED` is a normal terminal policy outcome. A denied authority request does not invoke evidence collection or semantic providers and preserves zero mutations.
+`DENIED` remains a normal terminal policy outcome. Execute is denied before evidence collection and before semantic-host process invocation.

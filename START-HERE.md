@@ -1,15 +1,9 @@
-# Start here
+# Start Here — Workbench v0.4
 
-1. Extract the archive into a dedicated directory, not inside `uu-aap`, `KONTUR`, or `FREESHIELD`.
-2. Keep the full Matawaka source catalog in a sibling directory such as `%USERPROFILE%\source\Matawaka-Catalog`.
-3. Build and run the WPF app.
-4. After the app opens, normal v0 operation is GUI-only:
-   - paste JSON from the clipboard,
-   - load UTF-8 JSON from a file,
-   - validate and run,
-   - enable/disable the AgentHost,
-   - monitor progress and cancel,
-   - inspect the local Matawaka catalog,
-   - optionally permit and trigger fixed `git fetch` refreshes.
-
-`catalog.fetch` is disabled unless the user explicitly checks **Разрешить git fetch**.
+1. Keep the catalog rooted at `K:\Matawaka\Catalog`.
+2. Enable the agent only for an intended Observe/Propose run.
+3. Keep `git fetch` disabled unless explicitly refreshing refs.
+4. Run `propose` with either built-in semantic provider id.
+5. Inspect `Semantic Provider` and `Process Boundary` receipts.
+6. Treat `OsSandbox=false` and `SameUserSecurityContext=true` as deliberate security facts, not defects hidden by the UI.
+7. Execute remains denied and mutation budget remains zero.

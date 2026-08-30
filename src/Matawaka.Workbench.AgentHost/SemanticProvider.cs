@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -47,8 +48,33 @@ public sealed record SemanticProviderSelectionReceipt(
     bool OfflineOnly,
     bool DynamicProviderLoadingAllowed,
     string IsolationLevel,
+    bool SeparateProcess,
+    bool EnvironmentAllowlisted,
+    bool OsSandbox,
+    bool SameUserSecurityContext,
+    int TimeoutMilliseconds,
+    int MaxOutputBytes,
     IReadOnlyList<string> AvailableProviders,
     IReadOnlyList<string> NonEffects);
+
+public sealed record SemanticProcessBoundaryReceipt(
+    string Schema,
+    string HostExecutable,
+    bool SeparateProcess,
+    bool StandardInputPacketOnly,
+    bool StandardOutputReceiptOnly,
+    bool EnvironmentAllowlisted,
+    IReadOnlyList<string> EnvironmentAllowlist,
+    bool RepositoryRootArgumentProvided,
+    bool FileHandleProvided,
+    bool DynamicProviderPathLoadingAllowed,
+    bool NetworkClientOrCredentialProvided,
+    bool MutationCapabilityProvided,
+    bool OsSandbox,
+    bool SameUserSecurityContext,
+    int TimeoutMilliseconds,
+    int MaxInputBytes,
+    int MaxOutputBytes);
 
 public sealed record SemanticProviderBoundaryReceipt(
     string Schema,
@@ -69,6 +95,7 @@ public sealed record SemanticProviderBoundaryReceipt(
     bool ArbitraryProcessExecutionProvided,
     bool NetworkAccessProvided,
     bool MutationAuthorityProvided,
+    SemanticProcessBoundaryReceipt ProcessBoundary,
     IReadOnlyList<string> NonEffects);
 
 public sealed record SemanticProviderResult(
@@ -77,81 +104,350 @@ public sealed record SemanticProviderResult(
     SemanticAnalysisReceipt Analysis,
     string Note);
 
-public interface ISemanticProvider
+public sealed record SemanticHostRequest(
+    string Schema,
+    string Provider,
+    string InputDigest,
+    SemanticEvidencePacket Packet);
+
+public sealed record SemanticHostResponse(
+    string Schema,
+    bool Success,
+    string Provider,
+    string InputDigest,
+    string? OutputDigest,
+    AgentProposal? Proposal,
+    IReadOnlyList<SemanticSignal>? Signals,
+    string? Note,
+    string? Error);
+
+public static class SemanticProviderCatalog
 {
-    string ProviderId { get; }
+    public const string RegistryVersion = "workbench-local-semantic-provider-registry/v0.4";
+    public const string LocalContractSynthesisId = "local-contract-synthesis-v0.3";
+    public const string DeterministicEvidenceId = "deterministic-evidence-semantic-v0.2";
+    public const string DefaultProvider = LocalContractSynthesisId;
+
+    public static readonly IReadOnlyList<string> ProviderIds = new[]
+    {
+        DeterministicEvidenceId,
+        LocalContractSynthesisId
+    };
+}
+
+public interface ISemanticProviderClient
+{
+    string RegistryVersion { get; }
+    IReadOnlyList<string> ProviderIds { get; }
+    SemanticProviderSelectionReceipt Select(string? requestedProvider);
 
     Task<SemanticProviderResult> AnalyzeAsync(
+        SemanticProviderSelectionReceipt selection,
         SemanticEvidencePacket packet,
         IProgress<WorkbenchProgress>? progress,
         CancellationToken cancellationToken);
 }
 
-public interface ISemanticProviderRegistry
-{
-    string RegistryVersion { get; }
-    IReadOnlyList<string> ProviderIds { get; }
-    SemanticProviderSelectionReceipt Select(string? requestedProvider);
-    ISemanticProvider Resolve(SemanticProviderSelectionReceipt selection);
-}
-
 /// <summary>
-/// Workbench-local registry proving provider substitution at one sanitized input
-/// boundary. It is not a UU-AAP Stable Core admission and does not create
-/// provider, network, filesystem, process, or mutation authority.
+/// v0.4 invokes only one fixed built-in semantic host executable. The provider
+/// id is data, not an executable path. The child receives one sanitized JSON
+/// packet on stdin and returns one JSON receipt on stdout. This is a stronger
+/// process boundary than v0.3 but is explicitly not an AppContainer, VM, ACL
+/// sandbox, network sandbox, or separate Windows security token.
 /// </summary>
-public sealed class SemanticProviderRegistry : ISemanticProviderRegistry
+public sealed class ProcessSemanticProviderClient : ISemanticProviderClient
 {
-    public const string Version = "workbench-local-semantic-provider-registry/v0.3";
+    public const int ProviderTimeoutMilliseconds = 8000;
+    public const int MaxInputBytes = 2 * 1024 * 1024;
+    public const int MaxOutputBytes = 1024 * 1024;
 
-    private readonly IReadOnlyDictionary<string, ISemanticProvider> _providers;
+    private static readonly string[] EnvironmentAllowlist =
+    [
+        "SystemRoot",
+        "WINDIR",
+        "DOTNET_ROOT",
+        "DOTNET_MULTILEVEL_LOOKUP",
+        "TEMP",
+        "TMP"
+    ];
 
-    public SemanticProviderRegistry(IEnumerable<ISemanticProvider>? providers = null)
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        var selected = (providers ?? new ISemanticProvider[]
-        {
-            new LocalContractSynthesisProvider(),
-            new DeterministicSemanticProvider()
-        }).ToArray();
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = false
+    };
 
-        _providers = selected.ToDictionary(item => item.ProviderId, StringComparer.OrdinalIgnoreCase);
-        ProviderIds = _providers.Keys.OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToArray();
-    }
-
-    public string RegistryVersion => Version;
-    public IReadOnlyList<string> ProviderIds { get; }
+    public string RegistryVersion => SemanticProviderCatalog.RegistryVersion;
+    public IReadOnlyList<string> ProviderIds => SemanticProviderCatalog.ProviderIds;
 
     public SemanticProviderSelectionReceipt Select(string? requestedProvider)
     {
         var requested = string.IsNullOrWhiteSpace(requestedProvider)
-            ? LocalContractSynthesisProvider.Id
+            ? SemanticProviderCatalog.DefaultProvider
             : requestedProvider.Trim();
 
-        var found = _providers.TryGetValue(requested, out var provider);
-        if (!found || provider is null)
+        var selected = ProviderIds.FirstOrDefault(item =>
+            string.Equals(item, requested, StringComparison.OrdinalIgnoreCase));
+
+        if (selected is null)
             throw new InvalidDataException(
                 $"Unknown semanticProvider '{requested}'. Available: {string.Join(", ", ProviderIds)}");
 
         return new SemanticProviderSelectionReceipt(
-            "matawaka.semantic-provider-selection-receipt/v0.3",
+            "matawaka.semantic-provider-selection-receipt/v0.4",
             RegistryVersion,
             requested,
-            provider.ProviderId,
+            selected,
             true,
             true,
             false,
-            "in-process built-in provider boundary; not an OS sandbox",
+            "separate fixed semantic host process; same-user security context; not an OS sandbox",
+            true,
+            true,
+            false,
+            true,
+            ProviderTimeoutMilliseconds,
+            MaxOutputBytes,
             ProviderIds,
             SemanticProviderSupport.ProviderNonEffects);
     }
 
-    public ISemanticProvider Resolve(SemanticProviderSelectionReceipt selection)
+    public async Task<SemanticProviderResult> AnalyzeAsync(
+        SemanticProviderSelectionReceipt selection,
+        SemanticEvidencePacket packet,
+        IProgress<WorkbenchProgress>? progress,
+        CancellationToken cancellationToken)
     {
         if (!selection.ProviderFound ||
-            !_providers.TryGetValue(selection.SelectedProvider, out var provider))
+            !ProviderIds.Contains(selection.SelectedProvider, StringComparer.OrdinalIgnoreCase))
             throw new InvalidDataException($"Semantic provider is not available: {selection.SelectedProvider}");
 
-        return provider;
+        var observedUuAap = SemanticProviderSupport.RequireExactSourceFrontier(packet);
+        var inputDigest = SemanticProviderSupport.ComputeInputDigest(packet);
+        var request = new SemanticHostRequest(
+            "matawaka.semantic-host-request/v0.4",
+            selection.SelectedProvider,
+            inputDigest,
+            packet);
+
+        var requestJson = JsonSerializer.Serialize(request, JsonOptions);
+        if (Encoding.UTF8.GetByteCount(requestJson) > MaxInputBytes)
+            throw new InvalidDataException($"Semantic IPC input exceeds {MaxInputBytes} bytes.");
+
+        var hostPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "semantic-host",
+            "Matawaka.Workbench.SemanticHost.exe");
+
+        if (!File.Exists(hostPath))
+            throw new FileNotFoundException("Fixed semantic host executable is missing.", hostPath);
+
+        var runtimeRoot = Path.Combine(
+            Path.GetTempPath(),
+            "Matawaka.Workbench",
+            "semantic",
+            SanitizePathSegment(packet.CommandId) + "-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(runtimeRoot);
+
+        progress?.Report(new WorkbenchProgress(
+            packet.CommandId,
+            "semantic.process.started",
+            94,
+            $"{selection.SelectedProvider} -> fixed semantic host process; stdin packet {inputDigest[..12]}…",
+            DateTimeOffset.Now,
+            "SEMANTIC_ANALYSIS",
+            "PROCESS_BOUNDARY_ENTERED",
+            "SEMANTIC_HOST",
+            "SEMANTIC_HOST_RECEIPT",
+            $"semantic-process:{packet.CommandId}:{selection.SelectedProvider}"));
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = hostPath,
+                WorkingDirectory = runtimeRoot,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            startInfo.ArgumentList.Add("--stdio-v0.4");
+            ApplyEnvironmentAllowlist(startInfo, runtimeRoot);
+
+            using var process = new Process { StartInfo = startInfo };
+            if (!process.Start())
+                throw new InvalidOperationException("Semantic host process did not start.");
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
+            await process.StandardInput.WriteAsync(requestJson);
+            await process.StandardInput.FlushAsync();
+            process.StandardInput.Close();
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ProviderTimeoutMilliseconds);
+
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                TryKill(process);
+                throw new TimeoutException(
+                    $"Semantic host exceeded {ProviderTimeoutMilliseconds} ms timeout.");
+            }
+            catch (OperationCanceledException)
+            {
+                TryKill(process);
+                throw;
+            }
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+
+            if (Encoding.UTF8.GetByteCount(stdout) > MaxOutputBytes)
+                throw new InvalidDataException($"Semantic IPC output exceeds {MaxOutputBytes} bytes.");
+
+            if (string.IsNullOrWhiteSpace(stdout))
+                throw new InvalidDataException(
+                    $"Semantic host returned no receipt. Exit={process.ExitCode}; stderr={CompactError(stderr)}");
+
+            SemanticHostResponse response;
+            try
+            {
+                response = JsonSerializer.Deserialize<SemanticHostResponse>(stdout, JsonOptions)
+                    ?? throw new InvalidDataException("Semantic host response was empty JSON.");
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidDataException(
+                    $"Semantic host returned invalid JSON. Exit={process.ExitCode}; stderr={CompactError(stderr)}",
+                    ex);
+            }
+
+            if (process.ExitCode != 0 || !response.Success)
+                throw new InvalidDataException(
+                    $"Semantic host denied/failed provider execution: {response.Error ?? CompactError(stderr)}");
+
+            if (!string.Equals(response.Schema, "matawaka.semantic-host-response/v0.4", StringComparison.Ordinal) ||
+                !string.Equals(response.Provider, selection.SelectedProvider, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(response.InputDigest, inputDigest, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Semantic host response identity/input digest mismatch.");
+
+            if (response.Proposal is null || response.Signals is null || string.IsNullOrWhiteSpace(response.OutputDigest))
+                throw new InvalidDataException("Semantic host response is missing proposal/signals/output digest.");
+
+            var verifiedOutputDigest = SemanticProviderSupport.ComputeOutputDigest(
+                response.Proposal,
+                response.Signals);
+            if (!string.Equals(verifiedOutputDigest, response.OutputDigest, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Semantic host output digest failed parent-process verification.");
+
+            var analysis = new SemanticAnalysisReceipt(
+                "matawaka.semantic-analysis-receipt/v0.4",
+                selection.SelectedProvider,
+                inputDigest,
+                verifiedOutputDigest,
+                packet.Evidence.Count,
+                packet.Repositories.Count,
+                response.Signals,
+                SemanticProviderSupport.CommonInvariants,
+                SemanticProviderSupport.ProviderNonEffects);
+
+            var boundary = SemanticProviderSupport.BuildBoundary(
+                selection.SelectedProvider,
+                packet,
+                inputDigest,
+                verifiedOutputDigest,
+                observedUuAap);
+
+            progress?.Report(new WorkbenchProgress(
+                packet.CommandId,
+                "semantic.process.completed",
+                98,
+                $"{selection.SelectedProvider}: child receipt verified; output {verifiedOutputDigest[..12]}…",
+                DateTimeOffset.Now,
+                "SEMANTIC_ANALYSIS",
+                "PROCESS_RECEIPT_VERIFIED",
+                "NONE",
+                "AGENT_CHECKPOINT_READY",
+                $"semantic-process:{packet.CommandId}:{selection.SelectedProvider}"));
+
+            return new SemanticProviderResult(
+                response.Proposal,
+                boundary,
+                analysis,
+                response.Note ?? "Fixed semantic host process returned a verified offline receipt.");
+        }
+        finally
+        {
+            TryDeleteDirectory(runtimeRoot);
+        }
+    }
+
+    private static void ApplyEnvironmentAllowlist(ProcessStartInfo info, string runtimeRoot)
+    {
+        var inherited = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot"),
+            ["WINDIR"] = Environment.GetEnvironmentVariable("WINDIR"),
+            ["DOTNET_ROOT"] = Environment.GetEnvironmentVariable("DOTNET_ROOT")
+        };
+
+        info.Environment.Clear();
+        foreach (var pair in inherited)
+        {
+            if (!string.IsNullOrWhiteSpace(pair.Value))
+                info.Environment[pair.Key] = pair.Value!;
+        }
+
+        info.Environment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
+        info.Environment["TEMP"] = runtimeRoot;
+        info.Environment["TMP"] = runtimeRoot;
+    }
+
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // Cancellation/timeout cleanup must not mint a different authority path.
+        }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            // Runtime temp cleanup failure is non-authoritative and does not touch repositories.
+        }
+    }
+
+    private static string SanitizePathSegment(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var sanitized = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
+        return string.IsNullOrWhiteSpace(sanitized) ? "run" : sanitized[..Math.Min(sanitized.Length, 80)];
+    }
+
+    private static string CompactError(string value)
+    {
+        var normalized = (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (normalized.Length == 0) return "<empty>";
+        return normalized.Length <= 300 ? normalized : normalized[..300] + "…";
     }
 }
 
@@ -160,10 +456,13 @@ public static class SemanticProviderSupport
     public static readonly string[] ProviderNonEffects =
     [
         "no repository mutation",
-        "no repository root supplied to semantic provider",
-        "no file handle supplied to semantic provider",
-        "no network model call",
-        "no arbitrary process execution",
+        "no repository root included in semantic IPC packet",
+        "no file handle included in semantic IPC packet",
+        "no network endpoint/client/credential supplied to semantic provider",
+        "built-in semantic providers perform no network model call",
+        "no arbitrary executable/path accepted from command JSON",
+        "fixed semantic host process only",
+        "child environment reduced to an explicit allowlist",
         "no materialization authority created",
         "no execution authority created",
         "no ActionPermit created",
@@ -171,7 +470,8 @@ public static class SemanticProviderSupport
         "no dynamic provider assembly/path loading from JSON",
         "no Stable Core or interface-registry promotion",
         "no canonical UU-AAP conformance claim from this adapter",
-        "no hidden reasoning disclosure"
+        "no hidden reasoning disclosure",
+        "separate process boundary is not represented as an OS sandbox"
     ];
 
     public static string ComputeInputDigest(SemanticEvidencePacket packet)
@@ -263,7 +563,7 @@ public static class SemanticProviderSupport
     }
 
     public static SemanticProviderBoundaryReceipt BuildBoundary(
-        ISemanticProvider provider,
+        string providerId,
         SemanticEvidencePacket packet,
         string inputDigest,
         string outputDigest,
@@ -278,10 +578,29 @@ public static class SemanticProviderSupport
             PclCompatibleProgress.ReusableAdmissionAuditSource
         };
 
+        var processBoundary = new SemanticProcessBoundaryReceipt(
+            "matawaka.semantic-process-boundary-receipt/v0.4",
+            "Matawaka.Workbench.SemanticHost.exe",
+            true,
+            true,
+            true,
+            true,
+            new[] { "SystemRoot", "WINDIR", "DOTNET_ROOT", "DOTNET_MULTILEVEL_LOOKUP", "TEMP", "TMP" },
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            ProcessSemanticProviderClient.ProviderTimeoutMilliseconds,
+            ProcessSemanticProviderClient.MaxInputBytes,
+            ProcessSemanticProviderClient.MaxOutputBytes);
+
         return new SemanticProviderBoundaryReceipt(
-            "matawaka.semantic-provider-boundary-receipt/v0.3",
-            provider.ProviderId,
-            SemanticProviderRegistry.Version,
+            "matawaka.semantic-provider-boundary-receipt/v0.4",
+            providerId,
+            SemanticProviderCatalog.RegistryVersion,
             packet.Schema,
             inputDigest,
             outputDigest,
@@ -291,12 +610,13 @@ public static class SemanticProviderSupport
             bindings,
             true,
             false,
-            "in-process built-in provider boundary; not an OS sandbox",
+            "separate fixed semantic host process; same-user security context; not an OS sandbox",
             false,
             false,
             false,
             false,
             false,
+            processBoundary,
             ProviderNonEffects);
     }
 
@@ -309,191 +629,14 @@ public static class SemanticProviderSupport
         "Materialization Authority != Execution Authority",
         "Supported Evidence != ActionPermit",
         "Semantic Similarity != Stable Core Admission",
-        "Visible Progress != Hidden Reasoning"
+        "Visible Progress != Hidden Reasoning",
+        "Process Isolation != OS Sandbox",
+        "Fixed Process Invocation != Arbitrary Process Authority"
     ];
 
     private static string Digest(object value)
     {
         var json = JsonSerializer.Serialize(value);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
-    }
-}
-
-/// <summary>
-/// v0.2-compatible deterministic provider retained as an alternate provider so
-/// v0.3 can prove substitution without changing the evidence-collection path.
-/// </summary>
-public sealed class DeterministicSemanticProvider : ISemanticProvider
-{
-    public const string Id = "deterministic-evidence-semantic-v0.2";
-    public string ProviderId => Id;
-
-    public Task<SemanticProviderResult> AnalyzeAsync(
-        SemanticEvidencePacket packet,
-        IProgress<WorkbenchProgress>? progress,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var observedUuAap = SemanticProviderSupport.RequireExactSourceFrontier(packet);
-        var inputDigest = SemanticProviderSupport.ComputeInputDigest(packet);
-
-        progress?.Report(new WorkbenchProgress(
-            packet.CommandId,
-            "semantic.started",
-            94,
-            $"{ProviderId} receives {packet.Evidence.Count} sanitized evidence items; offline only",
-            DateTimeOffset.Now,
-            "SEMANTIC_ANALYSIS",
-            "EVIDENCE_BOUND_PROPOSAL_DERIVATION",
-            "NONE",
-            "SEMANTIC_PROPOSAL_READY",
-            $"semantic:{packet.CommandId}:{ProviderId}"));
-
-        var signals = SemanticProviderSupport.BuildSignals(packet);
-        var represented = packet.Repositories.Count(item => item.SelectedEvidenceItems > 0);
-
-        var proposal = new AgentProposal(
-            "Evidence-bounded deterministic semantic checkpoint",
-            new[]
-            {
-                $"Preserve the balanced evidence frontier across {represented}/{packet.Repositories.Count} repositories as the causal input.",
-                "Keep provider input restricted to sanitized evidence, repository identity/branch/HEAD, coverage, and typed authority receipt.",
-                "Keep PCL-compatible liveness visible without exposing hidden reasoning.",
-                "Keep scoped authority evidence and materialization authority separate from execution authority.",
-                "Keep repository mutation and external model/network calls closed."
-            },
-            "STOP before repository mutation, external model/network calls, arbitrary process execution, materialization, ActionPermit creation, or self-expansion of authority.");
-
-        var outputDigest = SemanticProviderSupport.ComputeOutputDigest(proposal, signals);
-        var analysis = new SemanticAnalysisReceipt(
-            "matawaka.semantic-analysis-receipt/v0.3",
-            ProviderId,
-            inputDigest,
-            outputDigest,
-            packet.Evidence.Count,
-            packet.Repositories.Count,
-            signals,
-            SemanticProviderSupport.CommonInvariants,
-            SemanticProviderSupport.ProviderNonEffects);
-
-        var boundary = SemanticProviderSupport.BuildBoundary(
-            this, packet, inputDigest, outputDigest, observedUuAap);
-
-        progress?.Report(new WorkbenchProgress(
-            packet.CommandId,
-            "semantic.completed",
-            98,
-            $"{ProviderId}: {proposal.Title}",
-            DateTimeOffset.Now,
-            "SEMANTIC_ANALYSIS",
-            "PROPOSAL_BOUND",
-            "NONE",
-            "AGENT_CHECKPOINT_READY",
-            $"semantic:{packet.CommandId}:{ProviderId}"));
-
-        return Task.FromResult(new SemanticProviderResult(
-            proposal,
-            boundary,
-            analysis,
-            "Deterministic v0.2 provider executed through the v0.3 provider registry. It remains offline and receives only the sanitized semantic evidence packet."));
-    }
-}
-
-/// <summary>
-/// First new provider behind the interchangeable boundary. It performs local,
-/// categorical synthesis over the sanitized evidence packet. It has no direct
-/// repository, file, process, network, materialization, or execution access.
-/// </summary>
-public sealed class LocalContractSynthesisProvider : ISemanticProvider
-{
-    public const string Id = "local-contract-synthesis-v0.3";
-    public string ProviderId => Id;
-
-    public Task<SemanticProviderResult> AnalyzeAsync(
-        SemanticEvidencePacket packet,
-        IProgress<WorkbenchProgress>? progress,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var observedUuAap = SemanticProviderSupport.RequireExactSourceFrontier(packet);
-        var inputDigest = SemanticProviderSupport.ComputeInputDigest(packet);
-
-        progress?.Report(new WorkbenchProgress(
-            packet.CommandId,
-            "semantic.started",
-            94,
-            $"{ProviderId} receives digest {inputDigest[..12]}… from {packet.Evidence.Count} sanitized evidence items",
-            DateTimeOffset.Now,
-            "SEMANTIC_ANALYSIS",
-            "LOCAL_CONTRACT_SYNTHESIS",
-            "NONE",
-            "SEMANTIC_PROPOSAL_READY",
-            $"semantic:{packet.CommandId}:{ProviderId}"));
-
-        var signals = SemanticProviderSupport.BuildSignals(packet);
-        var actions = new List<string>
-        {
-            $"Bind this proposal to semantic input digest {inputDigest}.",
-            $"Preserve balanced representation across {packet.Coverage.RepositoriesRepresented}/{packet.Repositories.Count} repositories.",
-            "Keep this provider Workbench-local; repeated provider mechanics do not establish a reusable UU-AAP component or Stable Core admission."
-        };
-
-        foreach (var signal in signals.Take(4))
-        {
-            actions.Add(signal.Id switch
-            {
-                "AUTHORITY_BOUNDARY" =>
-                    $"Authority boundary is evidenced in {signal.Repositories.Count} repositories; keep capability/authority claims typed and fail-closed.",
-                "EVIDENCE_PROVENANCE" =>
-                    $"Evidence/provenance surfaces are evidenced in {signal.Repositories.Count} repositories; preserve receipt and frontier references independently of proposal text.",
-                "POSSIBILITY_INTENT" =>
-                    $"Possibility/availability/intent distinctions are evidenced in {signal.Repositories.Count} repositories; do not collapse availability into intent or authority.",
-                "NON_BINDING_ATTENTION" =>
-                    $"Non-binding attention/companion terms are evidenced in {signal.Repositories.Count} repositories; preserve hint/attention as non-instructional candidates.",
-                "REVERSIBILITY" =>
-                    $"Reversibility is evidenced in {signal.Repositories.Count} repositories; prefer reversible successor proposals and keep materialization separately authorized.",
-                _ => $"Preserve signal {signal.Id} as a bounded evidence-backed candidate."
-            });
-        }
-
-        actions.Add("Do not infer materialization, execution, ActionPermit, canonicality, or external-effect authority from semantic synthesis.");
-
-        var proposal = new AgentProposal(
-            "Local evidence-bounded contract synthesis checkpoint",
-            actions,
-            "STOP at proposal. A later successor/materialization path requires fresh scoped authority evidence and a separate materialization-authority evaluation; execution remains closed.");
-
-        var outputDigest = SemanticProviderSupport.ComputeOutputDigest(proposal, signals);
-        var analysis = new SemanticAnalysisReceipt(
-            "matawaka.semantic-analysis-receipt/v0.3",
-            ProviderId,
-            inputDigest,
-            outputDigest,
-            packet.Evidence.Count,
-            packet.Repositories.Count,
-            signals,
-            SemanticProviderSupport.CommonInvariants,
-            SemanticProviderSupport.ProviderNonEffects);
-
-        var boundary = SemanticProviderSupport.BuildBoundary(
-            this, packet, inputDigest, outputDigest, observedUuAap);
-
-        progress?.Report(new WorkbenchProgress(
-            packet.CommandId,
-            "semantic.completed",
-            98,
-            $"{ProviderId}: {signals.Count} bounded semantic signals; output {outputDigest[..12]}…",
-            DateTimeOffset.Now,
-            "SEMANTIC_ANALYSIS",
-            "LOCAL_SYNTHESIS_BOUND",
-            "NONE",
-            "AGENT_CHECKPOINT_READY",
-            $"semantic:{packet.CommandId}:{ProviderId}"));
-
-        return Task.FromResult(new SemanticProviderResult(
-            proposal,
-            boundary,
-            analysis,
-            "Local contract synthesis is deterministic, categorical and offline. It proves provider substitution at the sanitized boundary; it is not an LLM and does not establish a reusable UU-AAP component."));
     }
 }

@@ -2,7 +2,7 @@
 
 Independent Windows workbench for bounded analysis and development flows over the local Matawaka catalog.
 
-## v0.3 checkpoint
+## v0.4 checkpoint
 
 ```text
 JSON command
@@ -10,52 +10,55 @@ JSON command
   -> catalog snapshot (repo + branch + HEAD)
   -> typed read-only capability decision
   -> balanced evidence frontier
-  -> offline semantic-provider selection
+  -> offline provider selection
   -> sanitized evidence packet
-  -> interchangeable provider
-  -> typed semantic analysis/boundary receipts
+  -> fixed separate semantic-host process
+  -> verified semantic stdout receipt
+  -> typed semantic/process boundary receipts
   -> proposal/checkpoint
   -> STOP before materialization or mutation
 ```
 
-The Windows UI exposes separate tabs for Events, Result, Evidence Receipt, Authority Receipt, Liveness, Semantic Provider and Agent.
+The Windows UI exposes Events, Result, Evidence Receipt, Authority Receipt, Liveness, Semantic Provider, Process Boundary and Agent tabs.
 
-### Provider substitution
+### Fixed semantic host process
 
-`SemanticProviderRegistry` is Workbench-local and deliberately not promoted as a UU-AAP reusable/Stable Core abstraction. v0.3 ships two offline implementations:
+v0.4 moves provider implementation out of the Workbench WPF/Runtime process. The parent starts only:
+
+`Matawaka.Workbench.SemanticHost.exe`
+
+from the fixed published `semantic-host` directory. Provider ids remain a closed built-in registry:
 
 - `local-contract-synthesis-v0.3`;
 - `deterministic-evidence-semantic-v0.2`.
 
-Both receive the same sanitized `SemanticEvidencePacket`. The packet contains evidence snippets, repository identity/branch/HEAD, balanced coverage and typed authority receipt. It contains no repository roots, file handles, process execution, network access or mutation authority.
+The child receives one sanitized JSON packet over stdin and returns one JSON receipt over stdout. JSON cannot provide an executable path, DLL, script or dynamic assembly path.
 
-Provider selection and analysis are separately receipted. The semantic input/output digests make substitution inspectable. v0.3 uses built-in in-process providers only; this is an API/data-boundary proof, not an operating-system sandbox for hostile provider code.
+The child environment is rebuilt from an explicit allowlist and uses an isolated temporary working directory. Parent-side code enforces timeout, cancellation, input/output size limits, provider identity, input digest and output digest verification.
+
+### Honest isolation boundary
+
+The child uses the same Windows user security context as Workbench. It is not an AppContainer, restricted token, ACL sandbox, VM or network sandbox. Therefore v0.4 claims a **separate-process + constrained IPC boundary**, not hostile-code containment.
+
+`Process Isolation != OS Sandbox`
+
+`Not Supplied Through IPC != Impossible For Same-User Hostile Code`
+
+The shipped host and providers are fixed local code and perform no network model calls or repository mutation.
 
 ### Exact source frontier
 
-Before semantic analysis, v0.3 requires the locally observed `uu-aap` focus frontier to match:
+Semantic analysis remains fail-closed on local `uu-aap` focus HEAD:
 
 `f5673a39ddeef05f82c828f6cff554518f5f8ef6`
 
-The exact source bindings cover PCL progress/human-view, Scoped Authority Evidence, Materialization Authority and the Reusable Component Admission Audit. These are compatibility/reference bindings; canonical JavaScript/Python evaluators are not executed by Workbench.
-
-### Admission guard
-
-Workbench v0.3 follows the repository's `NO_ADMISSION` result conservatively: provider registry convenience is a Workbench-local composition, not evidence for Stable Core or interface-registry promotion.
+PCL, Scoped Authority Evidence, Materialization Authority and Reusable Component Admission Audit bindings remain exact-frontier compatibility/reference bindings. Workbench does not claim canonical evaluator execution.
 
 ### Authority
 
-`freeshield-read-only-bridge/v0.3` grants only read-only Observe/Propose when explicitly enabled and when mutation/network/process requests remain zero/false. Execute is denied.
+`freeshield-read-only-bridge/v0.4` grants only read-only Observe/Propose when explicitly enabled and when requested mutation/network/arbitrary-process authority remains zero/false. The trusted fixed semantic-host launch is an internal implementation step and is not exposed as arbitrary-process authority to JSON or providers.
 
-`Evidence != Authority`
-
-`Provider Selection != Authority Grant`
-
-`Scoped Authority Evidence != Materialization Authority != Execution Authority`
-
-`Supported Evidence != ActionPermit`
-
-No materialization or execution path exists in v0.3.
+Execute remains denied before evidence collection and before semantic process launch.
 
 ## Local layout
 
@@ -63,4 +66,4 @@ Workspace: `K:\Matawaka`
 
 Catalog: `K:\Matawaka\Catalog`
 
-The Workbench has its own local Git predecessor chain. Catalog repositories remain evidence sources and are not modified by the v0.3 patch.
+The Workbench has a local accepted Git predecessor chain. Catalog repositories are evidence sources and are not modified by the v0.4 patch.
