@@ -1,93 +1,114 @@
-# Matawaka Workbench v0.33 candidate — Security boundary
+# Matawaka Workbench v0.34 candidate — Security boundary
 
-Accepted predecessor: `workbench-v0.32-accepted` / `24c98787817b3b37f1a7197ecb5627be130f2581`.
+Accepted predecessor: `workbench-v0.33-accepted` / `df211d1f4d80d0b1f238f1166460758e73ce18d2`.
 
 The established semantic/runtime boundary remains unchanged: fixed verified SemanticHost, restricted Low-integrity token, Windows Job Object, runtime attestation before semantic input, read-only proposal behavior and denied Execute control.
 
 ## Maintenance distinctions
 
 ```text
-Package Preview != Materialization Authority
 One Update Candidate Confirmation != Authority Collapse
-Plan Receipt != Materialization Receipt
-Materialization Receipt != Source Apply Authority
-READY Apply Plan != Source Mutation
 Successful Build != Candidate Launch
 Candidate Launch != Self-test
 Self-test PASS != Checkpoint Authority
 Accepted Checkpoint != Remote Publication Authority
-Fixed Publication Authority != General Network Authority
+Publication Success != Lifecycle Authority
+Lifecycle Summary != Lifecycle Authority
+Observed Sequence != Authorized Sequence
+Receipt Binding != Automatic Transition
 Workbench Maintenance Authority != Catalog Mutation Authority != Agent Execute
 ```
 
-## v0.33 Update candidate boundary
+## Accepted update and launch boundary
 
-`MaintenanceUpdateOrchestratorService` sequences existing typed services only:
+v0.34 keeps the accepted v0.33 `MaintenanceUpdateOrchestratorService` unchanged. It sequences the existing typed intake/materialize/staged-plan/apply-build gates, preserves their sub-receipts and stops before candidate launch.
 
-`LocalUpdateIntakeService -> LocalUpdateMaterializationService -> StagedUpdateApplyPlanService -> BoundedUpdateApplyBuildService`
+**Запустить candidate** remains a separate exact-executable confirmation.
 
-The orchestrator itself does not implement a second source mutation/build path. It does not call candidate launch or fixed publication. It preserves every sub-receipt and stops at:
+## v0.34 Self-test boundary
 
-`CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`
+Self-test preserves the complete accepted v0.33 read-only matrix and adds only offline lifecycle contract checks. It validates categories such as:
 
-Freshness requirements include:
+- summary/action/authority fields remain false;
+- fixed v0.34 target and exact v0.33 predecessor;
+- missing lifecycle artifact is refused;
+- ambiguous lifecycle artifact is refused.
 
-- package bytes/digest unchanged after preview;
-- fresh package plan equivalent to preview identity/digests;
-- exact predecessor commit/tag still current;
-- staging-only materialization receipt valid;
-- fresh staged plan READY and non-authorizing;
-- apply/build receipt exact target/predecessor and separate-launch;
-- existing apply/build rollback remains responsible for restoration on failure.
+Self-test does not scan actual lifecycle directories and performs no update/build/launch/checkpoint/publication/lifecycle-write effect.
 
-A stale or consumed session cannot silently authorize a later mutation.
+## v0.34 local checkpoint boundary
 
-## Separate Launch boundary
+`workbench-v0.34-accepted` requires:
 
-**Запустить candidate** remains the existing separate explicit gate. It consumes the exact successful `WorkbenchUpdateApplyBuildReceipt`, rechecks candidate/SemanticHost digests and predecessor source state, and launches only the exact receipt-bound executable.
-
-`Update candidate success != Launch authority`
-
-## v0.33 Self-test boundary
-
-Self-test preserves the complete accepted v0.32 read-only semantic/runtime and publisher-contract matrix and adds only deterministic offline checks for:
-
-- orchestrator non-authorizing preview;
-- typed service reuse;
-- stop-before-launch behavior;
-- v0.33 fixed publisher remote/tag/conflict classifications.
-
-Self-test performs no package update effect, build, launch, checkpoint, remote read or publication.
-
-## v0.33 local checkpoint boundary
-
-A local `workbench-v0.33-accepted` checkpoint requires:
-
-- passing in-process v0.33 Self-test receipt;
-- exact acceptance artifact/executable digest match;
-- HEAD at exact `workbench-v0.32-accepted` predecessor;
-- exact v0.33 build-source manifest matching all changed source bytes;
+- passing in-process v0.34 Self-test;
+- exact acceptance artifact + running executable digest binding;
+- current HEAD exactly `df211d1f...` and predecessor tag at that commit;
+- exact dynamic v0.34 build-source manifest matching all changed files/bytes;
 - explicit **Принять** confirmation.
 
-This gate may only perform fixed local `git add/commit/tag`. It creates no push/network/publication authority.
+Only fixed local add/commit/tag is admitted. Publication and lifecycle summary remain separate.
 
-## v0.33 fixed GitHub publication boundary
+## v0.34 fixed publication boundary
 
-After local acceptance, **Publish accepted** uses only:
+**Publish accepted** retains one fixed destination and fast-forward-only semantics:
 
 ```text
 remote = github-workbench
 url = https://github.com/Matawaka/workbench.git
 branch = refs/heads/main
-tag = workbench-v0.33-accepted
+tag = workbench-v0.34-accepted
 ```
 
-Remote main must be exact local parent or exact local HEAD. A conflicting main or tag fails closed. Main update is non-force exact-head fast-forward only. The accepted tag may only be absent or already exact HEAD. Final remote main/tag readback must equal local accepted HEAD, and local HEAD/working tree must remain unchanged.
+Remote main must be exact predecessor or exact accepted HEAD. Conflicting main/tag fails closed. No force-push/tag movement/general network/catalog/Agent Execute authority is created.
 
-No arbitrary remote, force-push, tag movement, catalog mutation, Agent Execute, ActionPermit, credentials/protection mutation, general network authority, canonical UU-AAP conformance or Stable Core/interface-registry promotion is authorized.
+## Maintenance Lifecycle Receipt boundary
 
-## Historical evidence
+**Lifecycle receipt** is post-publication evidence composition only.
 
-Historical recovery/transport/key and pre-v0.33 update controls may remain as collapsed compatibility bindings for accepted legacy liveness code. They are not visible/focusable/clickable product controls.
+The assessment may read:
 
-`UI consolidation != Historical evidence deletion`
+- local Workbench artifact files;
+- fixed read-only Git observations: `rev-parse HEAD`, `tag --points-at HEAD`, `status --porcelain`.
+
+It may not invoke Update candidate, source apply/build, candidate launch, Self-test, local checkpoint or publication services.
+
+A complete lifecycle relation requires exact bindings:
+
+1. current accepted checkpoint at HEAD/tag;
+2. checkpoint-bound Self-test artifact path and SHA-256;
+3. passing v0.34 acceptance executable SHA-256;
+4. unique v0.33 orchestrator receipt targeting v0.34 with the same built candidate executable SHA-256;
+5. unique v0.34 publication receipt with local/remote main/tag equal the checkpoint accepted commit;
+6. SHA-256 of every consumed artifact;
+7. clean current Workbench source state.
+
+Missing or multiple qualifying artifacts are not guessed or resolved by file age.
+
+```text
+Missing Artifact != Inferred Success
+Ambiguous Artifact != Chosen Latest Artifact
+Artifact Path != Artifact Identity
+Same Executable Digest != Automatic Authority
+Publication Success != Retroactive Update Authority
+```
+
+After a complete assessment, an explicit confirmation may write one local receipt under ignored `artifacts/lifecycle`. That write is evidence only and exposes:
+
+- `AuthorityCreated=false`;
+- `ActionPerformed=false`;
+- `RetryAuthorized=false`;
+- `RollbackAuthorized=false`.
+
+## Prohibited effects
+
+v0.34 lifecycle work does not create or authorize:
+
+- package/source mutation, build or launch;
+- Self-test/checkpoint/publication replay;
+- Git push/fetch/remote mutation from the lifecycle service;
+- retry or rollback;
+- catalog mutation;
+- Agent Execute or ActionPermit;
+- general network authority;
+- canonical UU-AAP conformance;
+- Stable Core/interface-registry promotion.
