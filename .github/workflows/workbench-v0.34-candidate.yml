@@ -77,9 +77,6 @@ jobs:
           )) {
             if ($src -match $forbidden) { throw "lifecycle service invokes downstream effect: $forbidden" }
           }
-          # Static Process.Start(...) would be an unbounded downstream launch. The
-          # service intentionally uses lowercase instance process.Start() only inside
-          # its fixed read-only Git helper, so this check must remain case-sensitive.
           if ($src -cmatch 'Process\.Start\s*\(') { throw 'static Process.Start downstream launch found in lifecycle service' }
           foreach ($forbiddenGit in @(
             'RunGitReadOnlyAsync\([^;]*"push"',
@@ -129,8 +126,87 @@ jobs:
           if ($forbidden) { throw "unexpected non-App implementation mutation: $($forbidden -join ', ')" }
           Write-Host 'accepted non-App implementation unchanged: PASS'
 
-      - name: Clean checkout after validation
+      - name: Clean checkout before package creation
         shell: pwsh
         run: |
           $status = git status --porcelain=v1 --untracked-files=all
           if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.34 GUI update package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'README.md',
+            'START-HERE.md',
+            'SECURITY-BOUNDARY.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'PATCH-v0.34.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V034.cs',
+            'src/Matawaka.Workbench.App/MaintenanceLifecycleReceiptService.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV034AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV034Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV034Service.cs'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "package payload file missing: $file" }
+          }
+
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.34-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            $manifestFiles += [ordered]@{ Path = $file; Sha256 = $sha }
+          }
+
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.34.0'
+            PredecessorTag = 'workbench-v0.33-accepted'
+            PredecessorCommit = 'df211d1f4d80d0b1f238f1166460758e73ce18d2'
+            TargetTag = 'workbench-v0.34-accepted'
+            PayloadRoot = 'payload/'
+            Files = $manifestFiles
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'source-only package; no effect on creation',
+              'no network requested by package',
+              'no catalog mutation requested',
+              'no Agent Execute requested',
+              'package validity does not authorize build/launch/checkpoint/publication/lifecycle receipt'
+            )
+          }
+          $manifestPath = Join-Path $root 'workbench-update-manifest.json'
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.34-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $zipSha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.34-source-only.sha256.txt'), "$zipSha  workbench-v0.34-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$zipSha"
+          Write-Host "payload files=$($files.Count)"
+
+      - name: Upload v0.34 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.34-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.34-source-only.zip
+            ${{ runner.temp }}/workbench-v0.34-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
