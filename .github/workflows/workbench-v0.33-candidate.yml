@@ -1,0 +1,84 @@
+name: Workbench v0.33 candidate validation
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.33-update-orchestrator
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows orchestrator build and authority checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify one-session UI and separate launch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.33\.0') { throw 'v0.33 title missing' }
+          if ($xaml -notmatch 'Content="Update candidate"') { throw 'Update candidate button missing' }
+          if ($xaml -notmatch 'Click="UpdateCandidateButton_Click"') { throw 'Update candidate handler missing' }
+          if ($xaml -notmatch 'Content="Запустить candidate"') { throw 'separate Launch candidate button missing' }
+          foreach ($label in @('Content="Пакет обновления"','Content="Материализовать"','Content="План применения"','Content="Применить + собрать"')) {
+            if ($xaml.Contains($label)) { throw "legacy pre-launch control still visible: $label" }
+          }
+          if ($xaml -notmatch 'x:Name="HistoricalCompatibilityBindings"[^>]*Visibility="Collapsed"') { throw 'collapsed compatibility bindings missing' }
+          Write-Host 'v0.33 visible update surface: PASS'
+
+      - name: Verify orchestrator reuses typed gates and stops before launch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content 'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs' -Raw
+          foreach ($required in @('LocalUpdateIntakeService','LocalUpdateMaterializationService','StagedUpdateApplyPlanService','BoundedUpdateApplyBuildService','READY_FOR_SEPARATE_MATERIALIZATION_AUTHORITY','MATERIALIZED_STAGING_ONLY','READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY','CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED')) {
+            if ($src -notmatch [regex]::Escape($required)) { throw "typed predecessor/gate missing from orchestrator: $required" }
+          }
+          foreach ($forbidden in @('ProcessStartInfo','Process.Start','LaunchCandidateAsync','FixedGitHubPublicationService','git push','ActionPermit')) {
+            if ($src -match [regex]::Escape($forbidden)) { throw "forbidden duplicated/downstream effect found in orchestrator: $forbidden" }
+          }
+          if ($src -notmatch 'preview\.EffectAuthorized') { throw 'non-authorizing preview check missing' }
+          if ($src -notmatch 'VerifyEquivalentPlan') { throw 'fresh plan equivalence check missing' }
+          Write-Host 'typed-gate reuse / separate launch boundary: PASS'
+
+      - name: Verify accepted non-App implementation unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '24c98787817b3b37f1a7197ecb5627be130f2581'
+          git cat-file -e "$base^{commit}"
+          $changed = git diff --name-only $base HEAD
+          $forbidden = $changed | Where-Object {
+            $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or
+            $_ -like 'src/Matawaka.Workbench.Runtime/*' -or
+            $_ -like 'src/Matawaka.Workbench.Protocol/*' -or
+            $_ -like 'src/Matawaka.Workbench.Engine/*' -or
+            $_ -like 'src/Matawaka.Workbench.Catalog/*' -or
+            $_ -like 'src/Matawaka.Workbench.SemanticHost/*'
+          }
+          if ($forbidden) { throw "unexpected non-App implementation mutation: $($forbidden -join ', ')" }
+          Write-Host 'accepted non-App implementation unchanged: PASS'
+
+      - name: Clean checkout after build validation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
