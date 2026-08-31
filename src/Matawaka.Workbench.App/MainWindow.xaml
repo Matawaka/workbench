@@ -37,6 +37,24 @@
                        VerticalAlignment="Center" FontStyle="Italic"/>
         </WrapPanel>
 
+        <!-- Hidden field bindings keep the accepted v0.31 BeginRun/EndRun liveness code
+             source-compatible. They are not visible, focusable, clickable product controls. -->
+        <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
+            <Button x:Name="RecoveryAdmissionButton"/>
+            <Button x:Name="RecoveryNegativeControlsButton"/>
+            <Button x:Name="RecoveryEvidenceClosureButton"/>
+            <Button x:Name="RecoveryEvidenceReplayButton"/>
+            <Button x:Name="RecoveryEvidenceRelocationButton"/>
+            <Button x:Name="RecoveryEvidenceExportButton"/>
+            <Button x:Name="RecoveryEvidenceImportButton"/>
+            <Button x:Name="RecoveryTransportIndependenceButton"/>
+            <Button x:Name="RecoveryTransportAdversarialControlsButton"/>
+            <Button x:Name="RecoveryTransportAdversarialEvidenceClosureButton"/>
+            <Button x:Name="ProducerKeyProvenanceBoundaryButton"/>
+            <Button x:Name="ProducerKeyRotationContinuityBoundaryButton"/>
+            <Button x:Name="ProducerKeyRevocationInferenceBoundaryButton"/>
+        </StackPanel>
+
         <Grid Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
