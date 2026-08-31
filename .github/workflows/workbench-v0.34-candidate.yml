@@ -1,0 +1,133 @@
+name: Workbench v0.34 candidate validation
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.34-maintenance-lifecycle-receipt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows lifecycle build and authority checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify v0.34 visible lifecycle surface and separate gates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.34\.0') { throw 'v0.34 title missing' }
+          foreach ($pair in @(
+            @('SelfTestV034Button_Click','Self-test v0.34'),
+            @('AcceptCheckpointV034Button_Click','Accept v0.34'),
+            @('PublishAcceptedV034Button_Click','Publish v0.34'),
+            @('LifecycleReceiptButton_Click','Lifecycle receipt')
+          )) {
+            if ($xaml -notmatch [regex]::Escape($pair[0])) { throw "$($pair[1]) handler missing" }
+          }
+          if ($xaml -notmatch 'Content="Update candidate"') { throw 'accepted orchestrator entry point missing' }
+          if ($xaml -notmatch 'Content="Запустить candidate"') { throw 'separate launch missing' }
+          if ($xaml -notmatch 'Content="Lifecycle receipt"') { throw 'lifecycle button missing' }
+          if ($xaml -notmatch 'x:Name="LifecycleTab"') { throw 'lifecycle output tab missing' }
+          Write-Host 'v0.34 visible lifecycle surface: PASS'
+
+      - name: Verify lifecycle service is audit-only and fail-closed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content 'src/Matawaka.Workbench.App/MaintenanceLifecycleReceiptService.cs' -Raw
+          foreach ($required in @(
+            'RequireSingleCandidate',
+            'lifecycle-ambiguous-artifact-refused',
+            'lifecycle-missing-artifact-refused',
+            'CandidateExecutableSha256',
+            'AcceptanceArtifactSha256',
+            'RemoteMainAfter',
+            'RemoteTagAfter',
+            'AuthorityCreated',
+            'ActionPerformed',
+            'RetryAuthorized',
+            'RollbackAuthorized'
+          )) {
+            if ($src -notmatch [regex]::Escape($required)) { throw "required lifecycle contract marker missing: $required" }
+          }
+          foreach ($forbidden in @(
+            'MaintenanceUpdateOrchestratorService\s*\(',
+            'LaunchCandidateAsync\s*\(',
+            'LocalCheckpointV034Service\s*\(',
+            'FixedGitHubPublicationV034Service\s*\(',
+            'Process\.Start\s*\('
+          )) {
+            if ($src -match $forbidden) { throw "lifecycle service invokes downstream effect: $forbidden" }
+          }
+          foreach ($forbiddenGit in @(
+            'RunGitReadOnlyAsync\([^;]*"push"',
+            'RunGitReadOnlyAsync\([^;]*"fetch"',
+            'RunGitReadOnlyAsync\([^;]*"remote"',
+            'RunGitReadOnlyAsync\([^;]*"commit"',
+            'RunGitReadOnlyAsync\([^;]*"add"'
+          )) {
+            if ($src -match $forbiddenGit) { throw "lifecycle service contains mutating/network git observation: $forbiddenGit" }
+          }
+          if ($src -notmatch 'RunGitReadOnlyAsync\(repositoryRoot, cancellationToken, "rev-parse", "HEAD"\)') { throw 'fixed HEAD observation missing' }
+          if ($src -notmatch 'RunGitReadOnlyAsync\(repositoryRoot, cancellationToken, "tag", "--points-at", "HEAD"\)') { throw 'fixed tag observation missing' }
+          if ($src -notmatch 'RunGitReadOnlyAsync\(repositoryRoot, cancellationToken, "status", "--porcelain=v1", "--untracked-files=all"\)') { throw 'fixed status observation missing' }
+          Write-Host 'audit-only / fail-closed lifecycle service: PASS'
+
+      - name: Verify v0.34 acceptance checkpoint publisher successors
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV034AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV034Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV034Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.34') { throw 'v0.34 acceptance schema missing' }
+          if ($accept -notmatch 'MaintenanceLifecycleReceiptService\.RunOfflineContractChecks') { throw 'offline lifecycle checks missing from Self-test' }
+          if ($checkpoint -notmatch 'workbench-v0\.34-accepted') { throw 'v0.34 checkpoint target missing' }
+          if ($checkpoint -notmatch 'df211d1f4d80d0b1f238f1166460758e73ce18d2') { throw 'exact v0.33 predecessor missing from checkpoint' }
+          if ($publisher -notmatch 'workbench-v0\.34-accepted') { throw 'v0.34 publication target missing' }
+          if ($publisher -match '"--force') { throw 'force publication argument found' }
+          if ($publisher -notmatch 'FixedGitHubPublicationV034Service') { throw 'v0.34 publisher class missing' }
+          Write-Host 'v0.34 successor contracts: PASS'
+
+      - name: Verify accepted non-App implementation unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'df211d1f4d80d0b1f238f1166460758e73ce18d2'
+          git cat-file -e "$base^{commit}"
+          $changed = git diff --name-only $base HEAD
+          $forbidden = $changed | Where-Object {
+            $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or
+            $_ -like 'src/Matawaka.Workbench.Runtime/*' -or
+            $_ -like 'src/Matawaka.Workbench.Protocol/*' -or
+            $_ -like 'src/Matawaka.Workbench.Engine/*' -or
+            $_ -like 'src/Matawaka.Workbench.Catalog/*' -or
+            $_ -like 'src/Matawaka.Workbench.SemanticHost/*'
+          }
+          if ($forbidden) { throw "unexpected non-App implementation mutation: $($forbidden -join ', ')" }
+          Write-Host 'accepted non-App implementation unchanged: PASS'
+
+      - name: Clean checkout after validation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
