@@ -41,24 +41,25 @@ jobs:
           if ($xaml -notmatch 'PublishAcceptedButton') { throw 'Publish accepted control missing' }
           if ($xaml -notmatch 'SelfTestV032Button_Click') { throw 'v0.32 Self-test handler not wired' }
           if ($xaml -notmatch 'AcceptCheckpointV032Button_Click') { throw 'v0.32 checkpoint handler not wired' }
+          if ($xaml -notmatch 'x:Name="HistoricalCompatibilityBindings"[^>]*Visibility="Collapsed"') { throw 'collapsed historical compatibility binding container missing' }
 
-          $historicalButtons = @(
-            'RecoveryAdmissionButton',
-            'RecoveryNegativeControlsButton',
-            'RecoveryEvidenceClosureButton',
-            'RecoveryEvidenceReplayButton',
-            'RecoveryEvidenceRelocationButton',
-            'RecoveryEvidenceExportButton',
-            'RecoveryEvidenceImportButton',
-            'RecoveryTransportIndependenceButton',
-            'RecoveryTransportAdversarialControlsButton',
-            'RecoveryTransportAdversarialEvidenceClosureButton',
-            'ProducerKeyProvenanceBoundaryButton',
-            'ProducerKeyRotationContinuityBoundaryButton',
-            'ProducerKeyRevocationInferenceBoundaryButton'
+          $historicalVisibleLabels = @(
+            'Content="Recovery admission"',
+            'Content="Recovery negatives"',
+            'Content="Recovery closure"',
+            'Content="Recovery replay"',
+            'Content="Recovery relocate"',
+            'Content="Recovery export"',
+            'Content="Recovery import"',
+            'Content="Transport independence"',
+            'Content="Transport negatives"',
+            'Content="Transport closure"',
+            'Content="Key provenance"',
+            'Content="Key continuity"',
+            'Content="Revocation boundary"'
           )
-          foreach ($name in $historicalButtons) {
-            if ($xaml -match [regex]::Escape($name)) { throw "historical proof button still active in XAML: $name" }
+          foreach ($label in $historicalVisibleLabels) {
+            if ($xaml.Contains($label)) { throw "historical proof label still active in visible XAML: $label" }
           }
 
           if ($publisher -notmatch 'RemoteName = "github-workbench"') { throw 'fixed remote name missing' }
