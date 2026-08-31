@@ -96,3 +96,82 @@ jobs:
         run: |
           $status = git status --porcelain=v1 --untracked-files=all
           if ($status) { throw "tracked/untracked source drift after validation: $status" }
+
+      - name: Build source-only v0.32 GUI update package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'README.md',
+            'START-HERE.md',
+            'SECURITY-BOUNDARY.md',
+            'PATCH-v0.32.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V032.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationService.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV032AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV032Service.cs'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "package payload file missing: $file" }
+          }
+
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.32-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            $manifestFiles += [ordered]@{ Path = $file; Sha256 = $sha }
+          }
+
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.32.0'
+            PredecessorTag = 'workbench-v0.31-accepted'
+            PredecessorCommit = '532c1c8220d160321c928055139aa8f76a0dc08b'
+            TargetTag = 'workbench-v0.32-accepted'
+            PayloadRoot = 'payload/'
+            Files = $manifestFiles
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'source-only package; no effect on creation',
+              'no network requested by package',
+              'no catalog mutation requested',
+              'no Agent Execute requested',
+              'package validity does not authorize materialization/build/launch/checkpoint/publication'
+            )
+          }
+          $manifestPath = Join-Path $root 'workbench-update-manifest.json'
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.32-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $zipSha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.32-source-only.sha256.txt'), "$zipSha  workbench-v0.32-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "package=$zip"
+          Write-Host "sha256=$zipSha"
+          Write-Host "payload files=$($files.Count)"
+
+      - name: Upload v0.32 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.32-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.32-source-only.zip
+            ${{ runner.temp }}/workbench-v0.32-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
