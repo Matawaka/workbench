@@ -1,19 +1,66 @@
-# Start here — Workbench v0.14
+# Start here — Workbench v0.32 candidate
 
-## Normal acceptance
+The accepted/public predecessor is still `workbench-v0.31-accepted` until the complete v0.32 local acceptance and publication sequence finishes.
 
-1. Enable **Агент включен** for the read-only acceptance matrix.
-2. Click **Self-test** and require `Passed=true`.
-3. Click **Принять**, review the exact Workbench changed-file list, and explicitly confirm.
+## Normal local analysis
 
-## Local GUI update cycle
+- Paste JSON or load it from a file.
+- **Проверить** validates the command envelope.
+- **Запустить** follows the current bounded Runtime / AgentHost / SemanticHost authority path.
+- **Агент включен** is required only where the chosen action explicitly requires the bounded agent path.
+- **Разрешить git fetch** is a separate catalog-observation permission. It does not authorize source publication.
+
+## Build and accept the v0.32 candidate
+
+From accepted v0.31 use the existing self-hosted GUI update chain:
 
 1. **Пакет обновления** → require `READY_FOR_SEPARATE_MATERIALIZATION_AUTHORITY`.
-2. **Материализовать** → explicitly confirm → require `MATERIALIZED_STAGING_ONLY`.
-3. **План применения** → require `READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY` and inspect `Add/Replace/NoOp`.
-4. **Применить + собрать** → explicitly confirm exact source delta and fixed local `--no-restore` build/publish.
-5. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
-6. **Запустить candidate** → explicitly confirm exact executable SHA-256.
-7. In the launched candidate run **Self-test**; only after PASS use **Принять**.
+2. **Материализовать** → explicitly confirm → require staging-only materialization.
+3. **План применения** → inspect exact `Add/Replace/NoOp` and require a READY separate source-apply decision.
+4. **Применить + собрать** → explicitly confirm the exact source delta and fixed local `dotnet --no-restore` build/publish.
+5. Require a byte-bound candidate build receipt.
+6. **Запустить candidate** → explicitly confirm the exact candidate executable SHA-256.
+7. In the launched v0.32 candidate enable **Агент включен** and run **Self-test**.
+8. Require `Passed=true`. Self-test is read-only and does **not** call GitHub publication.
+9. Click **Принять**, inspect the exact source set, and explicitly create the local `workbench-v0.32-accepted` commit/tag.
 
-No external PowerShell/source bootstrap is part of this normal update cycle. A package still arrives as a local file, but no earlier receipt automatically authorizes a later effect. Git remote publication, Matawaka catalog mutation and Agent Execute remain outside the update chain.
+At this point v0.32 is locally accepted but still not remotely published.
+
+## Publish the accepted checkpoint
+
+Only after local v0.32 acceptance:
+
+1. Click **Publish accepted**.
+2. Review the preview. It must show:
+   - `github-workbench`;
+   - `https://github.com/Matawaka/workbench.git`;
+   - current accepted HEAD;
+   - exact local parent;
+   - `workbench-v0.32-accepted`.
+3. Explicitly confirm the network effect.
+4. Require the publication receipt to show remote `main` and the accepted tag both equal the exact local accepted HEAD.
+5. Require local HEAD and working tree unchanged.
+
+The publisher refuses:
+
+- any different remote name/URL;
+- remote `main` that is neither exact parent nor exact local HEAD;
+- a conflicting accepted tag;
+- force-push or tag movement;
+- catalog mutation;
+- Agent Execute / ActionPermit;
+- general Workbench network authority.
+
+A retry is safe when remote `main` already equals accepted HEAD but the tag is still absent.
+
+## Recovery
+
+The active maintenance surface keeps:
+
+- **Recovery check**;
+- **Recovery plan**;
+- **Recovery execute**.
+
+Older recovery/transport/key proof buttons were removed from the active toolbar in v0.32, but their source, receipts, patch notes and Git history remain evidence.
+
+`Historical evidence UI removal != Historical evidence erasure`
