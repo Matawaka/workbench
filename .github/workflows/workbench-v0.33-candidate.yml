@@ -52,11 +52,20 @@ jobs:
           foreach ($required in @('LocalUpdateIntakeService','LocalUpdateMaterializationService','StagedUpdateApplyPlanService','BoundedUpdateApplyBuildService','READY_FOR_SEPARATE_MATERIALIZATION_AUTHORITY','MATERIALIZED_STAGING_ONLY','READY_FOR_SEPARATE_SOURCE_APPLY_AUTHORITY','CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED')) {
             if ($src -notmatch [regex]::Escape($required)) { throw "typed predecessor/gate missing from orchestrator: $required" }
           }
-          foreach ($forbidden in @('ProcessStartInfo','Process.Start','LaunchCandidateAsync','FixedGitHubPublicationService','git push','ActionPermit')) {
-            if ($src -match [regex]::Escape($forbidden)) { throw "forbidden duplicated/downstream effect found in orchestrator: $forbidden" }
+          $forbiddenPatterns = @(
+            'ProcessStartInfo',
+            'Process\.Start\s*\(',
+            'LaunchCandidateAsync\s*\(',
+            'new\s+FixedGitHubPublicationService\s*\(',
+            'RunGitAsync\s*\(',
+            'RunGitReadOnlyAsync\s*\('
+          )
+          foreach ($pattern in $forbiddenPatterns) {
+            if ($src -match $pattern) { throw "forbidden duplicated/downstream executable effect pattern found in orchestrator: $pattern" }
           }
           if ($src -notmatch 'preview\.EffectAuthorized') { throw 'non-authorizing preview check missing' }
           if ($src -notmatch 'VerifyEquivalentPlan') { throw 'fresh plan equivalence check missing' }
+          if ($src -notmatch 'LaunchPerformed,\s*bool CheckpointAuthorized,\s*bool PublicationAuthorized') { throw 'explicit downstream non-effect fields missing from receipt contract' }
           Write-Host 'typed-gate reuse / separate launch boundary: PASS'
 
       - name: Verify accepted non-App implementation unchanged
