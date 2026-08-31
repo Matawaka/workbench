@@ -18,16 +18,16 @@
             <Button x:Name="FileButton" Content="Из файла" Width="100" Margin="0,0,8,0" Click="FileButton_Click"/>
             <Button x:Name="ValidateButton" Content="Проверить" Width="100" Margin="0,0,8,0" Click="ValidateButton_Click"/>
             <Button x:Name="RunButton" Content="Запустить" Width="100" Margin="0,0,8,0" Click="RunButton_Click"/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV032Button_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV032Button_Click"/>
+            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV033Button_Click"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV033Button_Click"/>
             <Button x:Name="UpdateCandidateButton" Content="Update candidate" Width="130" Margin="0,0,8,0" Click="UpdateCandidateButton_Click"
                     ToolTip="Один maintenance-сеанс: fresh plan → materialize → apply plan → exact apply/build; candidate launch остаётся отдельным решением"/>
             <Button x:Name="LaunchCandidateButton" Content="Запустить candidate" Width="145" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateButton_Click"/>
             <Button x:Name="RecoveryCheckButton" Content="Recovery check" Width="120" Margin="0,0,8,0" Click="RecoveryCheckButton_Click"/>
             <Button x:Name="RecoveryPlanButton" Content="Recovery plan" Width="120" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryPlanButton_Click"/>
             <Button x:Name="RecoveryExecuteButton" Content="Recovery execute" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryExecuteButton_Click"/>
-            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedButton_Click"
-                    ToolTip="Публикация остаётся отдельной от update/build/launch/acceptance authority"/>
+            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV033Button_Click"
+                    ToolTip="Только после локального workbench-v0.33-accepted; fixed Matawaka/workbench, fast-forward only, no force"/>
             <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
             <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
             <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
