@@ -1,97 +1,84 @@
-# Matawaka Workbench v0.33 candidate
+# Matawaka Workbench v0.34 candidate
 
-Windows/.NET 10 WPF control plane for bounded local Matawaka analysis, evidence/authority inspection, self-hosted maintenance, recovery and explicit accepted-source publication.
+Windows/.NET 10 WPF control plane for bounded local Matawaka analysis, authority/evidence inspection, self-hosted maintenance, recovery and explicit accepted-source publication.
 
-## Accepted predecessor
+## Accepted baseline
 
 The currently accepted and remotely published Workbench is:
 
-- commit `24c98787817b3b37f1a7197ecb5627be130f2581`;
-- tag `workbench-v0.32-accepted`;
-- parent `532c1c8220d160321c928055139aa8f76a0dc08b`.
+- commit `df211d1f4d80d0b1f238f1166460758e73ce18d2`;
+- tag `workbench-v0.33-accepted`;
+- parent `24c98787817b3b37f1a7197ecb5627be130f2581`.
 
-v0.33 candidate source does not change that accepted frontier until it independently traverses update → launch → Self-test → local checkpoint → Publish accepted.
+v0.34 candidate source does not change that frontier until it independently traverses `Update candidate → Launch → Self-test → local checkpoint → Publish accepted`.
 
-## Architecture
+## Current maintenance UX
 
-Workbench is a product/application layer, not UU-AAP Stable Core:
-
-- `Matawaka.Workbench.App` — WPF operator surface and maintenance gates;
-- `Matawaka.Workbench.Runtime` — command routing/runtime composition;
-- `Matawaka.Workbench.Protocol` — Workbench-local typed contracts/progress semantics;
-- `Matawaka.Workbench.AgentHost` — bounded development-agent host and Windows process/security boundary;
-- `Matawaka.Workbench.Engine` — reusable analytic future adapter;
-- `Matawaka.Workbench.Catalog` — local Matawaka catalog inspection;
-- `Matawaka.Workbench.SemanticHost` — fixed verified semantic host.
-
-The established semantic/runtime line remains unchanged: restricted Low-integrity token, Windows Job Object, runtime attestation before semantic input, byte-bound SemanticHost, read-only proposal path and denied Execute acceptance control.
-
-## v0.33 product change — Maintenance Update Orchestrator
-
-v0.32 proved the fixed accepted-source publisher and consolidated historical proof controls out of the active toolbar. v0.33 addresses the remaining normal-update operator burden.
-
-Previous visible pre-launch sequence:
-
-`Пакет обновления → Материализовать → План применения → Применить + собрать → Запустить candidate`
-
-v0.33 visible sequence:
+Accepted v0.33 already reduced the pre-launch candidate update path to:
 
 `Update candidate → Запустить candidate`
 
-The single **Update candidate** session does not collapse the underlying typed boundaries. `MaintenanceUpdateOrchestratorService` sequences the already-existing:
-
-`LocalUpdateIntakeService → LocalUpdateMaterializationService → StagedUpdateApplyPlanService → BoundedUpdateApplyBuildService`
-
-Each service still revalidates its own current evidence and emits its own receipt. The aggregate orchestrator receipt binds those sub-receipts but does not replace them.
+The first button sequences the existing typed intake/materialize/staged-plan/apply-build gates and preserves their individual receipts. Launch remains separate. Self-test, local acceptance and publication remain later explicit actions.
 
 ```text
 One operator session != One semantic authority
-Package Preview != Materialization Authority
-Plan Receipt != Materialization Receipt
-Materialization Receipt != Source Apply Authority
-READY Apply Plan != Source Mutation
 Successful Build != Candidate Launch
+Candidate Launch != Self-test
+Self-test PASS != Checkpoint Authority
+Accepted Checkpoint != Publish Authority
 ```
 
-**Запустить candidate** remains a separate explicit exact-executable decision and uses the already accepted launch gate.
+## v0.34 product change — Maintenance Lifecycle Receipt
 
-## v0.33 acceptance/publication chain
+v0.34 adds **Lifecycle receipt** as a post-publication audit action.
 
-After a launched v0.33 candidate:
+It does not perform or authorize maintenance. Instead it attempts to prove that already-existing local evidence forms one exact relation:
 
-1. enable **Агент включен**;
-2. run **Self-test** — complete v0.32 semantic/runtime/publisher matrix + offline v0.33 orchestrator and publisher-successor contract checks;
-3. require `Passed=true`;
-4. **Принять** — local `workbench-v0.33-accepted` only, byte-bound to the built source manifest;
-5. **Publish accepted** — separate fixed GitHub network decision.
+`Update candidate/build → Self-test → local checkpoint → Publish accepted`
 
-The v0.33 fixed publisher retains the accepted v0.32 constraints:
+The lifecycle service binds evidence by identity, not by convenient chronology:
 
-- `github-workbench` only;
-- `https://github.com/Matawaka/workbench.git` only;
-- remote main must be exact parent or exact local HEAD;
-- non-force fast-forward only;
-- accepted tag must be absent or exact HEAD;
-- conflicting main/tag fails closed;
-- exact remote main/tag readback required;
-- local HEAD/working tree unchanged.
+- exact v0.34 checkpoint at current accepted HEAD;
+- checkpoint-bound acceptance artifact path + SHA-256;
+- passing v0.34 Self-test and exact candidate executable SHA-256;
+- the unique v0.33 orchestrator receipt targeting v0.34 whose build executable SHA-256 equals that Self-test executable;
+- the unique v0.34 publication receipt whose local/remote main/tag equal the checkpoint accepted commit;
+- exact SHA-256 for all four consumed artifacts;
+- current local HEAD/tag and clean working tree.
 
-`Accepted checkpoint != Remote publication authority`
+Missing or ambiguous evidence fails closed.
 
-## Non-effects
+```text
+Summary != Authority
+Observed Sequence != Authorized Sequence
+Receipt Binding != Automatic Transition
+Missing Artifact != Inferred Success
+Artifact Path != Artifact Identity
+Latest File != Correct File Without Exact Binding
+Lifecycle Receipt != ActionPermit
+```
 
-v0.33 does not create:
+The only effect of **Lifecycle receipt** after a successful read-only assessment is an explicitly confirmed local evidence file under ignored `artifacts/lifecycle`.
 
-- automatic candidate launch;
-- automatic Self-test/Accept/Publish;
-- Agent Execute or ActionPermit;
-- catalog mutation authority;
-- general network authority;
-- arbitrary Git remote/history rewrite authority;
-- canonical UU-AAP conformance or Stable Core/interface-registry promotion.
+## v0.34 acceptance/publication successors
 
-Historical recovery/transport/key evidence remains in source and Git history even when not visible as permanent toolbar controls.
+v0.34 preserves every existing boundary:
 
-## Next planned layer
+1. accepted v0.33 **Update candidate** installs/builds the v0.34 source package;
+2. **Запустить candidate** remains separate;
+3. v0.34 **Self-test** reuses the full v0.33 read-only matrix and adds only offline lifecycle contract/hostile checks;
+4. **Принять** creates local `workbench-v0.34-accepted` over exact v0.33 predecessor only;
+5. **Publish accepted** remains a separate fixed `Matawaka/workbench` fast-forward/tag network action;
+6. **Lifecycle receipt** runs only after those independent artifacts already exist.
 
-v0.34 may add a **Maintenance Lifecycle Receipt** that summarizes `Update candidate → Self-test → local checkpoint → publication` without authorizing or automating any of those effects.
+No successful stage silently authorizes a later stage.
+
+## Architecture boundary
+
+Workbench remains a product/application layer, not UU-AAP Stable Core. v0.34 does not modify accepted `Runtime`, `Protocol`, `AgentHost`, `Engine`, `Catalog` or `SemanticHost` layers.
+
+It does not create Agent Execute, ActionPermit, catalog mutation authority, general network authority, arbitrary Git remote/history rewrite, retry/rollback authority, canonical UU-AAP conformance or Stable Core/interface-registry promotion.
+
+## After v0.34
+
+No automatic v0.35 feature expansion is assumed. The next decision gate is **Maintenance Lifecycle Qualification**: use the accepted v0.34 maintenance path on a real successor and determine whether the lifecycle composition is reliably reusable, needs correction, or should remain only an audit convenience.
