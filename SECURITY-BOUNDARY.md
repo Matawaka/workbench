@@ -1,41 +1,118 @@
-# Matawaka Workbench v0.14 — Security boundary
+# Matawaka Workbench v0.32 candidate — Security boundary
 
-The accepted v0.7 semantic security boundary remains unchanged: fixed verified semantic host, restricted Low-integrity token, Windows Job Object and child runtime attestation before semantic input. Maintenance surfaces do not widen semantic-provider authority.
+The established semantic/runtime boundary remains unchanged: fixed verified SemanticHost, restricted Low-integrity token, Windows Job Object, runtime attestation before semantic input, read-only proposal behavior and denied Execute control. v0.32 does not widen semantic-provider authority.
 
-## Invariants
+## Core maintenance distinctions
 
-`Self-test PASS != Checkpoint authority`
+```text
+Self-test PASS != Checkpoint authority
+Valid package != Materialization authority
+Staging materialization != Source apply/build authority
+READY source plan != Source mutation authority
+Apply/build authority != Candidate launch authority
+Candidate launch != Acceptance
+Accepted checkpoint != Remote publication authority
+Fixed publication authority != General network authority
+Workbench maintenance authority != Catalog mutation authority != Agent Execute
+```
 
-`Valid package != Materialization authority`
+No receipt from an earlier gate is treated as authorization for a later gate. Every effectful step must revalidate its own current evidence and receive its own explicit operator confirmation.
 
-`Staging materialization != Source apply/build authority`
+## Candidate update boundary
 
-`READY source plan != Source mutation authority`
+The existing self-hosted update chain remains intentionally decomposed:
 
-`Apply/build authority != Candidate launch authority`
+`package intake -> staging materialization -> exact source delta plan -> exact source apply/build -> exact candidate launch -> read-only Self-test -> local accepted checkpoint`
 
-`Candidate launch != Acceptance`
+Source apply is limited to exact planned payload bytes. Build/publish processes are limited to the fixed workspace-local `.dotnet-sdk\dotnet.exe` with fixed `build/publish --no-restore` arguments. Candidate launch is limited to the exact receipt-bound executable digest.
 
-`Workbench maintenance authority != Catalog mutation authority != Agent Execute`
+`--no-restore` means the build gate requests no package restore. It is not evidence of OS-level network isolation.
 
-## Self-hosted update loop
+## v0.32 Self-test boundary
 
-v0.14 does not add a broader effect surface. Its purpose is to exercise the already-separated package-plan, staging materialization, staged planning, exact apply/build, launch, Self-test and local checkpoint gates as one successor transition while preserving a distinct receipt and explicit authority decision at each effectful boundary.
+The v0.32 Self-test reuses the complete accepted v0.31 read-only semantic/runtime matrix and adds deterministic offline checks for the publisher contract only.
 
-A receipt from an earlier gate cannot be reused as authorization for a later gate. Every effectful step revalidates the byte-bound predecessor/evidence it consumes.
+Self-test MUST NOT:
 
-## Exact source apply + build
+- call `git ls-remote`;
+- add/change a Git remote;
+- push a branch or tag;
+- exercise the `Publish accepted` network effect;
+- infer network authority from existence of the publisher code;
+- create Agent Execute, ActionPermit or catalog mutation authority.
 
-Before source mutation the gate requires an in-process staging materialization, a READY staged plan artifact, a freshly regenerated equivalent plan, unchanged accepted predecessor HEAD/tag, a clean Workbench working tree, exact current/staged hashes for every changed path, and explicit **Применить + собрать** confirmation.
+Therefore:
 
-Allowed source effect is limited to the exact planned paths. Replacement bytes are backed up under ignored `.workbench/update-source-backups`. A failure during apply/build restores predecessor source and requires a new authorization attempt.
+`Publisher Contract Check != Publication Effect`
 
-Allowed build process is limited to the fixed workspace-local `.dotnet-sdk\dotnet.exe` and fixed `build/publish --no-restore` arguments for the Workbench solution, App and SemanticHost. No executable path or arguments are taken from command JSON.
+## Fixed GitHub publication authority
 
-`--no-restore` means this gate requests no package restore. **OS network isolation is not enforced**, so this must not be described as a network sandbox.
+The new publication service is a separate explicit human maintenance network gate.
 
-## Candidate launch and checkpoint
+Its fixed identity is:
 
-Launch has a separate confirmation and is limited to the exact receipt-bound candidate executable SHA-256. Launch creates no acceptance/checkpoint authority. The launched candidate must independently pass Self-test and receive a separate explicit **Принять** confirmation for the fixed local Workbench Git checkpoint gate.
+```text
+remote = github-workbench
+url = https://github.com/Matawaka/workbench.git
+branch = refs/heads/main
+tag = workbench-v0.32-accepted
+```
 
-No update gate permits Git fetch/push or remote mutation, catalog mutation, Agent Execute/ActionPermit, Stable Core promotion, or arbitrary process paths supplied by JSON.
+Before any network effect, local preview requires:
+
+- clean Workbench working tree;
+- current HEAD;
+- exact HEAD parent;
+- local `workbench-v0.32-accepted` pointing exactly at HEAD;
+- fixed remote either absent or already mapped to the exact fixed URL.
+
+After explicit **Publish accepted** confirmation, the service may:
+
+1. add the fixed remote only when absent;
+2. read exact remote `main`/tag refs;
+3. push exact accepted HEAD to remote `main` only when remote main equals exact local parent;
+4. do nothing to main when it already equals exact local HEAD;
+5. publish the accepted tag only when absent;
+6. do nothing to the tag when it already resolves to exact local HEAD;
+7. read both refs back and require exact equality;
+8. verify local HEAD and working tree did not change;
+9. write one local publication receipt.
+
+It fails closed when remote main is any third state or the accepted tag conflicts.
+
+## Explicit prohibitions
+
+The publication path has no authority to:
+
+- use a caller-supplied remote name or URL;
+- use `--force`, `--force-with-lease`, delete/refspec rewrite or history rewrite;
+- move or replace an existing conflicting tag;
+- create an unrelated remote main history;
+- publish any branch/tag other than the fixed main/tag pair;
+- mutate Matawaka catalog repositories;
+- invoke Agent Execute or create ActionPermit;
+- provide general network access to Workbench runtime/semantic providers;
+- change credentials/secrets/protection settings;
+- claim canonical UU-AAP conformance, Stable Core membership, identity, trust, trusted time, legal effect or release authority outside this fixed source-publication scope.
+
+```text
+Fast-forward permission != Force-push permission
+Remote main update != Tag movement authority
+Fixed repository network authority != General network authority
+Source publication != Catalog mutation
+Source publication != Canonical UU-AAP conformance
+```
+
+## Partial-success recovery
+
+Publication is intentionally retry-safe for one bounded partial-success state:
+
+`remote main == exact accepted HEAD && accepted tag absent`
+
+A retry may publish only the missing exact tag after revalidating local accepted state and remote main. This recovery path does not authorize any broader remote mutation.
+
+## Historical evidence
+
+v0.32 removes completed recovery/transport/key milestone controls from the active toolbar only. Their service source, receipts, patch notes and Git history remain intact.
+
+`Historical evidence UI removal != Historical evidence deletion`
