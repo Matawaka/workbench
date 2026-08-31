@@ -73,11 +73,14 @@ jobs:
             'MaintenanceUpdateOrchestratorService\s*\(',
             'LaunchCandidateAsync\s*\(',
             'LocalCheckpointV034Service\s*\(',
-            'FixedGitHubPublicationV034Service\s*\(',
-            'Process\.Start\s*\('
+            'FixedGitHubPublicationV034Service\s*\('
           )) {
             if ($src -match $forbidden) { throw "lifecycle service invokes downstream effect: $forbidden" }
           }
+          # Static Process.Start(...) would be an unbounded downstream launch. The
+          # service intentionally uses lowercase instance process.Start() only inside
+          # its fixed read-only Git helper, so this check must remain case-sensitive.
+          if ($src -cmatch 'Process\.Start\s*\(') { throw 'static Process.Start downstream launch found in lifecycle service' }
           foreach ($forbiddenGit in @(
             'RunGitReadOnlyAsync\([^;]*"push"',
             'RunGitReadOnlyAsync\([^;]*"fetch"',
