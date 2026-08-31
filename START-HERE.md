@@ -1,60 +1,69 @@
-# Start here — Workbench v0.33 candidate
+# Start here — Workbench v0.34 candidate
 
-Accepted/public predecessor: `workbench-v0.32-accepted` at `24c98787817b3b37f1a7197ecb5627be130f2581`.
+Accepted/public predecessor: `workbench-v0.33-accepted` at `df211d1f4d80d0b1f238f1166460758e73ce18d2`.
 
-## Normal local analysis
+## Install/build the v0.34 candidate
 
-- Paste JSON or load it from a file.
-- **Проверить** validates the command envelope.
-- **Запустить** follows the bounded Runtime / AgentHost / SemanticHost path.
-- **Агент включен** is explicit and required where the bounded agent/Self-test path needs it.
-- **Разрешить git fetch** remains a separate catalog-observation permission and does not authorize accepted-source publication.
+From accepted v0.33:
 
-## Build the v0.33 candidate
-
-From accepted v0.32:
-
-1. Click **Update candidate** and choose the v0.33 source-only ZIP.
-2. Review package SHA-256, exact predecessor `workbench-v0.32-accepted`, target `workbench-v0.33-accepted`, and payload size/file count.
-3. Explicitly confirm one maintenance session.
-4. Workbench then sequences existing typed gates:
-   - fresh package plan;
-   - staging-only materialization;
-   - fresh staged `Add/Replace/NoOp` plan;
-   - exact source apply + fixed local `dotnet --no-restore` build/publish.
-5. Require the aggregate result `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
+1. Click **Update candidate** and choose the v0.34 source-only ZIP.
+2. Review package SHA-256, exact predecessor `workbench-v0.33-accepted`, target `workbench-v0.34-accepted`, payload file count and bytes.
+3. Explicitly confirm the maintenance session.
+4. Workbench reuses its typed fresh plan → staging materialization → staged apply plan → exact apply/build gates.
+5. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
 6. Click **Запустить candidate** separately and confirm the exact built executable SHA-256.
 
-The Update candidate confirmation does not authorize launch, Self-test, checkpoint or publication.
+`Update candidate != Launch authority`.
 
-## Accept v0.33
+## Accept v0.34
 
 In the launched candidate:
 
 1. enable **Агент включен**;
-2. click **Self-test**;
-3. require `Passed=true`;
-4. inspect the v0.33 acceptance artifact;
-5. click **Принять** and inspect the exact changed-file set;
-6. explicitly create local `workbench-v0.33-accepted`.
+2. run **Self-test** and require `Passed=true`;
+3. Self-test must remain read-only; its lifecycle checks are offline contract/hostile checks only;
+4. click **Принять** and inspect the exact changed-file set;
+5. explicitly create local `workbench-v0.34-accepted`.
 
-Self-test is read-only. Its new v0.33 checks are offline contract checks for the orchestrator and fixed publisher successor; no update/build/launch/publication effect is performed.
+`Self-test PASS != Checkpoint authority`.
 
-## Publish accepted v0.33
+## Publish v0.34
 
-Only after the local accepted tag exists at HEAD:
+After local acceptance:
 
 1. click **Publish accepted**;
-2. verify fixed remote `github-workbench` / `https://github.com/Matawaka/workbench.git`;
-3. verify local accepted HEAD, exact parent and `workbench-v0.33-accepted`;
-4. explicitly confirm the separate network effect;
-5. require remote `main` and accepted tag both read back as the exact local HEAD;
-6. require local HEAD and working tree unchanged.
+2. verify fixed `github-workbench` / `https://github.com/Matawaka/workbench.git`;
+3. verify exact accepted HEAD, parent `df211d1f...` and tag `workbench-v0.34-accepted`;
+4. explicitly confirm publication;
+5. require remote `main` and accepted tag to read back as exact local accepted HEAD;
+6. require local HEAD/working tree unchanged.
 
-The publisher refuses conflicting main/tag state, force-push, arbitrary remote/URL, catalog mutation, Agent Execute, ActionPermit and general Workbench network authority.
+`Accepted checkpoint != Publish authority`.
 
-## Recovery and historical evidence
+## Create Maintenance Lifecycle Receipt
 
-The active surface still keeps **Recovery check / Recovery plan / Recovery execute**. Historical proof handlers/services remain source/audit evidence behind collapsed compatibility bindings.
+Only after publication has independently completed:
 
-`UI simplification != Evidence erasure`
+1. click **Lifecycle receipt**;
+2. Workbench performs a fail-closed read-only assessment of existing local artifacts;
+3. require one exact relation binding:
+   - v0.33 orchestrator receipt targeting v0.34;
+   - its candidate executable SHA-256;
+   - checkpoint-bound passing v0.34 Self-test artifact and exact digest;
+   - v0.34 checkpoint at current HEAD;
+   - v0.34 publication receipt with exact local/remote HEAD/tag;
+4. inspect SHA-256 bindings for all four artifacts and `Complete=true`;
+5. explicitly confirm writing the local lifecycle receipt.
+
+The lifecycle action writes evidence only. It does not call update, build, launch, Self-test, checkpoint or publisher services and does not authorize retry/rollback.
+
+```text
+Summary != Authority
+Observed Sequence != Authorized Sequence
+Missing/Ambiguous Evidence != Inferred Success
+Lifecycle Receipt != ActionPermit
+```
+
+## Normal analysis and recovery
+
+Normal **Проверить / Запустить**, **Recovery check / plan / execute**, catalog scan/fetch and evidence tabs remain independent of maintenance lifecycle authority.
