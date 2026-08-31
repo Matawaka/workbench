@@ -2,127 +2,97 @@
 
 ## Current accepted frontier
 
-As of v0.32 candidate development, the remotely accepted Workbench remains:
+Accepted and remotely published predecessor:
 
-- commit `532c1c8220d160321c928055139aa8f76a0dc08b`;
-- tag `workbench-v0.31-accepted`;
-- tree `ca438434c2c2b093f6aadb5c306a05ad03493870`.
+- commit `24c98787817b3b37f1a7197ecb5627be130f2581`;
+- tag `workbench-v0.32-accepted`;
+- parent `532c1c8220d160321c928055139aa8f76a0dc08b`;
+- tree `93809ef0e9ec7a9471d7f9c4137c43d1aa529c32`.
 
-Candidate source does not change that accepted frontier.
+v0.33 candidate source does not change that accepted frontier before local acceptance and separate publication.
 
-## What the evidence-development line already established
+## Established product/evidence layers
 
-The historical sequence through v0.31 produced reusable implementation/evidence around:
+Historical development through v0.31 established bounded local analysis, authority-separated semantic/runtime execution, visible liveness, local acceptance, self-hosted update/build/launch, recovery/transport evidence and key-provenance/continuity/refusal boundaries.
 
-- bounded local Matawaka analysis;
-- read-only agent authority separation;
-- semantic provider interchangeability;
-- restricted Windows SemanticHost process boundary and runtime attestation;
-- visible progress/liveness without hidden reasoning disclosure;
-- local Self-test and accepted checkpoint;
-- self-hosted exact candidate update/apply/build/launch;
-- recovery admission, negative controls, closure, replay and relocation;
-- transport independence and adversarial transport controls;
-- producer-key provenance, fixture rotation continuity and revocation-inference refusal;
-- preservation of historical evidence when future key policy remains unresolved.
+v0.32 then converted those results into a cleaner product-maintenance surface:
 
-These remain source/history evidence. They are not all active day-to-day operator actions.
-
-## Product audit finding at v0.31
-
-Two kinds of surface had become mixed:
-
-1. current reusable product capabilities;
-2. one-off/completed evidence-development milestones.
-
-This created visual and maintenance entropy: 30+ toolbar click handlers, with many controls representing completed proof stages rather than normal product work.
-
-A second recurring burden was accepted-source publication: every accepted version needed an external generated script even though the target repository and permitted Git transition were always the same.
-
-A third problem was documentation drift: public README/start/security pages still described v0.14 while implementation had reached v0.31.
-
-## v0.32 decision — Maintenance Integrator
-
-v0.32 is therefore an operational simplification increment, not a new UU-AAP primitive.
-
-### Active responsibilities
-
-The application should optimize for five stable responsibilities:
-
-1. bounded local Matawaka analysis and inspection;
-2. visible evidence / authority / liveness state;
-3. safe candidate update, build, launch and local acceptance;
-4. explicit fixed accepted-source publication;
-5. maintenance recovery.
-
-Historical proof code remains available for audit and regression, but no longer requires permanent top-level buttons.
-
-### Publication boundary
-
-The accepted-source publisher is deliberately narrow:
-
-`local accepted checkpoint -> explicit Publish accepted -> fixed Matawaka/workbench fast-forward/tag publication -> exact readback receipt`
-
-It does not generalize into arbitrary Git remote management or agent network execution.
+- completed proof milestones removed from visible top-level controls but preserved in source/history;
+- public docs brought closer to the product architecture;
+- fixed `Matawaka/workbench` accepted-source publisher added;
+- publisher proven and used to publish exact `workbench-v0.32-accepted`.
 
 ## v0.33 — Maintenance Update Orchestrator
 
-Goal: reduce the normal five-button update sequence to one **Update candidate** operator session while preserving all internal boundaries.
+Goal: reduce normal pre-launch update interaction without collapsing typed semantic/authority gates.
 
-Desired visible sequence:
+Visible target:
 
 ```text
-select package
--> inspect aggregate preview
--> explicit start
--> plan sub-receipt
--> materialization sub-receipt
--> apply-plan sub-receipt
--> apply/build sub-receipt
--> launch candidate decision
+Update candidate
+-> separate Launch candidate
+-> separate Self-test
+-> separate local Accept
+-> separate Publish accepted
 ```
 
-Constraints:
+Inside **Update candidate** the application sequences the existing:
 
-- no hidden authority carry-forward between sub-stages;
-- every predecessor receipt remains typed and individually inspectable;
-- stale input at any stage fails closed;
-- rollback behavior remains explicit;
-- candidate launch remains separately observable and may still require its own confirmation;
-- no automatic Self-test/Accept/Publish after candidate launch.
+```text
+read-only package plan
+-> fresh plan
+-> staging-only materialization
+-> fresh staged apply plan
+-> exact source apply/build with existing rollback
+```
+
+Every sub-stage keeps its typed receipt and its own fresh evidence checks.
 
 `One operator session != One semantic authority`
 
+### v0.33 acceptance criteria
+
+- Windows/.NET 10 Release build PASS;
+- one visible Update candidate pre-launch entry point;
+- old four pre-launch controls not visible;
+- separate Launch remains visible and separately confirmed;
+- orchestrator reuses existing typed services, not duplicate mutation/build logic;
+- package/predecessor freshness fails closed;
+- v0.33 Self-test is read-only and includes offline orchestrator/publisher successor checks;
+- local target `workbench-v0.33-accepted` requires byte-bound build source manifest;
+- publication remains fixed fast-forward-only `Matawaka/workbench` gate;
+- source-only v0.33 package traverses accepted v0.32 GUI path;
+- remote main/tag verified independently after publication.
+
 ## v0.34 — Maintenance Lifecycle Receipt
 
-Goal: provide one audit summary linking:
+After v0.33 is accepted/published, add one non-authorizing audit summary linking:
 
-`Update candidate -> Self-test -> Local checkpoint -> Publish accepted`
+`Update candidate receipt -> Launch receipt -> Self-test receipt -> Local checkpoint receipt -> Publication receipt`
 
-The lifecycle receipt should bind the exact receipts/digests from each stage and expose completion/gaps without creating a new action gate.
+The summary must expose missing/failed stages without creating an automatic transition or action lease.
 
-Constraints:
-
-- summary != authority;
-- presence of update receipt != acceptance;
-- acceptance != publication;
-- publication failure does not retroactively invalidate a valid local acceptance;
-- retry/successor events append rather than rewrite earlier evidence.
+```text
+Lifecycle Summary != Authority
+Update Completed != Candidate Accepted
+Candidate Accepted != Source Published
+Publication Failure != Retroactive Acceptance Failure
+```
 
 ## Later research directions
 
-These should remain separate from operational UI simplification until independent evidence demands them:
+Keep separate until independent evidence requires them:
 
 - cross-machine/cross-OS transport portability;
-- trusted producer identity and certificate/trust-anchor models;
+- trusted producer identity/certificate/trust-anchor models;
 - trusted time;
-- real key revocation policy and enforcement authority;
-- external secure distribution/signing;
-- deeper reusable composition with UU-AAP components where independent product demand is demonstrated.
+- real key revocation policy/enforcement authority;
+- secure external distribution/signing;
+- deeper Workbench ↔ UU-AAP reusable composition only where consumer demand is demonstrated.
 
 ## Architecture discipline
 
-Workbench remains a product/application implementation that consumes and mirrors UU-AAP values and boundaries. Its successful operation does not itself promote product-specific machinery into Stable Core.
+Workbench remains a product/application implementation informed by UU-AAP values and boundaries. Product utility does not automatically create a Core requirement.
 
 ```text
 Product utility != Core requirement
