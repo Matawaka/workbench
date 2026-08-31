@@ -1,0 +1,97 @@
+name: Workbench v0.32 candidate validation
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.32-maintenance-integrator
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows WPF candidate build and boundary checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify v0.32 active surface and fixed publisher
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationService.cs' -Raw
+          $v032 = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V032.cs' -Raw
+
+          if ($xaml -notmatch 'Matawaka Workbench v0\.32\.0') { throw 'v0.32 window title missing' }
+          if ($xaml -notmatch 'PublishAcceptedButton') { throw 'Publish accepted control missing' }
+          if ($xaml -notmatch 'SelfTestV032Button_Click') { throw 'v0.32 Self-test handler not wired' }
+          if ($xaml -notmatch 'AcceptCheckpointV032Button_Click') { throw 'v0.32 checkpoint handler not wired' }
+
+          $historicalButtons = @(
+            'RecoveryAdmissionButton',
+            'RecoveryNegativeControlsButton',
+            'RecoveryEvidenceClosureButton',
+            'RecoveryEvidenceReplayButton',
+            'RecoveryEvidenceRelocationButton',
+            'RecoveryEvidenceExportButton',
+            'RecoveryEvidenceImportButton',
+            'RecoveryTransportIndependenceButton',
+            'RecoveryTransportAdversarialControlsButton',
+            'RecoveryTransportAdversarialEvidenceClosureButton',
+            'ProducerKeyProvenanceBoundaryButton',
+            'ProducerKeyRotationContinuityBoundaryButton',
+            'ProducerKeyRevocationInferenceBoundaryButton'
+          )
+          foreach ($name in $historicalButtons) {
+            if ($xaml -match [regex]::Escape($name)) { throw "historical proof button still active in XAML: $name" }
+          }
+
+          if ($publisher -notmatch 'RemoteName = "github-workbench"') { throw 'fixed remote name missing' }
+          if ($publisher -notmatch 'RemoteUrl = "https://github\.com/Matawaka/workbench\.git"') { throw 'fixed remote URL missing' }
+          if ($publisher -notmatch 'AcceptedTag = "workbench-v0\.32-accepted"') { throw 'fixed accepted tag missing' }
+          if ($publisher -match '"--force') { throw 'force-push argument literal found in publisher source' }
+          if ($publisher -notmatch 'ClassifyRemoteMain') { throw 'remote main fail-closed classification missing' }
+          if ($publisher -notmatch 'ClassifyRemoteTag') { throw 'remote tag fail-closed classification missing' }
+          if ($v032 -notmatch 'PreviewAsync' -or $v032 -notmatch 'MessageBox\.Show' -or $v032 -notmatch 'PublishAsync') { throw 'local-preview / explicit-confirm / publish chain incomplete' }
+
+          Write-Host 'v0.32 active surface and publication boundary: PASS'
+
+      - name: Verify candidate does not rewrite accepted v0.31 history
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '532c1c8220d160321c928055139aa8f76a0dc08b'
+          git cat-file -e "$base^{commit}"
+          $changed = git diff --name-only $base HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'git diff failed' }
+          $forbidden = $changed | Where-Object {
+            $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or
+            $_ -like 'src/Matawaka.Workbench.Runtime/*' -or
+            $_ -like 'src/Matawaka.Workbench.Protocol/*' -or
+            $_ -like 'src/Matawaka.Workbench.Engine/*' -or
+            $_ -like 'src/Matawaka.Workbench.Catalog/*' -or
+            $_ -like 'src/Matawaka.Workbench.SemanticHost/*'
+          }
+          if ($forbidden) { throw "unexpected non-App implementation mutation: $($forbidden -join ', ')" }
+          Write-Host 'accepted runtime/protocol/agent/engine/catalog/semantic surfaces unchanged: PASS'
+
+      - name: Clean checkout after build source validation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "tracked/untracked source drift after validation: $status" }
