@@ -1,118 +1,93 @@
-# Matawaka Workbench v0.32 candidate — Security boundary
+# Matawaka Workbench v0.33 candidate — Security boundary
 
-The established semantic/runtime boundary remains unchanged: fixed verified SemanticHost, restricted Low-integrity token, Windows Job Object, runtime attestation before semantic input, read-only proposal behavior and denied Execute control. v0.32 does not widen semantic-provider authority.
+Accepted predecessor: `workbench-v0.32-accepted` / `24c98787817b3b37f1a7197ecb5627be130f2581`.
 
-## Core maintenance distinctions
+The established semantic/runtime boundary remains unchanged: fixed verified SemanticHost, restricted Low-integrity token, Windows Job Object, runtime attestation before semantic input, read-only proposal behavior and denied Execute control.
+
+## Maintenance distinctions
 
 ```text
-Self-test PASS != Checkpoint authority
-Valid package != Materialization authority
-Staging materialization != Source apply/build authority
-READY source plan != Source mutation authority
-Apply/build authority != Candidate launch authority
-Candidate launch != Acceptance
-Accepted checkpoint != Remote publication authority
-Fixed publication authority != General network authority
-Workbench maintenance authority != Catalog mutation authority != Agent Execute
+Package Preview != Materialization Authority
+One Update Candidate Confirmation != Authority Collapse
+Plan Receipt != Materialization Receipt
+Materialization Receipt != Source Apply Authority
+READY Apply Plan != Source Mutation
+Successful Build != Candidate Launch
+Candidate Launch != Self-test
+Self-test PASS != Checkpoint Authority
+Accepted Checkpoint != Remote Publication Authority
+Fixed Publication Authority != General Network Authority
+Workbench Maintenance Authority != Catalog Mutation Authority != Agent Execute
 ```
 
-No receipt from an earlier gate is treated as authorization for a later gate. Every effectful step must revalidate its own current evidence and receive its own explicit operator confirmation.
+## v0.33 Update candidate boundary
 
-## Candidate update boundary
+`MaintenanceUpdateOrchestratorService` sequences existing typed services only:
 
-The existing self-hosted update chain remains intentionally decomposed:
+`LocalUpdateIntakeService -> LocalUpdateMaterializationService -> StagedUpdateApplyPlanService -> BoundedUpdateApplyBuildService`
 
-`package intake -> staging materialization -> exact source delta plan -> exact source apply/build -> exact candidate launch -> read-only Self-test -> local accepted checkpoint`
+The orchestrator itself does not implement a second source mutation/build path. It does not call candidate launch or fixed publication. It preserves every sub-receipt and stops at:
 
-Source apply is limited to exact planned payload bytes. Build/publish processes are limited to the fixed workspace-local `.dotnet-sdk\dotnet.exe` with fixed `build/publish --no-restore` arguments. Candidate launch is limited to the exact receipt-bound executable digest.
+`CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`
 
-`--no-restore` means the build gate requests no package restore. It is not evidence of OS-level network isolation.
+Freshness requirements include:
 
-## v0.32 Self-test boundary
+- package bytes/digest unchanged after preview;
+- fresh package plan equivalent to preview identity/digests;
+- exact predecessor commit/tag still current;
+- staging-only materialization receipt valid;
+- fresh staged plan READY and non-authorizing;
+- apply/build receipt exact target/predecessor and separate-launch;
+- existing apply/build rollback remains responsible for restoration on failure.
 
-The v0.32 Self-test reuses the complete accepted v0.31 read-only semantic/runtime matrix and adds deterministic offline checks for the publisher contract only.
+A stale or consumed session cannot silently authorize a later mutation.
 
-Self-test MUST NOT:
+## Separate Launch boundary
 
-- call `git ls-remote`;
-- add/change a Git remote;
-- push a branch or tag;
-- exercise the `Publish accepted` network effect;
-- infer network authority from existence of the publisher code;
-- create Agent Execute, ActionPermit or catalog mutation authority.
+**Запустить candidate** remains the existing separate explicit gate. It consumes the exact successful `WorkbenchUpdateApplyBuildReceipt`, rechecks candidate/SemanticHost digests and predecessor source state, and launches only the exact receipt-bound executable.
 
-Therefore:
+`Update candidate success != Launch authority`
 
-`Publisher Contract Check != Publication Effect`
+## v0.33 Self-test boundary
 
-## Fixed GitHub publication authority
+Self-test preserves the complete accepted v0.32 read-only semantic/runtime and publisher-contract matrix and adds only deterministic offline checks for:
 
-The new publication service is a separate explicit human maintenance network gate.
+- orchestrator non-authorizing preview;
+- typed service reuse;
+- stop-before-launch behavior;
+- v0.33 fixed publisher remote/tag/conflict classifications.
 
-Its fixed identity is:
+Self-test performs no package update effect, build, launch, checkpoint, remote read or publication.
+
+## v0.33 local checkpoint boundary
+
+A local `workbench-v0.33-accepted` checkpoint requires:
+
+- passing in-process v0.33 Self-test receipt;
+- exact acceptance artifact/executable digest match;
+- HEAD at exact `workbench-v0.32-accepted` predecessor;
+- exact v0.33 build-source manifest matching all changed source bytes;
+- explicit **Принять** confirmation.
+
+This gate may only perform fixed local `git add/commit/tag`. It creates no push/network/publication authority.
+
+## v0.33 fixed GitHub publication boundary
+
+After local acceptance, **Publish accepted** uses only:
 
 ```text
 remote = github-workbench
 url = https://github.com/Matawaka/workbench.git
 branch = refs/heads/main
-tag = workbench-v0.32-accepted
+tag = workbench-v0.33-accepted
 ```
 
-Before any network effect, local preview requires:
+Remote main must be exact local parent or exact local HEAD. A conflicting main or tag fails closed. Main update is non-force exact-head fast-forward only. The accepted tag may only be absent or already exact HEAD. Final remote main/tag readback must equal local accepted HEAD, and local HEAD/working tree must remain unchanged.
 
-- clean Workbench working tree;
-- current HEAD;
-- exact HEAD parent;
-- local `workbench-v0.32-accepted` pointing exactly at HEAD;
-- fixed remote either absent or already mapped to the exact fixed URL.
-
-After explicit **Publish accepted** confirmation, the service may:
-
-1. add the fixed remote only when absent;
-2. read exact remote `main`/tag refs;
-3. push exact accepted HEAD to remote `main` only when remote main equals exact local parent;
-4. do nothing to main when it already equals exact local HEAD;
-5. publish the accepted tag only when absent;
-6. do nothing to the tag when it already resolves to exact local HEAD;
-7. read both refs back and require exact equality;
-8. verify local HEAD and working tree did not change;
-9. write one local publication receipt.
-
-It fails closed when remote main is any third state or the accepted tag conflicts.
-
-## Explicit prohibitions
-
-The publication path has no authority to:
-
-- use a caller-supplied remote name or URL;
-- use `--force`, `--force-with-lease`, delete/refspec rewrite or history rewrite;
-- move or replace an existing conflicting tag;
-- create an unrelated remote main history;
-- publish any branch/tag other than the fixed main/tag pair;
-- mutate Matawaka catalog repositories;
-- invoke Agent Execute or create ActionPermit;
-- provide general network access to Workbench runtime/semantic providers;
-- change credentials/secrets/protection settings;
-- claim canonical UU-AAP conformance, Stable Core membership, identity, trust, trusted time, legal effect or release authority outside this fixed source-publication scope.
-
-```text
-Fast-forward permission != Force-push permission
-Remote main update != Tag movement authority
-Fixed repository network authority != General network authority
-Source publication != Catalog mutation
-Source publication != Canonical UU-AAP conformance
-```
-
-## Partial-success recovery
-
-Publication is intentionally retry-safe for one bounded partial-success state:
-
-`remote main == exact accepted HEAD && accepted tag absent`
-
-A retry may publish only the missing exact tag after revalidating local accepted state and remote main. This recovery path does not authorize any broader remote mutation.
+No arbitrary remote, force-push, tag movement, catalog mutation, Agent Execute, ActionPermit, credentials/protection mutation, general network authority, canonical UU-AAP conformance or Stable Core/interface-registry promotion is authorized.
 
 ## Historical evidence
 
-v0.32 removes completed recovery/transport/key milestone controls from the active toolbar only. Their service source, receipts, patch notes and Git history remain intact.
+Historical recovery/transport/key and pre-v0.33 update controls may remain as collapsed compatibility bindings for accepted legacy liveness code. They are not visible/focusable/clickable product controls.
 
-`Historical evidence UI removal != Historical evidence deletion`
+`UI consolidation != Historical evidence deletion`
