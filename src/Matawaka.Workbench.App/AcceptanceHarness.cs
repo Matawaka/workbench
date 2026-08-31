@@ -149,8 +149,8 @@ public sealed class WorkbenchAcceptanceHarness
 
         var passed = checks.All(item => item.Passed);
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.30",
-            "0.30.0",
+            "matawaka.workbench-acceptance-receipt/v0.31",
+            "0.31.0",
             runId,
             DateTimeOffset.Now,
             passed,
@@ -172,7 +172,7 @@ public sealed class WorkbenchAcceptanceHarness
                 "self-test artifact write is limited to Workbench/artifacts/acceptance",
                 "relevant-source-set verification is read-only and uses no git fetch"
             },
-            "Workbench-local acceptance automation v0.30 retains the proven self-hosted update loop, bounded recovery/transport evidence boundaries through v0.28, and the accepted v0.29 detached-signature key-possession fixture. v0.30 adds only a post-acceptance fixture cryptographic predecessor-to-successor key continuity boundary. Self-test does not run Key continuity and does not grant signing/private-key access, producer identity/authentication, common-controller, trust-anchor, certificate-chain, trusted-time, revocation, delegation/action authority, portability, source mutation, build, checkpoint, network, catalog, Agent Execute, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
+            "Workbench-local acceptance automation v0.31 retains the proven self-hosted update loop, bounded recovery/transport evidence boundaries, v0.29 detached key-possession evidence, and accepted v0.30 fixture key continuity. v0.31 adds only a post-acceptance refusal boundary that prevents rotation/successor evidence from being misread as revocation/trusted-time authority while preserving exact historical predecessor-signature evidence. Self-test does not run Revocation boundary and does not grant revocation enforcement, future predecessor acceptance/rejection policy, historical evidence invalidation, signing/private-key access, trust/identity, source mutation, build, checkpoint, network, catalog, Agent Execute, portability, or Stable Core promotion authority. Passing this receipt does not establish canonical UU-AAP conformance or an OS sandbox.");
     }
 
     private static CommandEnvelope BuildCommand(string id, string mode, string provider)

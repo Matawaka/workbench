@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private readonly RecoveryTransportAdversarialEvidenceClosureService _recoveryTransportAdversarialEvidenceClosureService = new();
     private readonly ProducerKeyProvenanceBoundaryService _producerKeyProvenanceBoundaryService = new();
     private readonly ProducerKeyRotationContinuityBoundaryService _producerKeyRotationContinuityBoundaryService = new();
+    private readonly ProducerKeyRevocationInferenceBoundaryService _producerKeyRevocationInferenceBoundaryService = new();
     private WorkbenchAcceptanceReceipt? _lastAcceptanceReceipt;
     private string? _lastAcceptanceArtifactPath;
     private bool _lastAcceptanceConsumed;
@@ -115,7 +116,7 @@ public partial class MainWindow : Window
             SaveSettings();
             BeginRun(id);
             StatusText.Text = "RUNNING: acceptance matrix (2 propose providers + denied execute)";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.30 matrix");
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  acceptance.started           v0.31 matrix");
 
             var context = new RuntimeContext(
                 CatalogRootBox.Text,
@@ -125,7 +126,7 @@ public partial class MainWindow : Window
             var receipt = await _acceptanceHarness.RunAsync(context, _cts!.Token);
             var artifactDir = Path.Combine(WorkspaceRootBox.Text, "Workbench", "artifacts", "acceptance");
             Directory.CreateDirectory(artifactDir);
-            var artifactPath = Path.Combine(artifactDir, $"v0.30-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            var artifactPath = Path.Combine(artifactDir, $"v0.31-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             await File.WriteAllTextAsync(
                 artifactPath,
                 CommandCodec.Serialize(receipt),
@@ -170,7 +171,7 @@ public partial class MainWindow : Window
 
     private async void AcceptCheckpointButton_Click(object sender, RoutedEventArgs e)
     {
-        var id = $"accept-v0.30-{DateTime.Now:yyyyMMddHHmmss}";
+        var id = $"accept-v0.31-{DateTime.Now:yyyyMMddHHmmss}";
         try
         {
             if (_lastAcceptanceReceipt is null || !_lastAcceptanceReceipt.Passed || string.IsNullOrWhiteSpace(_lastAcceptanceArtifactPath))
@@ -198,7 +199,7 @@ public partial class MainWindow : Window
             preview.AppendLine();
             preview.AppendLine("Операция локальная: git add/commit/tag только в Workbench. Git push/fetch, сеть и каталог Matawaka не изменяются. Agent Execute не включается.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.30", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Принять Workbench v0.31", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             BeginRun(id);
@@ -1488,6 +1489,62 @@ public partial class MainWindow : Window
             EndRun();
         }
     }
+
+    private async void ProducerKeyRevocationInferenceBoundaryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var id = $"revocation-boundary-v0.31-{DateTime.Now:yyyyMMddHHmmss}";
+        try
+        {
+            var preview = new StringBuilder();
+            preview.AppendLine("Run the v0.31 revocation-inference refusal and historical-evidence preservation boundary?");
+            preview.AppendLine();
+            preview.AppendLine("Rotation/successor evidence will NOT be treated as effective revocation or trusted time.");
+            preview.AppendLine("The exact historical v0.29 predecessor signature will be re-verified and preserved as historical evidence.");
+            preview.AppendLine("No future predecessor-key acceptance/rejection decision, revocation enforcement, key-registry mutation, signing, trust, identity, network, Agent Execute, or Stable Core authority is created.");
+
+            if (MessageBox.Show(this, preview.ToString(), "Revocation boundary v0.31", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+
+            SaveSettings();
+            BeginRun(id);
+            StatusText.Text = "RUNNING: revocation inference refusal + historical evidence preservation";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  key.revocation-boundary.started v0.31; revocationAuthority=false; historicalErase=false");
+
+            var result = await _producerKeyRevocationInferenceBoundaryService.VerifyAsync(
+                WorkspaceRootBox.Text,
+                true,
+                _cts!.Token);
+
+            RecoveryTextBox.Text = CommandCodec.Serialize(new
+            {
+                RevocationBoundary = result.Receipt,
+                RevocationBoundaryArtifactPath = result.ArtifactPath
+            });
+            OutputTabs.SelectedItem = RecoveryTab;
+            ProgressBar.Value = 100;
+            _currentTerminalState = result.Receipt.Passed ? CommandTerminalState.Completed : CommandTerminalState.Failed;
+            StatusText.Text = result.Receipt.Passed
+                ? $"COMPLETED: revocation inference REFUSED; historical evidence PRESERVED; futurePolicy={result.Receipt.FuturePredecessorPolicyStatus}; {result.ArtifactPath}"
+                : $"FAILED: revocation inference boundary failed; {result.ArtifactPath}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  key.revocation-boundary.{(result.Receipt.Passed ? "completed" : "failed"),-10} rotationRefused={result.Receipt.RotationAloneRevocationInferenceRefused}; historical={result.Receipt.HistoricalEvidencePreserved}; futureAccept={result.Receipt.FuturePredecessorAcceptanceAuthorized}; futureReject={result.Receipt.FuturePredecessorRejectionAuthorized}; authorityExpansion={result.Receipt.AuthorityExpansionDetected}");
+        }
+        catch (OperationCanceledException)
+        {
+            ShowCancelled();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(ex);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure(ex);
+        }
+        finally
+        {
+            EndRun();
+        }
+    }
     private void SaveWorkspaceButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -1557,6 +1614,7 @@ public partial class MainWindow : Window
         RecoveryTransportAdversarialEvidenceClosureButton.IsEnabled = false;
         ProducerKeyProvenanceBoundaryButton.IsEnabled = false;
         ProducerKeyRotationContinuityBoundaryButton.IsEnabled = false;
+        ProducerKeyRevocationInferenceBoundaryButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
         ProgressBar.Value = 0;
         StatusText.Text = $"RUNNING: {id}";
@@ -1601,6 +1659,7 @@ public partial class MainWindow : Window
         RecoveryTransportAdversarialEvidenceClosureButton.IsEnabled = true;
         ProducerKeyProvenanceBoundaryButton.IsEnabled = true;
         ProducerKeyRotationContinuityBoundaryButton.IsEnabled = true;
+        ProducerKeyRevocationInferenceBoundaryButton.IsEnabled = true;
         CancelButton.IsEnabled = false;
     }
 
