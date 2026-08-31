@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.31.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
+        Title="Matawaka Workbench v0.32.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -18,8 +18,8 @@
             <Button x:Name="FileButton" Content="Из файла" Width="100" Margin="0,0,8,0" Click="FileButton_Click"/>
             <Button x:Name="ValidateButton" Content="Проверить" Width="100" Margin="0,0,8,0" Click="ValidateButton_Click"/>
             <Button x:Name="RunButton" Content="Запустить" Width="100" Margin="0,0,8,0" Click="RunButton_Click"/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestButton_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointButton_Click"/>
+            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV032Button_Click"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV032Button_Click"/>
             <Button x:Name="UpdatePlanButton" Content="Пакет обновления" Width="130" Margin="0,0,8,0" Click="UpdatePlanButton_Click"/>
             <Button x:Name="MaterializeUpdateButton" Content="Материализовать" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="MaterializeUpdateButton_Click"/>
             <Button x:Name="StagedApplyPlanButton" Content="План применения" Width="125" Margin="0,0,8,0" IsEnabled="False" Click="StagedApplyPlanButton_Click"/>
@@ -28,24 +28,32 @@
             <Button x:Name="RecoveryCheckButton" Content="Recovery check" Width="120" Margin="0,0,8,0" Click="RecoveryCheckButton_Click"/>
             <Button x:Name="RecoveryPlanButton" Content="Recovery plan" Width="120" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryPlanButton_Click"/>
             <Button x:Name="RecoveryExecuteButton" Content="Recovery execute" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryExecuteButton_Click"/>
-            <Button x:Name="RecoveryAdmissionButton" Content="Recovery admission" Width="135" Margin="0,0,8,0" Click="RecoveryAdmissionButton_Click"/>
-            <Button x:Name="RecoveryNegativeControlsButton" Content="Recovery negatives" Width="135" Margin="0,0,8,0" Click="RecoveryNegativeControlsButton_Click"/>
-            <Button x:Name="RecoveryEvidenceClosureButton" Content="Recovery closure" Width="135" Margin="0,0,8,0" Click="RecoveryEvidenceClosureButton_Click"/>
-            <Button x:Name="RecoveryEvidenceReplayButton" Content="Recovery replay" Width="130" Margin="0,0,8,0" Click="RecoveryEvidenceReplayButton_Click"/>
-            <Button x:Name="RecoveryEvidenceRelocationButton" Content="Recovery relocate" Width="135" Margin="0,0,8,0" Click="RecoveryEvidenceRelocationButton_Click"/>
-            <Button x:Name="RecoveryEvidenceExportButton" Content="Recovery export" Width="130" Margin="0,0,8,0" IsEnabled="False" ToolTip="v0.25 transport boundary already evidenced" Click="RecoveryEvidenceExportButton_Click"/>
-            <Button x:Name="RecoveryEvidenceImportButton" Content="Recovery import" Width="130" Margin="0,0,8,0" IsEnabled="False" ToolTip="v0.25 transport boundary already evidenced" Click="RecoveryEvidenceImportButton_Click"/>
-            <Button x:Name="RecoveryTransportIndependenceButton" Content="Transport independence" Width="150" Margin="0,0,8,0" Click="RecoveryTransportIndependenceButton_Click"/>
-            <Button x:Name="RecoveryTransportAdversarialControlsButton" Content="Transport negatives" Width="145" Margin="0,0,8,0" Click="RecoveryTransportAdversarialControlsButton_Click"/>
-            <Button x:Name="RecoveryTransportAdversarialEvidenceClosureButton" Content="Transport closure" Width="145" Margin="0,0,8,0" Click="RecoveryTransportAdversarialEvidenceClosureButton_Click"/>
-            <Button x:Name="ProducerKeyProvenanceBoundaryButton" Content="Key provenance" Width="125" Margin="0,0,8,0" Click="ProducerKeyProvenanceBoundaryButton_Click"/>
-            <Button x:Name="ProducerKeyRotationContinuityBoundaryButton" Content="Key continuity" Width="125" Margin="0,0,8,0" Click="ProducerKeyRotationContinuityBoundaryButton_Click"/>
-            <Button x:Name="ProducerKeyRevocationInferenceBoundaryButton" Content="Revocation boundary" Width="145" Margin="0,0,8,0" Click="ProducerKeyRevocationInferenceBoundaryButton_Click"/>
+            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedButton_Click"
+                    ToolTip="Только после локального workbench-v0.32-accepted; фиксированный Matawaka/workbench, fast-forward only, no force"/>
             <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
             <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
             <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <TextBlock Text="v0.31: rotation != revocation; successor != predecessor erasure; historical evidence preserved while future predecessor policy remains unresolved" VerticalAlignment="Center" FontStyle="Italic"/>
+            <TextBlock Text="v0.32: active maintenance surface only; historical proof controls remain source/audit history; accepted checkpoint != remote publication authority"
+                       VerticalAlignment="Center" FontStyle="Italic"/>
         </WrapPanel>
+
+        <!-- Hidden field bindings keep the accepted v0.31 BeginRun/EndRun liveness code
+             source-compatible. They are not visible, focusable, clickable product controls. -->
+        <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
+            <Button x:Name="RecoveryAdmissionButton"/>
+            <Button x:Name="RecoveryNegativeControlsButton"/>
+            <Button x:Name="RecoveryEvidenceClosureButton"/>
+            <Button x:Name="RecoveryEvidenceReplayButton"/>
+            <Button x:Name="RecoveryEvidenceRelocationButton"/>
+            <Button x:Name="RecoveryEvidenceExportButton"/>
+            <Button x:Name="RecoveryEvidenceImportButton"/>
+            <Button x:Name="RecoveryTransportIndependenceButton"/>
+            <Button x:Name="RecoveryTransportAdversarialControlsButton"/>
+            <Button x:Name="RecoveryTransportAdversarialEvidenceClosureButton"/>
+            <Button x:Name="ProducerKeyProvenanceBoundaryButton"/>
+            <Button x:Name="ProducerKeyRotationContinuityBoundaryButton"/>
+            <Button x:Name="ProducerKeyRevocationInferenceBoundaryButton"/>
+        </StackPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
@@ -120,7 +128,7 @@
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          FontFamily="Consolas" TextWrapping="NoWrap"/>
             </TabItem>
-            <TabItem x:Name="AcceptanceTab" Header="Acceptance">
+            <TabItem x:Name="AcceptanceTab" Header="Acceptance / Publication">
                 <TextBox x:Name="AcceptanceTextBox" IsReadOnly="True" AcceptsReturn="True"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          FontFamily="Consolas" TextWrapping="NoWrap"/>
