@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Windows orchestrator build and authority checks
+    name: Windows orchestrator lifecycle build and authority checks
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
       - name: Build Release
         run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
 
-      - name: Verify one-session UI and separate launch
+      - name: Verify one-session UI and separate lifecycle gates
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -38,11 +38,14 @@ jobs:
           if ($xaml -notmatch 'Content="Update candidate"') { throw 'Update candidate button missing' }
           if ($xaml -notmatch 'Click="UpdateCandidateButton_Click"') { throw 'Update candidate handler missing' }
           if ($xaml -notmatch 'Content="Запустить candidate"') { throw 'separate Launch candidate button missing' }
+          if ($xaml -notmatch 'Click="SelfTestV033Button_Click"') { throw 'v0.33 Self-test successor not wired' }
+          if ($xaml -notmatch 'Click="AcceptCheckpointV033Button_Click"') { throw 'v0.33 checkpoint successor not wired' }
+          if ($xaml -notmatch 'Click="PublishAcceptedV033Button_Click"') { throw 'v0.33 publisher successor not wired' }
           foreach ($label in @('Content="Пакет обновления"','Content="Материализовать"','Content="План применения"','Content="Применить + собрать"')) {
             if ($xaml.Contains($label)) { throw "legacy pre-launch control still visible: $label" }
           }
           if ($xaml -notmatch 'x:Name="HistoricalCompatibilityBindings"[^>]*Visibility="Collapsed"') { throw 'collapsed compatibility bindings missing' }
-          Write-Host 'v0.33 visible update surface: PASS'
+          Write-Host 'v0.33 visible lifecycle surface: PASS'
 
       - name: Verify orchestrator reuses typed gates and stops before launch
         shell: pwsh
@@ -57,6 +60,7 @@ jobs:
             'Process\.Start\s*\(',
             'LaunchCandidateAsync\s*\(',
             'new\s+FixedGitHubPublicationService\s*\(',
+            'new\s+FixedGitHubPublicationV033Service\s*\(',
             'RunGitAsync\s*\(',
             'RunGitReadOnlyAsync\s*\('
           )
@@ -67,6 +71,28 @@ jobs:
           if ($src -notmatch 'VerifyEquivalentPlan') { throw 'fresh plan equivalence check missing' }
           if ($src -notmatch 'LaunchPerformed,\s*bool CheckpointAuthorized,\s*bool PublicationAuthorized') { throw 'explicit downstream non-effect fields missing from receipt contract' }
           Write-Host 'typed-gate reuse / separate launch boundary: PASS'
+
+      - name: Verify v0.33 acceptance checkpoint and publication successors
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV033AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV033Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV033Service.cs' -Raw
+          $ui = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V033Acceptance.cs' -Raw
+
+          foreach ($required in @('WorkbenchV032AcceptanceHarness','MaintenanceUpdateOrchestratorService.RunOfflineContractChecks','FixedGitHubPublicationV033Service.RunOfflineContractChecks','matawaka.workbench-acceptance-receipt/v0.33')) {
+            if ($accept -notmatch [regex]::Escape($required)) { throw "v0.33 acceptance predecessor/check missing: $required" }
+          }
+          foreach ($required in @('Version = "0.33.0"','ExpectedPredecessorTag = "workbench-v0.32-accepted"','TargetTag = "workbench-v0.33-accepted"','matawaka.workbench-build-source-manifest/v0.33')) {
+            if ($checkpoint -notmatch [regex]::Escape($required)) { throw "v0.33 checkpoint binding missing: $required" }
+          }
+          foreach ($required in @('RemoteName = "github-workbench"','RemoteUrl = "https://github.com/Matawaka/workbench.git"','AcceptedTag = "workbench-v0.33-accepted"','ClassifyRemoteMain','ClassifyRemoteTag')) {
+            if ($publisher -notmatch [regex]::Escape($required)) { throw "v0.33 publisher binding missing: $required" }
+          }
+          if ($publisher -match '"--force') { throw 'force push argument literal found in v0.33 publisher' }
+          if ($ui -notmatch 'SelfTestV033Button_Click' -or $ui -notmatch 'AcceptCheckpointV033Button_Click' -or $ui -notmatch 'PublishAcceptedV033Button_Click') { throw 'v0.33 lifecycle UI handlers incomplete' }
+          Write-Host 'v0.33 acceptance/checkpoint/publication successor contracts: PASS'
 
       - name: Verify accepted non-App implementation unchanged
         shell: pwsh
@@ -86,8 +112,89 @@ jobs:
           if ($forbidden) { throw "unexpected non-App implementation mutation: $($forbidden -join ', ')" }
           Write-Host 'accepted non-App implementation unchanged: PASS'
 
-      - name: Clean checkout after build validation
+      - name: Clean checkout before package creation
         shell: pwsh
         run: |
           $status = git status --porcelain=v1 --untracked-files=all
           if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.33 GUI update package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'README.md',
+            'START-HERE.md',
+            'SECURITY-BOUNDARY.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'PATCH-v0.33.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V033.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V033Acceptance.cs',
+            'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV033AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV033Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV033Service.cs'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "package payload file missing: $file" }
+          }
+
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.33-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            $manifestFiles += [ordered]@{ Path = $file; Sha256 = $sha }
+          }
+
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.33.0'
+            PredecessorTag = 'workbench-v0.32-accepted'
+            PredecessorCommit = '24c98787817b3b37f1a7197ecb5627be130f2581'
+            TargetTag = 'workbench-v0.33-accepted'
+            PayloadRoot = 'payload/'
+            Files = $manifestFiles
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'source-only package; no effect on creation',
+              'no network requested by package',
+              'no catalog mutation requested',
+              'no Agent Execute requested',
+              'package validity does not authorize orchestrator execution/launch/checkpoint/publication'
+            )
+          }
+          $manifestPath = Join-Path $root 'workbench-update-manifest.json'
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.33-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $zipSha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.33-source-only.sha256.txt'), "$zipSha  workbench-v0.33-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "package=$zip"
+          Write-Host "sha256=$zipSha"
+          Write-Host "payload files=$($files.Count)"
+
+      - name: Upload v0.33 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.33-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.33-source-only.zip
+            ${{ runner.temp }}/workbench-v0.33-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
