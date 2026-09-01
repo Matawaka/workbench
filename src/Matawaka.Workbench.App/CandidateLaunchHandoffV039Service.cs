@@ -159,7 +159,7 @@ public sealed class CandidateLaunchHandoffV039Service
 
     public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunOfflineContractChecks() => new[]
     {
-        ("handoff-v039-bounded-alive-observation", AliveObservationMilliseconds is >= 250 and <= 2000, AliveObservationMilliseconds.ToString(), "250..2000 ms"),
+        ("handoff-v039-bounded-alive-observation", IsBoundedObservation(AliveObservationMilliseconds), AliveObservationMilliseconds.ToString(), "250..2000 ms"),
         ("handoff-v039-launch-success-required", true, "CANDIDATE_LAUNCHED_NOT_ACCEPTED", "successful persisted launch receipt"),
         ("handoff-v039-live-pid-image-bound", true, "PID MainModule.FileName == exact candidate path", "exact process image"),
         ("handoff-v039-candidate-acceptance-created", true, "false", "false"),
@@ -167,6 +167,8 @@ public sealed class CandidateLaunchHandoffV039Service
         ("handoff-v039-self-close-only", true, "current MainWindow Close() after PASS", "self-close only"),
         ("handoff-v039-success-status", SuccessStatus == "CANDIDATE_ALIVE_PREDECESSOR_SELF_CLOSE_ELIGIBLE_NOT_ACCEPTED", SuccessStatus, "CANDIDATE_ALIVE_PREDECESSOR_SELF_CLOSE_ELIGIBLE_NOT_ACCEPTED")
     };
+
+    private static bool IsBoundedObservation(int milliseconds) => milliseconds is >= 250 and <= 2000;
 
     private static string ValidateLaunchArtifact(
         string repositoryRoot,
