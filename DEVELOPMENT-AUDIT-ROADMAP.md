@@ -6,22 +6,23 @@ The default branch `main` is the remotely published accepted source frontier. It
 
 Permanent roadmap text does not hard-code the previous release as the current accepted state. Exact release/predecessor history remains in `PATCH-v*.md`, Git tags and issues.
 
-## What is established
+## Established capabilities
 
 Historical work established:
 
 - bounded local analysis and semantic/runtime separation;
 - visible liveness and evidence/authority receipts;
-- self-hosted candidate update/build/launch with fail-closed rollback;
+- self-hosted Workbench update/build/launch with fail-closed rollback;
 - explicit local acceptance and fixed fast-forward-only source publication;
 - active-surface consolidation without evidence erasure;
-- one-session `Update candidate` sequencing over typed maintenance sub-gates;
-- post-publication Maintenance Lifecycle Receipt that can bind one exact completed lifecycle without creating authority.
+- one-session Workbench update sequencing over typed maintenance sub-gates;
+- successor-generic post-publication Maintenance Lifecycle Receipt;
+- real-successor qualification proving that lifecycle evidence composition is reusable without release-specific lifecycle constants.
 
-The stable visible maintenance chain remains:
+The stable Workbench maintenance chain remains:
 
 ```text
-Update candidate
+Update Workbench
 -> separate Launch candidate
 -> separate Self-test
 -> separate local Accept
@@ -29,93 +30,100 @@ Update candidate
 -> optional Lifecycle receipt
 ```
 
-## Qualification findings after the first complete lifecycle
+## Lifecycle qualification — closed
 
-### Accepted frontier integrity
-
-`PASS`
-
-The accepted lifecycle release was independently verified on GitHub as one successor commit with matching annotated accepted tag and expected product-only delta.
-
-### Self-lifecycle completeness
+Initial self-lifecycle result:
 
 `PASS_BOUNDED`
 
-One exact update/build → Self-test → checkpoint → publication relation was successfully composed with all relation checks passing while `AuthorityCreated`, `ActionPerformed`, `RetryAuthorized` and `RollbackAuthorized` remained false.
-
-### Successor lifecycle reuse
-
-Initial outcome:
+Initial successor-reuse result before stabilization:
 
 `LIFECYCLE_NEEDS_ADAPTER`
 
-Reason: the first lifecycle service hard-coded its own target version/tag and exact predecessor, so it could prove its own lifecycle but could not assess the next successor transition without another release-specific service.
+The stabilization patch removed release-bound lifecycle target/predecessor constants, decoupled publisher parent ownership and made permanent docs lifecycle-state-neutral.
 
-### Accepted documentation currentness
+A real successor transition then completed with exact derived current/predecessor accepted tags, checkpoint-bound Self-test, matching orchestrator/publication evidence and clean state, producing `Complete=true` without manual artifact reconciliation.
 
-`STABILIZATION_REQUIRED`
+Final observed qualification outcome:
 
-Permanent public docs were candidate-state documents and became stale immediately after acceptance/publication. This was a recurring lifecycle defect rather than a runtime failure.
+`LIFECYCLE_REUSABLE`
 
-## Qualification/stabilization patch
-
-The patch-level response is intentionally not a new feature layer.
-
-### Successor-generic lifecycle evidence routing
-
-The lifecycle service now derives its target/predecessor from exact evidence:
+This outcome is bounded to evidence composition. It does not authorize automatic lifecycle execution.
 
 ```text
-current HEAD
-+ unique workbench-v<version>-accepted tag at HEAD
-+ exact checkpoint at HEAD/tag
-+ exact Git parent + unique predecessor accepted tag
-+ checkpoint-bound passing Self-test artifact
-+ unique matching orchestrator receipt
-+ unique matching publication receipt
-+ exact SHA-256 bindings + clean state
--> complete lifecycle assessment
+Lifecycle Reusable != Lifecycle Automatic
+Generic Evidence Routing != Trust Discovery
+Summary != Authority
 ```
 
-Missing/ambiguous evidence fails closed; modification time is never a selection rule. Accepted tag discovery routes evidence only and creates no trust or authority.
+## Current product demand — reduced surface + local applications
 
-### Lifecycle-state-neutral public docs
+The next feature line is justified by explicit operator demand, not by architectural novelty:
 
-Stable README/START/SECURITY/ROADMAP text no longer embeds candidate status or a prior release as the accepted baseline. Candidate-specific details remain in patch notes/package previews/issues.
+1. keep only controls used in the normal maintenance workflow;
+2. remove persistent Agent/git-fetch checkboxes from the active UI;
+3. allow Workbench to update other already-registered local applications with the same evidence/authority discipline.
 
-`Accepted Source Documentation != Candidate Planning Document`
+### Active product surface target
 
-## Real successor qualification
+Only eight primary actions:
 
-A patch-level real successor transition is required to qualify the generic adapter. The sequence is:
+- Update Workbench;
+- Launch candidate;
+- Update local app;
+- Self-test;
+- Accept;
+- Publish accepted;
+- Lifecycle receipt;
+- Stop.
 
-1. install a bounded patch through the accepted `Update candidate` path;
-2. separately Launch candidate;
-3. separately Self-test and require PASS;
-4. separately accept local checkpoint;
-5. separately Publish accepted;
-6. run the same generic `Lifecycle receipt` service;
-7. independently verify remote main/tag and accepted bytes.
+Historical JSON/agent/catalog/recovery capabilities remain source/evidence history and hidden compatibility surfaces.
 
-Then classify only from observed evidence:
+`Historical Capability != Permanent UI Obligation`
 
-- `LIFECYCLE_REUSABLE` — generic adapter produces one exact `Complete=true` lifecycle relation on the new successor without manual artifact reconciliation;
-- `LIFECYCLE_NEEDS_ADAPTER` — a required direct relation is still missing;
-- `LIFECYCLE_AMBIGUOUS` — multiple otherwise qualifying evidence candidates prevent unique binding;
-- `LIFECYCLE_NOT_REQUIRED` — aggregate evidence adds no material value over individual receipts.
+### Local Application Maintenance
 
-A negative result is successful qualification evidence and blocks feature inflation.
+Managed apps are restricted to:
 
-## Stabilization backlog after qualification
+`<WorkspaceRoot>/Apps/<ApplicationId>`
 
-Do not automatically create a new feature release. Review only evidence-backed residual debt:
+and must already possess `.matawaka-app.json` identity/version evidence.
+
+Local app updates use a local exact-manifest ZIP and permit only fresh-preview-bound Add/Replace operations under the fixed app root with predecessor backups, target verification and rollback on failure.
+
+No network/package download, installer execution, app auto-launch, Git, registry/service/environment mutation or arbitrary root selection is admitted.
+
+```text
+Package Validity != Mutation Authority
+Local App Update != App Launch
+Managed Root != Arbitrary Target Root
+Initial Registration != Update Authority
+```
+
+## Qualification after local-app feature
+
+Do not treat one successful Workbench build as proof that the local-app updater is operationally useful.
+
+After the feature is accepted, useful successor evidence should come from a real registered application update package. Possible outcomes:
+
+- `LOCAL_APP_UPDATE_REUSABLE` — exact managed-app update succeeds and receipt/rollback boundaries are adequate;
+- `LOCAL_APP_UPDATE_NEEDS_ADAPTER` — app-specific layout/process constraints require a bounded adapter;
+- `LOCAL_APP_REGISTRATION_REQUIRED` — useful existing apps cannot enter the managed root without a separately reviewed adoption boundary;
+- `LOCAL_APP_UPDATE_NOT_REQUIRED` — existing app update mechanisms are already sufficient.
+
+Negative outcomes are valid and should prevent building a general installer without evidence.
+
+## Residual stabilization backlog
+
+Review only evidence-backed debt:
 
 - whether release-specific Self-test/checkpoint/publisher successor wrappers should be generalized or remain explicit version boundaries;
-- whether hidden legacy compatibility bindings can be removed safely from `MainWindow.xaml.cs` without weakening run-state liveness;
-- whether lifecycle evidence remains useful after more than one real successor;
+- whether hidden legacy compatibility fields can be removed safely from `MainWindow.xaml.cs` without weakening run-state behavior;
+- whether a separately bounded **Register local app** function is actually needed;
+- whether a read-only update-feed discovery layer is useful after local packages are proven;
 - whether external/cross-machine portability has independent product demand.
 
-These are not authorized implementation tasks merely because they exist as possible improvements.
+None of these are automatically authorized implementation tasks.
 
 ## Later research directions
 
@@ -130,14 +138,13 @@ Keep separate until independent evidence requires them:
 ## Architecture discipline
 
 ```text
-Product utility != Core requirement
-Historical proof != Permanent UI obligation
-UI consolidation != Evidence erasure
-Maintenance automation != Authority collapse
-Accepted local state != Published remote state
-Publication capability != General network capability
-Lifecycle observability != Lifecycle authority
-Generic Evidence Discovery != Trust Discovery
+Product Utility != Core Requirement
+Historical Proof != Permanent UI Obligation
+UI Consolidation != Evidence Erasure
+Maintenance Automation != Authority Collapse
+Accepted Local State != Published Remote State
+Publication Capability != General Network Capability
+Lifecycle Observability != Lifecycle Authority
+Local App Maintenance != General Installer Authority
 Qualification != Promotion
-Patch Release != Feature Layer
 ```
