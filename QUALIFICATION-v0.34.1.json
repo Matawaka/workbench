@@ -27,6 +27,11 @@
       "id": "accepted-documentation-currentness",
       "outcome": "STABILIZATION_REQUIRED",
       "note": "Permanent public docs remained candidate-state and named the previous release as accepted baseline after v0.34 publication."
+    },
+    {
+      "id": "publisher-lifecycle-parent-coupling",
+      "outcome": "STABILIZATION_REQUIRED",
+      "note": "The accepted v0.34 publisher referenced MaintenanceLifecycleReceiptService.PredecessorCommit as its own expected publication parent. Removing release-bound lifecycle constants exposed this hidden cross-service ownership dependency at compile time."
     }
   ],
   "patch_scope": {
@@ -41,6 +46,7 @@
     "semantic_host_changed": false,
     "generic_lifecycle_evidence_adapter": true,
     "state_neutral_public_docs": true,
+    "historical_v0_34_publisher_parent_ownership_repaired": true,
     "patch_acceptance_successor_required": true
   },
   "generic_lifecycle_contract": {
@@ -79,6 +85,7 @@
     "patch release != feature layer",
     "generic evidence discovery != authority discovery",
     "accepted tag discovery != trust discovery",
+    "publisher parent ownership != lifecycle authority",
     "no automatic update/build/launch/self-test/checkpoint/publication/lifecycle",
     "no Agent Execute or ActionPermit expansion",
     "no general network or catalog authority",
