@@ -1,0 +1,225 @@
+name: Workbench v0.35 product surface and local app maintenance
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.35-local-app-maintenance
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Windows v0.35 build and bounded product checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify minimal active surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $start = $xaml.IndexOf('<WrapPanel x:Name="PrimaryMaintenanceSurface"')
+          if ($start -lt 0) { throw 'PrimaryMaintenanceSurface missing' }
+          $end = $xaml.IndexOf('</WrapPanel>', $start)
+          if ($end -lt 0) { throw 'PrimaryMaintenanceSurface closing tag missing' }
+          $surface = $xaml.Substring($start, $end - $start)
+          $buttonCount = ([regex]::Matches($surface, '<Button\b')).Count
+          if ($buttonCount -ne 8) { throw "expected exactly 8 active buttons; found $buttonCount" }
+          foreach ($name in @(
+            'UpdateCandidateButton','LaunchCandidateButton','UpdateLocalAppButton','SelfTestButton',
+            'AcceptCheckpointButton','PublishAcceptedButton','LifecycleReceiptButton','CancelButton'
+          )) {
+            if ($surface -notmatch ('x:Name="' + [regex]::Escape($name) + '"')) { throw "active button missing: $name" }
+          }
+          if ($surface -match '<CheckBox\b') { throw 'persistent checkbox found in active surface' }
+          foreach ($removed in @('PasteButton','FileButton','ValidateButton','RunButton','RecoveryCheckButton','RecoveryPlanButton','RecoveryExecuteButton','AgentEnabledBox','AllowGitFetchBox')) {
+            if ($surface -match [regex]::Escape($removed)) { throw "historical control still active: $removed" }
+          }
+          if ($xaml -notmatch 'x:Name="HistoricalCompatibilityBindings"[^>]*Visibility="Collapsed"') { throw 'collapsed compatibility binding surface missing' }
+          foreach ($hidden in @('AgentEnabledBox','AllowGitFetchBox','RecoveryCheckButton','RunButton')) {
+            if ($xaml -notmatch ('x:Name="' + [regex]::Escape($hidden) + '"')) { throw "hidden compatibility field missing: $hidden" }
+          }
+          Write-Host 'minimal active surface: PASS (8 buttons / 0 checkboxes)'
+
+      - name: Verify bounded local app updater
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content 'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs' -Raw
+          foreach ($required in @(
+            'AppsDirectoryName = "Apps"',
+            'IdentitySchema = "matawaka.local-app-identity/v1"',
+            'PackageSchema = "matawaka.local-app-update-package/v1"',
+            'ResolveApplicationRoot',
+            'EnsureNoReparsePointBoundary',
+            'actualEntries.SetEquals(expectedEntries)',
+            'PreviewAsync(confirmedPlan.PackagePath',
+            'VerifyEquivalentPlan',
+            'BackupReplacements',
+            'Rollback(',
+            'VerifyPredecessorState',
+            'LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED',
+            'AppLaunchPerformed'
+          )) {
+            if ($src -notmatch [regex]::Escape($required)) { throw "local-app boundary marker missing: $required" }
+          }
+          foreach ($forbidden in @(
+            'Process\.Start\s*\(',
+            'new\s+ProcessStartInfo\s*\(',
+            'new\s+HttpClient\s*\(',
+            'WebClient\s*\(',
+            'RegistryKey',
+            'ServiceController\s*\(',
+            'SetEnvironmentVariable\s*\(',
+            'ZipFile\.ExtractToDirectory'
+          )) {
+            if ($src -match $forbidden) { throw "forbidden local-app effect surface found: $forbidden" }
+          }
+          if ($src -notmatch 'manifest\.NetworkAccessRequested \|\| manifest\.ProcessLaunchRequested \|\| manifest\.InstallerScriptExecutionRequested') {
+            throw 'effect-request fail-closed check missing'
+          }
+          if ($src -notmatch 'manifest\.RegistryMutationRequested \|\| manifest\.ServiceMutationRequested \|\| manifest\.EnvironmentMutationRequested') {
+            throw 'OS-mutation request refusal missing'
+          }
+          if ($src -notmatch 'manifest\.AgentExecuteRequested') { throw 'Agent Execute request refusal missing' }
+          Write-Host 'bounded local app updater: PASS'
+
+      - name: Verify v0.35 Self-test has no persistent Agent checkbox dependency
+        shell: pwsh
+        run: |
+          $src = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V035.cs' -Raw
+          if ($src -match 'AgentEnabledBox') { throw 'v0.35 handlers still depend on persistent Agent checkbox' }
+          if ($src -notmatch 'new RuntimeContext\(CatalogRootBox\.Text, true, false\)') { throw 'bounded Self-test context missing' }
+          if ($src -notmatch 'UpdateLocalAppButton_Click') { throw 'Update local app handler missing' }
+          Write-Host 'Self-test explicit click boundary: PASS'
+
+      - name: Verify v0.35 acceptance and publication successors
+        shell: pwsh
+        run: |
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV035AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV035Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV035Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.35') { throw 'v0.35 acceptance schema missing' }
+          if ($checkpoint -notmatch 'ExpectedPredecessorCommit = "c69d3237bae06b80481ce2421eb34e8cf1a88c1b"') { throw 'v0.35 exact predecessor missing' }
+          if ($checkpoint -notmatch 'workbench-v0\.35-accepted') { throw 'v0.35 checkpoint tag missing' }
+          if ($checkpoint -notmatch 'matawaka\.workbench-build-source-manifest/v0\.35') { throw 'v0.35 build manifest schema missing' }
+          if ($publisher -notmatch 'ExpectedParent = "c69d3237bae06b80481ce2421eb34e8cf1a88c1b"') { throw 'v0.35 publisher parent missing' }
+          if ($publisher -notmatch 'workbench-v0\.35-accepted') { throw 'v0.35 publisher tag missing' }
+          if ($publisher -match '"--force') { throw 'force push argument found in publisher' }
+          Write-Host 'v0.35 acceptance/publication successors: PASS'
+
+      - name: Verify non-App implementation unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'c69d3237bae06b80481ce2421eb34e8cf1a88c1b'
+          git cat-file -e "$base^{commit}"
+          $changed = git diff --name-only $base HEAD
+          $forbidden = $changed | Where-Object {
+            $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or
+            $_ -like 'src/Matawaka.Workbench.Runtime/*' -or
+            $_ -like 'src/Matawaka.Workbench.Protocol/*' -or
+            $_ -like 'src/Matawaka.Workbench.Engine/*' -or
+            $_ -like 'src/Matawaka.Workbench.Catalog/*' -or
+            $_ -like 'src/Matawaka.Workbench.SemanticHost/*'
+          }
+          if ($forbidden) { throw "unexpected non-App v0.35 mutation: $($forbidden -join ', ')" }
+          Write-Host 'non-App implementation unchanged: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.35 Workbench package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'README.md',
+            'START-HERE.md',
+            'SECURITY-BOUNDARY.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'PATCH-v0.35.md',
+            'LOCAL-APP-MAINTENANCE.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V035.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV035AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV035Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV035Service.cs'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "package payload file missing: $file" }
+          }
+
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.35-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            $manifestFiles += [ordered]@{ Path = $file; Sha256 = $sha }
+          }
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.35.0'
+            PredecessorTag = 'workbench-v0.34.1-accepted'
+            PredecessorCommit = 'c69d3237bae06b80481ce2421eb34e8cf1a88c1b'
+            TargetTag = 'workbench-v0.35-accepted'
+            PayloadRoot = 'payload/'
+            Files = $manifestFiles
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'source-only Workbench package; no effect on creation',
+              'no local application update performed by this Workbench package',
+              'no network/catalog/Agent Execute requested',
+              'package validity does not authorize build/launch/checkpoint/publication/local-app update'
+            )
+          }
+          $manifestPath = Join-Path $root 'workbench-update-manifest.json'
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.35-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $zipSha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.35-source-only.sha256.txt'), "$zipSha  workbench-v0.35-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$zipSha"
+          Write-Host "payload files=$($files.Count)"
+
+      - name: Upload v0.35 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.35-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.35-source-only.zip
+            ${{ runner.temp }}/workbench-v0.35-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
