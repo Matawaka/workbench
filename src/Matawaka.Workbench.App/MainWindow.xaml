@@ -1,104 +1,116 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.41.0" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        xmlns:local="clr-namespace:Matawaka.Workbench.App"
+        Title="Matawaka Workbench v0.42" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Loaded="Window_LoadedV040"
         Closing="Window_Closing">
+    <Window.Resources>
+        <local:StatusForegroundV042Converter x:Key="StatusForegroundV042"/>
+    </Window.Resources>
+
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- v0.41: exactly eight active top-level maintenance buttons, zero persistent authority checkboxes. -->
-        <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-            <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0" Click="UpdateCandidateV040Button_Click"
-                    ToolTip="One explicit confirmation may perform exact update/build → one-shot bootstrap → automatic exact launch/handoff. Successor first boot may Self-test and locally Accept once if PASS. Publish remains separate."/>
-            <Button x:Name="LaunchCandidateButton" Content="Launch candidate" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateV039Button_Click"
-                    ToolTip="Manual fallback only. Uses accepted v0.39 exact launch/handoff and does not mint a transition-bootstrap lease or automatic acceptance authority."/>
-            <Button x:Name="UpdateLocalAppButton" Content="Local apps" Width="110" Margin="0,0,8,0"
-                    Click="LocalAppsV0381Button_Click"
-                    ToolTip="Unregistered managed app → Register. Registered app → explicit Update from package / Build update package / Cancel chooser; chooser height follows content."/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV040Button_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV040Button_Click"/>
-            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV040Button_Click"/>
-            <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0" Click="LifecycleReceiptV2Button_Click"/>
-            <Button x:Name="CancelButton" Content="Stop" Width="75" IsEnabled="False" Click="CancelButton_Click"/>
+        <!-- v0.42: exactly five visible top-level maintenance buttons, zero persistent authority checkboxes. -->
+        <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button x:Name="UpdateCandidateButton" Width="92" Height="46" Margin="0,0,6,0" Click="UpdateCandidateV040Button_Click"
+                    ToolTip="One explicit confirmation may perform exact update/build → one-shot bootstrap → automatic exact launch/handoff. Successor first boot validates and locally accepts once if PASS. Publish remains separate.">
+                <TextBlock TextAlignment="Center"><Run Text="Update"/><LineBreak/><Run Text="Workbench"/></TextBlock>
+            </Button>
+            <Button x:Name="LaunchCandidateButton" Width="88" Height="46" Margin="0,0,6,0" IsEnabled="False" Click="LaunchCandidateV039Button_Click"
+                    ToolTip="Manual fallback only. Uses accepted exact launch/handoff and does not mint reusable acceptance authority.">
+                <TextBlock TextAlignment="Center"><Run Text="Launch"/><LineBreak/><Run Text="candidate"/></TextBlock>
+            </Button>
+            <Button x:Name="UpdateLocalAppButton" Width="78" Height="46" Margin="0,0,6,0" Click="LocalAppsV0381Button_Click"
+                    ToolTip="Manage registered local applications and build/apply bounded update packages.">
+                <TextBlock TextAlignment="Center"><Run Text="Local"/><LineBreak/><Run Text="apps"/></TextBlock>
+            </Button>
+            <Button x:Name="PublishAcceptedButton" Width="88" Height="46" Margin="0,0,6,0" Click="PublishAcceptedV040Button_Click"
+                    ToolTip="Publish only the exact locally accepted Workbench frontier to the fixed GitHub remote after explicit confirmation.">
+                <TextBlock TextAlignment="Center"><Run Text="Publish"/><LineBreak/><Run Text="accepted"/></TextBlock>
+            </Button>
+            <Button x:Name="LifecycleReceiptButton" Width="88" Height="46" Click="LifecycleReceiptV2Button_Click"
+                    ToolTip="Create a read-only lifecycle evidence assessment for the exact accepted/published frontier.">
+                <TextBlock TextAlignment="Center"><Run Text="Lifecycle"/><LineBreak/><Run Text="receipt"/></TextBlock>
+            </Button>
         </WrapPanel>
 
-        <Grid Grid.Row="1" Margin="0,0,0,6">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Workspace:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox x:Name="WorkspaceRootBox" Grid.Column="1" VerticalContentAlignment="Center"/>
-        </Grid>
-
-        <Grid Grid.Row="2" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Matawaka catalog:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox x:Name="CatalogRootBox" Grid.Column="1" VerticalContentAlignment="Center"/>
-        </Grid>
-
-        <Border Grid.Row="3" Padding="8" Margin="0,0,0,8" BorderThickness="1" CornerRadius="4">
-            <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Managed apps: Workspace\Apps\&lt;ApplicationId&gt; | Candidates: Workspace\AppCandidates\&lt;ApplicationId&gt;" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="v0.41 adds read-only Find in output (Ctrl+F, Enter/F3, Shift for previous). One-confirmation Workbench transitions remain accepted v0.40 behavior; Publish/Lifecycle stay explicit."
-                           TextWrapping="Wrap" FontStyle="Italic" VerticalAlignment="Center"/>
-            </Grid>
+        <Border Grid.Row="1" Padding="7,5" Margin="0,0,0,8" BorderThickness="1" CornerRadius="4">
+            <DockPanel LastChildFill="True">
+                <TextBlock x:Name="InstalledAppsSummaryText" DockPanel.Dock="Left" Text="Apps" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="InstalledAppsList">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,6,0">
+                                    <TextBlock Text="{Binding}"/>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
         </Border>
 
-        <Grid Grid.Row="4">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-            <Grid Grid.Row="0" Margin="0,0,0,8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Progress" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <ProgressBar x:Name="ProgressBar" Grid.Column="1" Height="20" Minimum="0" Maximum="100"/>
-                <TextBlock x:Name="StatusText" Grid.Column="2" Text="IDLE" VerticalAlignment="Center" Margin="12,0,0,0"/>
-            </Grid>
+        <TabControl x:Name="OutputTabs" Grid.Row="2" Margin="0,0,0,8">
+            <TabItem x:Name="EventsTab" Header="Events"><ListBox x:Name="EventList" FontFamily="Consolas"/></TabItem>
+            <TabItem x:Name="UpdatePlanTab" Header="Update Workbench"><TextBox x:Name="UpdatePlanTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
+            <TabItem x:Name="LocalAppsTab" Header="Local Apps"><TextBox x:Name="LocalAppsTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
+            <TabItem x:Name="AcceptanceTab" Header="Acceptance / Publication"><TextBox x:Name="AcceptanceTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
+            <TabItem x:Name="LifecycleTab" Header="Lifecycle"><TextBox x:Name="LifecycleTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
+            <TabItem x:Name="ResultTab" Header="Result" Visibility="Collapsed"><TextBox x:Name="ResultTextBox" IsReadOnly="True"/></TabItem>
+            <TabItem x:Name="EvidenceTab" Header="Evidence" Visibility="Collapsed"><TextBox x:Name="EvidenceTextBox" IsReadOnly="True"/></TabItem>
+            <TabItem x:Name="AuthorityTab" Header="Authority" Visibility="Collapsed"><TextBox x:Name="AuthorityTextBox" IsReadOnly="True"/></TabItem>
+            <TabItem x:Name="LivenessTab" Header="Liveness" Visibility="Collapsed"><TextBox x:Name="LivenessTextBox" IsReadOnly="True"/></TabItem>
+            <TabItem x:Name="SemanticTab" Header="Semantic" Visibility="Collapsed"><TextBox x:Name="SemanticTextBox" IsReadOnly="True"/></TabItem>
+            <TabItem x:Name="ProcessBoundaryTab" Header="Process" Visibility="Collapsed"><TextBox x:Name="ProcessBoundaryTextBox" IsReadOnly="True"/></TabItem>
+            <TabItem x:Name="RecoveryTab" Header="Recovery" Visibility="Collapsed"><TextBox x:Name="RecoveryTextBox" IsReadOnly="True"/></TabItem>
+            <TabItem x:Name="AgentTab" Header="Agent" Visibility="Collapsed"><TextBox x:Name="AgentTextBox" IsReadOnly="True"/></TabItem>
+        </TabControl>
 
-            <Grid x:Name="JsonSearchSurface" Grid.Row="1" Margin="0,0,0,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="300"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Find in output:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox x:Name="JsonSearchBox" Grid.Column="1" VerticalContentAlignment="Center" KeyDown="JsonSearchBox_KeyDown"
-                         ToolTip="Searches the currently selected text output. Ctrl+F focuses here; Enter/F3 finds next; Shift+Enter/Shift+F3 finds previous."/>
-                <Button x:Name="JsonSearchPreviousButton" Grid.Column="2" Content="Previous" Margin="8,0,0,0" Padding="10,2" Click="JsonSearchPreviousButton_Click"/>
-                <Button x:Name="JsonSearchNextButton" Grid.Column="3" Content="Next" Margin="6,0,0,0" Padding="10,2" Click="JsonSearchNextButton_Click"/>
-                <Button x:Name="JsonSearchClearButton" Grid.Column="4" Content="Clear" Margin="6,0,0,0" Padding="10,2" Click="JsonSearchClearButton_Click"/>
-                <TextBlock x:Name="JsonSearchStatusText" Grid.Column="5" Margin="10,0,0,0" VerticalAlignment="Center"/>
-            </Grid>
-
-            <TabControl x:Name="OutputTabs" Grid.Row="2">
-                <TabItem x:Name="EventsTab" Header="Events"><ListBox x:Name="EventList" FontFamily="Consolas"/></TabItem>
-                <TabItem x:Name="UpdatePlanTab" Header="Update Workbench"><TextBox x:Name="UpdatePlanTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
-                <TabItem x:Name="LocalAppsTab" Header="Local Apps"><TextBox x:Name="LocalAppsTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
-                <TabItem x:Name="AcceptanceTab" Header="Acceptance / Publication"><TextBox x:Name="AcceptanceTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
-                <TabItem x:Name="LifecycleTab" Header="Lifecycle"><TextBox x:Name="LifecycleTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
-                <TabItem x:Name="ResultTab" Header="Result" Visibility="Collapsed"><TextBox x:Name="ResultTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="EvidenceTab" Header="Evidence" Visibility="Collapsed"><TextBox x:Name="EvidenceTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="AuthorityTab" Header="Authority" Visibility="Collapsed"><TextBox x:Name="AuthorityTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="LivenessTab" Header="Liveness" Visibility="Collapsed"><TextBox x:Name="LivenessTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="SemanticTab" Header="Semantic" Visibility="Collapsed"><TextBox x:Name="SemanticTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="ProcessBoundaryTab" Header="Process" Visibility="Collapsed"><TextBox x:Name="ProcessBoundaryTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="RecoveryTab" Header="Recovery" Visibility="Collapsed"><TextBox x:Name="RecoveryTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="AgentTab" Header="Agent" Visibility="Collapsed"><TextBox x:Name="AgentTextBox" IsReadOnly="True"/></TabItem>
-            </TabControl>
+        <Grid x:Name="JsonSearchSurface" Grid.Row="3" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Find in output:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="JsonSearchBox" Grid.Column="1" VerticalContentAlignment="Center" KeyDown="JsonSearchBox_KeyDown"
+                     ToolTip="Searches the currently selected text output. Ctrl+F focuses here; Enter/F3 finds next; Shift+Enter/Shift+F3 finds previous."/>
+            <Button x:Name="JsonSearchPreviousButton" Grid.Column="2" Content="Previous" Margin="8,0,0,0" Padding="10,2" Click="JsonSearchPreviousButton_Click"/>
+            <Button x:Name="JsonSearchNextButton" Grid.Column="3" Content="Next" Margin="6,0,0,0" Padding="10,2" Click="JsonSearchNextButton_Click"/>
+            <Button x:Name="JsonSearchClearButton" Grid.Column="4" Content="Clear" Margin="6,0,0,0" Padding="10,2" Click="JsonSearchClearButton_Click"/>
+            <TextBlock x:Name="JsonSearchStatusText" Grid.Column="5" Margin="10,0,0,0" VerticalAlignment="Center"/>
         </Grid>
 
+        <!-- Status is the bottom-most visible surface and is rendered over the progress bar. -->
+        <Grid x:Name="StatusProgressSurface" Grid.Row="4" Height="26">
+            <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="100" Opacity="0.26"/>
+            <TextBlock x:Name="StatusText" Text="IDLE" Margin="8,0" VerticalAlignment="Center" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{Binding Text, RelativeSource={RelativeSource Self}, Converter={StaticResource StatusForegroundV042}}"/>
+        </Grid>
+
+        <!-- Historical/non-visible bindings remain only so accepted predecessor code keeps compiling/routing. -->
         <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
+            <TextBox x:Name="WorkspaceRootBox"/>
+            <TextBox x:Name="CatalogRootBox"/>
+            <Button x:Name="SelfTestButton" Content="Self-test" IsEnabled="False" Click="SelfTestV040Button_Click"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Accept" IsEnabled="False" Click="AcceptCheckpointV040Button_Click"/>
+            <Button x:Name="CancelButton" Content="Stop" IsEnabled="False" Click="CancelButton_Click"/>
             <Button x:Name="PasteButton"/><Button x:Name="FileButton"/><Button x:Name="ValidateButton"/><Button x:Name="RunButton"/>
             <Button x:Name="UpdatePlanButton"/><Button x:Name="MaterializeUpdateButton"/><Button x:Name="StagedApplyPlanButton"/><Button x:Name="ApplyBuildUpdateButton"/>
             <Button x:Name="RecoveryCheckButton"/><Button x:Name="RecoveryPlanButton"/><Button x:Name="RecoveryExecuteButton"/>
