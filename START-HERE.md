@@ -22,13 +22,21 @@ There are no persistent Agent or git-fetch checkboxes.
 1. **Update Workbench** → choose the source-only ZIP and confirm the bounded maintenance session.
 2. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
 3. **Launch candidate** separately.
-4. In the candidate run **Self-test** and require `Passed=true`.
-5. **Accept** separately.
-6. **Publish accepted** separately.
-7. Optionally create **Lifecycle receipt** after publication and require `Complete=true`.
+4. Starting with v0.39, a successful launch is followed by a bounded handoff check: the persisted launch receipt, PID, exact process-image path and candidate bytes must still agree. Only then does the current predecessor Workbench close its own window automatically.
+5. In the candidate run **Self-test** and require `Passed=true`.
+6. **Accept** separately.
+7. **Publish accepted** separately.
+8. Optionally create **Lifecycle receipt** after publication and require `Complete=true`.
+
+If candidate launch or handoff verification fails, the predecessor Workbench stays open. The handoff never kills/signals another process and does not accept the candidate.
 
 ```text
 Build != Launch
+Launch Attempt != Predecessor Close
+Candidate Started != Candidate Accepted
+Launch Receipt Persisted Before Predecessor Close
+Live PID != Exact Candidate Process Image
+Predecessor Self-Close != External Process-Kill Authority
 Launch != Self-test
 Self-test PASS != Accept
 Accept != Publish
