@@ -1,6 +1,6 @@
-# Matawaka Workbench v0.34 candidate — Security boundary
+# Matawaka Workbench — Security boundary
 
-Accepted predecessor: `workbench-v0.33-accepted` / `df211d1f4d80d0b1f238f1166460758e73ce18d2`.
+This document describes stable security/authority boundaries. Exact release identities belong to accepted tags, package previews and `PATCH-v*.md` history rather than permanent candidate-state prose.
 
 The established semantic/runtime boundary remains unchanged: fixed verified SemanticHost, restricted Low-integrity token, Windows Job Object, runtime attestation before semantic input, read-only proposal behavior and denied Execute control.
 
@@ -15,76 +15,92 @@ Accepted Checkpoint != Remote Publication Authority
 Publication Success != Lifecycle Authority
 Lifecycle Summary != Lifecycle Authority
 Observed Sequence != Authorized Sequence
+Accepted Tag Discovery != Trust Discovery
 Receipt Binding != Automatic Transition
 Workbench Maintenance Authority != Catalog Mutation Authority != Agent Execute
 ```
 
-## Accepted update and launch boundary
+No receipt from one stage silently authorizes a later stage.
 
-v0.34 keeps the accepted v0.33 `MaintenanceUpdateOrchestratorService` unchanged. It sequences the existing typed intake/materialize/staged-plan/apply-build gates, preserves their sub-receipts and stops before candidate launch.
+## Update/build boundary
 
-**Запустить candidate** remains a separate exact-executable confirmation.
+`Update candidate` sequences existing typed package intake, staging-only materialization, staged source plan and exact source apply/build services. Each retains its own fresh evidence checks and receipt. Apply/build rollback remains owned by the bounded apply/build service.
 
-## v0.34 Self-test boundary
+The orchestrator stops at:
 
-Self-test preserves the complete accepted v0.33 read-only matrix and adds only offline lifecycle contract checks. It validates categories such as:
+`CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`
 
-- summary/action/authority fields remain false;
-- fixed v0.34 target and exact v0.33 predecessor;
-- missing lifecycle artifact is refused;
-- ambiguous lifecycle artifact is refused.
+It does not call candidate launch, Self-test, checkpoint or publisher services.
 
-Self-test does not scan actual lifecycle directories and performs no update/build/launch/checkpoint/publication/lifecycle-write effect.
+## Separate launch boundary
 
-## v0.34 local checkpoint boundary
+**Запустить candidate** remains a separate exact-executable gate. It consumes the exact build receipt, rechecks the candidate/SemanticHost digests and launches only the receipt-bound local executable.
 
-`workbench-v0.34-accepted` requires:
+`Update candidate success != Launch authority`.
 
-- passing in-process v0.34 Self-test;
-- exact acceptance artifact + running executable digest binding;
-- current HEAD exactly `df211d1f...` and predecessor tag at that commit;
-- exact dynamic v0.34 build-source manifest matching all changed files/bytes;
-- explicit **Принять** confirmation.
+## Self-test boundary
 
-Only fixed local add/commit/tag is admitted. Publication and lifecycle summary remain separate.
+Self-test is a read-only acceptance matrix with respect to update/build/launch/checkpoint/publication/lifecycle effects. Version-specific successors may add deterministic offline contract checks, but those checks must not scan or mutate real maintenance lifecycle artifacts as a hidden effect.
 
-## v0.34 fixed publication boundary
+`Contract Check != Effect Exercise`.
 
-**Publish accepted** retains one fixed destination and fast-forward-only semantics:
+## Local checkpoint boundary
+
+Local acceptance requires a passing in-process Self-test receipt, exact acceptance artifact/running executable digest binding, exact accepted predecessor HEAD/tag and a build-source manifest matching the full changed source set.
+
+The checkpoint gate may perform only its fixed local `git add/commit/tag` transaction after explicit confirmation. It creates no push/network/publication/lifecycle authority.
+
+## Fixed accepted-source publication boundary
+
+**Publish accepted** is a separate explicit human maintenance network gate with one destination only:
 
 ```text
 remote = github-workbench
 url = https://github.com/Matawaka/workbench.git
 branch = refs/heads/main
-tag = workbench-v0.34-accepted
+tag = exact locally accepted workbench-v<version>-accepted
 ```
 
-Remote main must be exact predecessor or exact accepted HEAD. Conflicting main/tag fails closed. No force-push/tag movement/general network/catalog/Agent Execute authority is created.
+Remote main must be exact local parent or exact local HEAD. A conflicting main or accepted tag fails closed. Branch publication is non-force exact-head fast-forward only. Final remote main/tag readback must equal the local accepted HEAD and local HEAD/working tree must remain unchanged.
 
-## Maintenance Lifecycle Receipt boundary
+No arbitrary remote, force-push, tag movement, credential/protection mutation, catalog mutation, Agent Execute, ActionPermit or general Workbench network authority is created.
 
-**Lifecycle receipt** is post-publication evidence composition only.
+## Successor-generic Maintenance Lifecycle Receipt boundary
 
-The assessment may read:
+The lifecycle service is post-publication evidence composition only.
 
-- local Workbench artifact files;
-- fixed read-only Git observations: `rev-parse HEAD`, `tag --points-at HEAD`, `status --porcelain`.
+It may read:
 
-It may not invoke Update candidate, source apply/build, candidate launch, Self-test, local checkpoint or publication services.
+- Workbench-local ignored artifact files;
+- fixed read-only Git observations from a hard allowlist:
+  - `rev-parse HEAD`;
+  - `rev-parse HEAD^`;
+  - `tag --points-at HEAD`;
+  - `tag --points-at <exact-parent-sha>`;
+  - `status --porcelain=v1 --untracked-files=all`.
 
-A complete lifecycle relation requires exact bindings:
+It may not invoke Update candidate, source apply/build, candidate launch, Self-test, local checkpoint or publication services. It may not run Git push/fetch/remote/add/commit/tag mutation operations.
 
-1. current accepted checkpoint at HEAD/tag;
-2. checkpoint-bound Self-test artifact path and SHA-256;
-3. passing v0.34 acceptance executable SHA-256;
-4. unique v0.33 orchestrator receipt targeting v0.34 with the same built candidate executable SHA-256;
-5. unique v0.34 publication receipt with local/remote main/tag equal the checkpoint accepted commit;
-6. SHA-256 of every consumed artifact;
-7. clean current Workbench source state.
+### Evidence routing
 
-Missing or multiple qualifying artifacts are not guessed or resolved by file age.
+The service derives the current target only from exact accepted evidence:
+
+1. require exactly one tag at current HEAD matching `workbench-v<version>-accepted`;
+2. derive target version from that tag;
+3. require one checkpoint with matching target version/tag and `NewHead == HEAD`;
+4. require checkpoint `PreviousHead == HEAD^`;
+5. require exactly one accepted predecessor tag at that parent commit;
+6. load the checkpoint-bound acceptance artifact and require its exact SHA-256, version/schema and `Passed=true`;
+7. require one orchestrator receipt whose target/predecessor and candidate executable digest match that acceptance/checkpoint evidence;
+8. require one publication receipt whose version/tag/local head/parent and remote main/tag match the same accepted frontier;
+9. bind SHA-256 of every consumed artifact;
+10. require clean current Workbench source state.
+
+No file may be selected by modification time. Missing or multiple qualifying tags/artifacts fail closed.
 
 ```text
+Generic Evidence Discovery != Authority Discovery
+Accepted Tag Discovery != Trust Discovery
 Missing Artifact != Inferred Success
 Ambiguous Artifact != Chosen Latest Artifact
 Artifact Path != Artifact Identity
@@ -99,16 +115,28 @@ After a complete assessment, an explicit confirmation may write one local receip
 - `RetryAuthorized=false`;
 - `RollbackAuthorized=false`.
 
+## Qualification boundary
+
+A real successor transition is required before calling the generic lifecycle adapter reusable. Offline contract checks or successful self-assessment of one release are insufficient.
+
+Allowed qualification outcomes:
+
+- `LIFECYCLE_REUSABLE`;
+- `LIFECYCLE_NEEDS_ADAPTER`;
+- `LIFECYCLE_AMBIGUOUS`;
+- `LIFECYCLE_NOT_REQUIRED`.
+
+A negative result is valid and blocks feature inflation.
+
 ## Prohibited effects
 
-v0.34 lifecycle work does not create or authorize:
+Qualification/stabilization work does not create or authorize:
 
-- package/source mutation, build or launch;
-- Self-test/checkpoint/publication replay;
-- Git push/fetch/remote mutation from the lifecycle service;
-- retry or rollback;
+- automatic update/build/launch/Self-test/checkpoint/publication/lifecycle execution;
+- lifecycle retry or rollback;
+- arbitrary Git/network operations;
 - catalog mutation;
 - Agent Execute or ActionPermit;
-- general network authority;
+- trust/identity claims from tags or hashes;
 - canonical UU-AAP conformance;
 - Stable Core/interface-registry promotion.
