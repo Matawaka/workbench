@@ -1,45 +1,38 @@
 # Local Application Maintenance
 
-This document defines the stable Workbench contract for registering and updating managed local applications. It is deliberately **not** a general installer, importer, launcher or filesystem manager.
+This document defines the stable Workbench contract for registering, packaging and updating managed local applications. It is deliberately **not** a general installer, importer, launcher or filesystem manager.
 
-## Managed root
+## Fixed roots
 
-Only direct children of:
+Managed current application bytes:
 
 ```text
 <WorkspaceRoot>\Apps\<ApplicationId>\
 ```
 
-are eligible.
+Desired package-builder candidate bytes:
 
-`ApplicationId` must match:
+```text
+<WorkspaceRoot>\AppCandidates\<ApplicationId>\
+```
+
+Only direct children are eligible. `ApplicationId` must match:
 
 ```text
 [A-Za-z0-9][A-Za-z0-9._-]{0,63}
 ```
 
-Workbench does not register an arbitrary outside directory in place and does not copy/import a selected external app into the managed root.
-
 ```text
 Managed Root != Arbitrary Target Root
+Candidate Root != Arbitrary Read Root
 Register Local App != Import App
 ```
 
 ## Registration
 
-Registration exists only for an application directory that is already an immediate child of `Workspace\Apps` and does not yet contain `.matawaka-app.json`.
+Registration exists only for an application directory already under `Workspace\Apps` without `.matawaka-app.json`.
 
-### Read-only preview
-
-Workbench:
-
-- derives ApplicationId from the exact folder name;
-- rejects reparse points at the Apps root, app root, subdirectories or files;
-- inventories regular app files recursively;
-- bounds the inventory to 4096 files and 2 GiB total bytes;
-- records normalized relative path, SHA-256 and file size for every file;
-- computes a deterministic tree SHA-256 over ordered `(path,sha256,size)` tuples;
-- proposes an identity:
+Preview inventories bounded regular files, rejects reparse points, records exact relative path/SHA-256/size, computes a deterministic tree digest and proposes:
 
 ```json
 {
@@ -49,47 +42,23 @@ Workbench:
 }
 ```
 
-The `baseline-*` value is a deterministic Workbench evidence marker for the currently observed bytes. It is **not** a vendor/upstream version claim.
+After separate confirmation Workbench repeats the inventory and creates only `.matawaka-app.json`, then verifies all pre-existing application bytes stayed unchanged.
 
-### Registration effect
-
-Only after explicit confirmation:
-
-1. Workbench repeats the full inventory and requires it to equal the preview;
-2. `.matawaka-app.json` must still be absent;
-3. Workbench atomically creates exactly that identity sidecar;
-4. Workbench re-reads/verifies identity bytes and SHA-256;
-5. Workbench re-inventories all pre-existing app files and requires the original tree digest unchanged;
-6. Workbench writes one local registration receipt under ignored Workbench artifacts.
-
-If registration fails after identity creation, Workbench removes the identity and verifies the original application byte baseline again.
-
-Success status:
+Success:
 
 `LOCAL_APPLICATION_REGISTERED_UPDATE_AUTHORITY_NOT_CREATED`
 
-Registration does not authorize update or launch.
+`baseline-*` is observed-byte evidence, not a vendor version assertion.
 
-```text
-Preview PASS != Registration Authority
-Registration != Update Authority
-Registration != Launch Authority
-Identity Creation != Vendor Identity Assertion
-```
+## Existing updater
 
-## Existing application identity
-
-A registered managed app contains `.matawaka-app.json` with schema `matawaka.local-app-identity/v1`, exact ApplicationId and current maintenance version/baseline.
-
-That file is local maintenance evidence. It is not proof of real-world producer identity, trust or legal authority.
-
-## Update ZIP
-
-Registered apps may be updated from a local ZIP with schema:
+Registered apps may be updated only from local ZIPs using:
 
 `matawaka.local-app-update-package/v1`
 
-Exact shape:
+The manifest binds exact `ApplicationId`, current/target version, exact file list, `CurrentSha256` for every Replace, target `Sha256` for every payload file, and all network/process/installer/registry/service/environment/AgentExecute request flags false.
+
+Exact ZIP shape:
 
 ```text
 local-app-update-manifest.json
@@ -97,59 +66,95 @@ payload/.matawaka-app.json
 payload/<other manifest-declared files>
 ```
 
-No undeclared ZIP entry is accepted.
+Existing files require exact predecessor SHA-256 and become Replace; missing files require no predecessor digest and become Add. Delete is unsupported.
 
-The manifest includes ApplicationId, ExpectedCurrentVersion, TargetVersion, exact file list, predecessor `CurrentSha256` for every Replace, target `Sha256` for every payload file, and all requested network/process/installer/registry/service/environment/AgentExecute flags set to false.
+After explicit confirmation the updater freshly revalidates, backs up Replace bytes, applies exact payload bytes, applies identity last, verifies the target, and rolls back on failure.
 
-The target identity payload must use the same ApplicationId and TargetVersion.
-
-## Update path/file rules
-
-Every manifest path is relative to the fixed application root. Rejected:
-
-- absolute/rooted paths or drive prefixes;
-- `.` / `..` segments or traversal;
-- duplicate/Windows case-colliding paths;
-- existing directory where a file is expected;
-- reparse-point escape.
-
-Existing destination files require exact `CurrentSha256` and become `Replace`; missing destinations require no predecessor digest and become `Add`. Delete is unsupported.
-
-## Update effect boundary
-
-The bounded updater first performs a read-only Preview. Only after explicit confirmation it reruns Preview and requires an equivalent plan.
-
-Before mutation it backs up exact Replace bytes. Files are written through temporary paths and SHA-256 verified; `.matawaka-app.json` is applied last. Target digests/identity are reverified afterward.
-
-On failure:
-
-- new Add files are removed;
-- Replace files are restored from exact backups;
-- predecessor digests/identity are reverified.
-
-Success status:
+Success:
 
 `LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED`
 
+## Package builder
+
+The builder exists because exact predecessor SHA-256 values should not need manual reconstruction. Real-host qualification demonstrated that semantically equal JSON with different line endings is not byte-equal and is correctly refused by the updater.
+
+`Semantic Equality != Byte Equality`
+
+### Candidate metadata
+
+Desired target files live only under:
+
+`Workspace\AppCandidates\<ApplicationId>`
+
+The candidate root contains:
+
+`.matawaka-target.json`
+
+with schema `matawaka.local-app-target/v1`:
+
+```json
+{
+  "Schema": "matawaka.local-app-target/v1",
+  "ApplicationId": "demo.app",
+  "TargetVersion": "1.1.0"
+}
+```
+
+The builder does not trust or copy a candidate `.matawaka-app.json`; target identity bytes are generated by Workbench from ApplicationId + TargetVersion.
+
+### Builder Preview
+
+Preview is read-only and:
+
+- validates the selected registered app under `Workspace\Apps`;
+- validates the fixed matching candidate root under `Workspace\AppCandidates`;
+- rejects reparse points and unsafe relative paths;
+- bounds inventory to 2048 files / 512 MiB candidate bytes;
+- reads current SHA-256 values directly from actual registered files;
+- reads target SHA-256 values from candidate files;
+- derives Add / Replace / NoOp;
+- refuses a missing candidate file when that would imply Delete;
+- generates target identity bytes;
+- synthesizes the exact existing updater manifest in memory.
+
+Preview creates no ZIP and no update authority.
+
+### Package write
+
+Only after separate confirmation:
+
+1. Workbench freshly rebuilds the same preview and requires exact equivalence;
+2. it writes one ZIP only under `Workbench\artifacts\local-app-packages`;
+3. it writes no bytes under either `Apps` or `AppCandidates`;
+4. it immediately sends the generated ZIP through the already-accepted `LocalApplicationMaintenanceService.PreviewAsync`;
+5. builder success is returned only if that existing updater Preview is READY and agrees on app/current/target/package/manifest identity.
+
+Success:
+
+`LOCAL_APPLICATION_UPDATE_PACKAGE_BUILT_EXISTING_UPDATER_PREVIEW_READY`
+
+The generated package still requires a later, separately confirmed **Update from package** action.
+
+```text
+Builder Preview != Package Write Authority
+Package Write != Update Authority
+Builder Success => Existing Updater Preview READY
+Build Package != Update App != Launch App
+```
+
 ## Authority ceiling
 
-Neither registration nor update authorizes or performs:
+Registration, builder and updater do not authorize or perform outside their own explicit effect:
 
-- app import/copy/move from an arbitrary outside root;
-- package download/network access;
+- arbitrary app import/copy/move;
+- arbitrary filesystem roots;
+- network/download;
 - Git operations;
 - app/process launch;
 - MSI/EXE/script installer execution;
 - Windows registry/service/environment mutation;
-- arbitrary target roots;
-- Workbench source mutation;
-- Matawaka catalog mutation;
+- Workbench source or Matawaka catalog mutation;
 - Agent Execute / ActionPermit;
 - canonical UU-AAP conformance or Stable Core promotion.
 
-```text
-Register Local App != Import App
-Local App Update != App Launch
-Package Validity != Mutation Authority
-Explicit Confirmation != General Filesystem Authority
-```
+The builder specifically may only write its generated ZIP artifact under Workbench ignored artifacts; it cannot modify the application or candidate source.
