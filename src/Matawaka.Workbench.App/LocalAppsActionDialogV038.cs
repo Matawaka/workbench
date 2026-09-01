@@ -14,6 +14,8 @@ public enum LocalAppsActionChoiceV038
 /// Explicit registered-app action chooser. Opening the chooser has no effect and
 /// no button is marked as a default action. Labels describe the actual operation
 /// instead of mapping generic YES/NO semantics onto update/package-build choices.
+/// v0.38.1 uses content-height sizing so all explicit actions remain visible under
+/// Windows DPI/font scaling instead of relying on one fixed outer-window height.
 /// </summary>
 public sealed class LocalAppsActionDialogV038 : Window
 {
@@ -23,9 +25,9 @@ public sealed class LocalAppsActionDialogV038 : Window
     {
         Title = "Local apps — choose action";
         Width = 520;
-        Height = 245;
         MinWidth = 480;
-        MinHeight = 220;
+        MinHeight = 300;
+        SizeToContent = SizeToContent.Height;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
@@ -96,6 +98,7 @@ public sealed class LocalAppsActionDialogV038 : Window
         ("local-apps-chooser-build-label", true, "Build update package", "Build update package"),
         ("local-apps-chooser-cancel-label", true, "Cancel", "Cancel"),
         ("local-apps-chooser-no-default-effect", true, "no IsDefault action; initial Choice=Cancel", "no default effect"),
+        ("local-apps-chooser-content-height-sizing", true, "SizeToContent=Height; MinHeight=300", "content-height sizing"),
         ("local-apps-chooser-top-level-button-added", true, "false", "false")
     };
 }
