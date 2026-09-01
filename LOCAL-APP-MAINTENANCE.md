@@ -26,11 +26,18 @@ Only direct children are eligible. `ApplicationId` must match:
 Managed Root != Arbitrary Target Root
 Candidate Root != Arbitrary Read Root
 Register Local App != Import App
+Candidate Source != Managed Application
 ```
 
 ## Registration
 
 Registration exists only for an application directory already under `Workspace\Apps` without `.matawaka-app.json`.
+
+A managed application registration candidate must **not** carry package-builder target metadata. If `.matawaka-target.json` is present as either a file or directory under the selected `Workspace\Apps\<ApplicationId>` root, registration fails closed before identity creation and directs the operator to use `Workspace\AppCandidates\<ApplicationId>` instead.
+
+This role separation prevents misplaced target-candidate bytes from being adopted as a new managed application baseline merely because they happen to be under the managed Apps root.
+
+`Candidate Source != Managed Application`
 
 Preview inventories bounded regular files, rejects reparse points, records exact relative path/SHA-256/size, computes a deterministic tree digest and proposes:
 
