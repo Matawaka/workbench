@@ -4,11 +4,11 @@ Windows/.NET 10 WPF control plane for bounded local Matawaka analysis, authority
 
 ## Accepted-state rule
 
-The repository default branch `main` is the remotely published accepted source frontier. Candidate/stabilization branches are not accepted merely because their source exists.
+The repository default branch `main` is the remotely published accepted source frontier. Development/stabilization branches are not accepted merely because their source exists.
 
-The exact accepted version is identified by the single `workbench-v<version>-accepted` tag at `main` HEAD. Version-specific predecessor SHAs, candidate plans and acceptance notes belong in `PATCH-v*.md`, Git tags and issue history rather than in this permanent README.
+The exact accepted version is identified by the single `workbench-v<version>-accepted` tag at `main` HEAD. Version-specific predecessor SHAs, development plans and acceptance notes belong in `PATCH-v*.md`, Git tags and issue history rather than in this permanent README.
 
-`Accepted Source Documentation != Candidate Planning Document`
+`Accepted Source Documentation != Version-Specific Planning Document`
 
 ## Architecture
 
