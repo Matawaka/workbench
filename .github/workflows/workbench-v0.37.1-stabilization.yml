@@ -1,0 +1,184 @@
+name: Workbench v0.37.1 role separation stabilization
+
+on:
+  push:
+    branches:
+      - stabilize/workbench-v0.37.1-role-separation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Windows build and role-collision regression
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify eight-button stabilization surface
+        shell: pwsh
+        run: |
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.37\.1') { throw 'v0.37.1 title missing' }
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 8) { throw 'active button count != 8' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'active checkbox count != 0' }
+          if ($surface -notmatch 'LocalAppsV0371Button_Click') { throw 'v0.37.1 Local apps handler missing' }
+          if ($xaml -notmatch 'Candidate Source != Managed Application') { throw 'role-separation UI marker missing' }
+
+      - name: Verify role guard authority ceiling
+        shell: pwsh
+        run: |
+          $src = Get-Content 'src/Matawaka.Workbench.App/LocalApplicationManagedRoleGuardV0371Service.cs' -Raw
+          foreach ($required in @('.matawaka-target.json','Candidate Source != Managed Application','AppCandidates','read-only refusal only')) {
+            if (-not $src.Contains($required)) { throw "guard marker missing: $required" }
+          }
+          foreach ($forbidden in @('File.Move(','File.Copy(','File.Delete(','ProcessStartInfo','HttpClient','git push','git fetch')) {
+            if ($src.Contains($forbidden)) { throw "forbidden role-guard effect found: $forbidden" }
+          }
+
+      - name: Execute real normal-registration and candidate-role refusal probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v0371-role-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escapedProject = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escapedProject" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+          static string Sha(string p) { using var s = File.OpenRead(p); return Convert.ToHexString(SHA256.HashData(s)).ToLowerInvariant(); }
+          static void Require(bool c, string m) { if (!c) throw new Exception(m); }
+
+          var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v0371-" + Guid.NewGuid().ToString("N"));
+          Directory.CreateDirectory(Path.Combine(workspace, "Workbench"));
+          var apps = Path.Combine(workspace, "Apps"); Directory.CreateDirectory(apps);
+          var guard = new LocalApplicationManagedRoleGuardV0371Service();
+          var registration = new LocalApplicationRegistrationService();
+
+          var normal = Path.Combine(apps, "normal.app"); Directory.CreateDirectory(normal);
+          File.WriteAllText(Path.Combine(normal, "app.txt"), "normal\n", new UTF8Encoding(false));
+          await guard.EnsureRegistrationRoleAllowedAsync(normal, workspace, CancellationToken.None);
+          var normalPlan = await registration.PreviewAsync(normal, workspace, CancellationToken.None);
+          var normalReceipt = await registration.RegisterAsync(normalPlan, workspace, CancellationToken.None);
+          Require(normalReceipt.Receipt.IdentityCreated, "normal registration failed");
+
+          var candidate = Path.Combine(apps, "candidate.app"); Directory.CreateDirectory(candidate);
+          var payload = Path.Combine(candidate, "target.txt"); File.WriteAllText(payload, "target\n", new UTF8Encoding(false));
+          var marker = Path.Combine(candidate, LocalApplicationPackageBuilderService.TargetMetadataFileName);
+          File.WriteAllText(marker, JsonSerializer.Serialize(new LocalApplicationTargetMetadata(LocalApplicationPackageBuilderService.TargetSchema,"candidate.app","2.0.0")), new UTF8Encoding(false));
+          var payloadSha = Sha(payload); var markerSha = Sha(marker);
+          var refused = false;
+          try { await guard.EnsureRegistrationRoleAllowedAsync(candidate, workspace, CancellationToken.None); }
+          catch (InvalidDataException ex) when (ex.Message.Contains("Candidate Source != Managed Application", StringComparison.Ordinal)) { refused = true; }
+          Require(refused, "candidate-role managed registration was not refused");
+          Require(!File.Exists(Path.Combine(candidate, LocalApplicationMaintenanceService.IdentityFileName)), "identity created despite role collision");
+          Require(Sha(payload) == payloadSha && Sha(marker) == markerSha, "candidate bytes changed during refusal");
+
+          // Package-builder regression: normal registered app -> candidate -> generated package -> existing updater Preview READY.
+          var candidates = Path.Combine(workspace, LocalApplicationPackageBuilderService.CandidatesDirectoryName); Directory.CreateDirectory(candidates);
+          var normalCandidate = Path.Combine(candidates, "normal.app"); Directory.CreateDirectory(normalCandidate);
+          File.WriteAllText(Path.Combine(normalCandidate, "app.txt"), "normal-v2\n", new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(normalCandidate, "new.txt"), "new\n", new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(normalCandidate, LocalApplicationPackageBuilderService.TargetMetadataFileName),
+              JsonSerializer.Serialize(new LocalApplicationTargetMetadata(LocalApplicationPackageBuilderService.TargetSchema,"normal.app","1.0.0")), new UTF8Encoding(false));
+          var builder = new LocalApplicationPackageBuilderService();
+          var builderPlan = await builder.PreviewAsync(normal, workspace, CancellationToken.None);
+          var built = await builder.BuildAsync(builderPlan, workspace, CancellationToken.None);
+          Require(built.Receipt.ExistingUpdaterPreviewReady, "builder updater Preview regression");
+          Require(!built.Receipt.ApplicationMutationPerformed, "builder mutated application");
+
+          Console.WriteLine($"ROLE_SEPARATION_REGRESSION_PASS normal={normalReceipt.Receipt.Identity.Version} candidateRefused={refused} builderReady={built.Receipt.ExistingUpdaterPreviewReady}");
+          Directory.Delete(workspace, true);
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'role-separation regression probe failed' }
+
+      - name: Verify v0.37.1 successor contracts
+        shell: pwsh
+        run: |
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0371AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0371Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0371Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.37\.1') { throw 'acceptance successor missing' }
+          if ($checkpoint -notmatch 'workbench-v0\.37\.1-accepted' -or $checkpoint -notmatch '0d20e3bbe7c28b48cac3ef97b903b4a3a6176521') { throw 'checkpoint successor mismatch' }
+          if ($publisher -notmatch 'workbench-v0\.37\.1-accepted' -or $publisher -notmatch 'ExpectedParent = "0d20e3bbe7c28b48cac3ef97b903b4a3a6176521"') { throw 'publisher successor mismatch' }
+
+      - name: Verify non-App implementation unchanged
+        shell: pwsh
+        run: |
+          $base = '0d20e3bbe7c28b48cac3ef97b903b4a3a6176521'
+          $changed = git diff --name-only $base HEAD
+          $forbidden = $changed | Where-Object { $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or $_ -like 'src/Matawaka.Workbench.Runtime/*' -or $_ -like 'src/Matawaka.Workbench.Protocol/*' -or $_ -like 'src/Matawaka.Workbench.Engine/*' -or $_ -like 'src/Matawaka.Workbench.Catalog/*' -or $_ -like 'src/Matawaka.Workbench.SemanticHost/*' }
+          if ($forbidden) { throw "unexpected non-App mutation: $($forbidden -join ', ')" }
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.37.1 package
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'LOCAL-APP-MAINTENANCE.md',
+            'PATCH-v0.37.1.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V0371.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationManagedRoleGuardV0371Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0371AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0371Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0371Service.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.37.1-package'; $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }; New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item $file $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.37.1';
+            PredecessorTag='workbench-v0.37-accepted'; PredecessorCommit='0d20e3bbe7c28b48cac3ef97b903b4a3a6176521'; TargetTag='workbench-v0.37.1-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false; ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('source-only stabilization package; no candidate import/registration/update effect on creation','package validity does not authorize later effects')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.37.1-source-only.zip'; if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant(); [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.37.1-source-only.sha256.txt'), "$sha  workbench-v0.37.1-source-only.zip`n", [Text.UTF8Encoding]::new($false)); Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.37.1 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.37.1-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.37.1-source-only.zip
+            ${{ runner.temp }}/workbench-v0.37.1-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
