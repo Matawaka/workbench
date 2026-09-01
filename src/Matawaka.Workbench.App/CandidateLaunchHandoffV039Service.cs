@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
@@ -14,10 +15,12 @@ public sealed record CandidateLaunchHandoffV039Receipt(
     string CandidateLaunchArtifactSha256,
     string CandidateExecutablePath,
     string CandidateExecutableSha256,
+    string ObservedProcessExecutablePath,
     int ProcessId,
     int AliveObservationMilliseconds,
     bool LaunchReceiptVerified,
     bool CandidateObservedAlive,
+    bool ProcessImageMatchedCandidate,
     bool PredecessorSelfCloseEligible,
     bool CandidateAcceptanceCreated,
     bool ExternalProcessTerminationAuthorityCreated,
@@ -28,9 +31,10 @@ public sealed record CandidateLaunchHandoffV039Receipt(
 /// <summary>
 /// v0.39 post-launch handoff gate. It consumes an already-persisted successful
 /// candidate-launch receipt, rebinds that evidence, waits one short bounded local
-/// observation interval, and requires the launched PID to still be alive. It never
-/// launches, kills, signals or accepts a process. PASS only makes the current
-/// Workbench window eligible to close itself after the receipt has been persisted.
+/// observation interval, and requires the launched PID to still be alive while its
+/// process image is the exact receipt-bound candidate executable. It never launches,
+/// kills, signals or accepts a process. PASS only makes the current Workbench window
+/// eligible to close itself after the handoff receipt has been persisted.
 /// </summary>
 public sealed class CandidateLaunchHandoffV039Service
 {
@@ -68,24 +72,33 @@ public sealed class CandidateLaunchHandoffV039Service
 
         await Task.Delay(AliveObservationMilliseconds, cancellationToken);
 
-        bool alive;
+        string observedProcessPath;
         try
         {
             using var process = Process.GetProcessById(launchReceipt.ProcessId);
             process.Refresh();
-            alive = !process.HasExited;
+            if (process.HasExited)
+                throw new InvalidDataException("Launched candidate exited before the bounded v0.39 handoff observation completed; predecessor remains open.");
+
+            observedProcessPath = process.MainModule?.FileName
+                ?? throw new InvalidDataException("Live candidate process image path could not be resolved; predecessor remains open.");
         }
         catch (ArgumentException)
         {
-            alive = false;
+            throw new InvalidDataException("Launched candidate PID no longer exists after the bounded v0.39 handoff observation; predecessor remains open.");
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            alive = false;
+            throw new InvalidDataException($"Launched candidate process could not be observed safely; predecessor remains open. {ex.Message}");
+        }
+        catch (Win32Exception ex)
+        {
+            throw new InvalidDataException($"Live candidate process image could not be verified; predecessor remains open. {ex.Message}");
         }
 
-        if (!alive)
-            throw new InvalidDataException("Launched candidate exited before the bounded v0.39 handoff observation completed; predecessor remains open.");
+        var observedFullPath = Path.GetFullPath(observedProcessPath);
+        if (!observedFullPath.Equals(candidatePath, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Live PID image does not match the receipt-bound candidate executable; predecessor remains open. Observed={observedFullPath}");
 
         var nonEffects = new[]
         {
@@ -104,8 +117,10 @@ public sealed class CandidateLaunchHandoffV039Service
             HashFile(launchPath),
             candidatePath,
             launchReceipt.CandidateExecutableSha256,
+            observedFullPath,
             launchReceipt.ProcessId,
             AliveObservationMilliseconds,
+            true,
             true,
             true,
             true,
@@ -113,7 +128,7 @@ public sealed class CandidateLaunchHandoffV039Service
             false,
             nonEffects,
             SuccessStatus,
-            "The existing candidate-launch receipt was rebound to exact local evidence and the launched PID remained alive after one bounded observation interval. This authorizes only the current predecessor Workbench window to close itself; candidate acceptance remains separate.");
+            "The existing candidate-launch receipt was rebound to exact local evidence; the launched PID remained alive after one bounded observation interval and its process image matched the exact receipt-bound candidate executable. This authorizes only the current predecessor Workbench window to close itself; candidate acceptance remains separate.");
 
         var dir = Path.Combine(repositoryRoot, "artifacts", "update-applies");
         Directory.CreateDirectory(dir);
@@ -127,6 +142,11 @@ public sealed class CandidateLaunchHandoffV039Service
                 ?? throw new InvalidDataException("Temporary v0.39 handoff receipt could not be parsed.");
             RequireEquivalent(receipt, parsed);
             File.Move(tempPath, finalPath);
+
+            var finalParsed = JsonSerializer.Deserialize<CandidateLaunchHandoffV039Receipt>(
+                await File.ReadAllTextAsync(finalPath, Encoding.UTF8, cancellationToken), JsonOptions)
+                ?? throw new InvalidDataException("Persisted v0.39 handoff receipt could not be parsed after finalization.");
+            RequireEquivalent(receipt, finalParsed);
             return (receipt, finalPath);
         }
         catch
@@ -141,6 +161,7 @@ public sealed class CandidateLaunchHandoffV039Service
     {
         ("handoff-v039-bounded-alive-observation", AliveObservationMilliseconds is >= 250 and <= 2000, AliveObservationMilliseconds.ToString(), "250..2000 ms"),
         ("handoff-v039-launch-success-required", true, "CANDIDATE_LAUNCHED_NOT_ACCEPTED", "successful persisted launch receipt"),
+        ("handoff-v039-live-pid-image-bound", true, "PID MainModule.FileName == exact candidate path", "exact process image"),
         ("handoff-v039-candidate-acceptance-created", true, "false", "false"),
         ("handoff-v039-external-process-termination-authority", true, "false", "false"),
         ("handoff-v039-self-close-only", true, "current MainWindow Close() after PASS", "self-close only"),
@@ -174,8 +195,10 @@ public sealed class CandidateLaunchHandoffV039Service
             observed.ProcessId != expected.ProcessId || observed.AliveObservationMilliseconds != expected.AliveObservationMilliseconds ||
             !observed.CandidateLaunchArtifactSha256.Equals(expected.CandidateLaunchArtifactSha256, StringComparison.OrdinalIgnoreCase) ||
             !observed.CandidateExecutableSha256.Equals(expected.CandidateExecutableSha256, StringComparison.OrdinalIgnoreCase) ||
-            !observed.LaunchReceiptVerified || !observed.CandidateObservedAlive || !observed.PredecessorSelfCloseEligible ||
-            observed.CandidateAcceptanceCreated || observed.ExternalProcessTerminationAuthorityCreated)
+            !observed.ObservedProcessExecutablePath.Equals(expected.ObservedProcessExecutablePath, StringComparison.OrdinalIgnoreCase) ||
+            !observed.LaunchReceiptVerified || !observed.CandidateObservedAlive || !observed.ProcessImageMatchedCandidate ||
+            !observed.PredecessorSelfCloseEligible || observed.CandidateAcceptanceCreated ||
+            observed.ExternalProcessTerminationAuthorityCreated)
             throw new InvalidDataException("Persisted v0.39 handoff receipt differs from the verified in-memory receipt.");
     }
 
