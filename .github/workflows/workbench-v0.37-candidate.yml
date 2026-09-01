@@ -1,0 +1,272 @@
+name: Workbench v0.37 local app package builder qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.37-local-app-package-builder
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Windows build, package builder and updater fixture
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify eight-button package-builder surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.37\.0') { throw 'v0.37 title missing' }
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if (-not $surface) { throw 'PrimaryMaintenanceSurface missing' }
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 8) { throw 'active button count is not 8' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'active checkbox count is not 0' }
+          if ($surface -notmatch 'Click="LocalAppsV037Button_Click"') { throw 'v0.37 Local apps handler missing' }
+          if ($surface -notmatch 'SelfTestV037Button_Click' -or $surface -notmatch 'AcceptCheckpointV037Button_Click' -or $surface -notmatch 'PublishAcceptedV037Button_Click') { throw 'v0.37 lifecycle handlers missing' }
+          Write-Host 'eight-button v0.37 surface: PASS'
+
+      - name: Verify package builder authority ceiling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content 'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs' -Raw
+          foreach ($required in @(
+            'AppCandidates',
+            'matawaka.local-app-target/v1',
+            'Builder refuses implicit Delete',
+            'PackageArtifactWriteOnly: true',
+            'ApplicationMutationAllowed: false',
+            'AppRegistrationAllowed: false',
+            'NetworkAllowed: false',
+            'ProcessLaunchAllowed: false',
+            'InstallerExecutionAllowed: false',
+            'GitAllowed: false',
+            'AgentExecuteAllowed: false',
+            '_updater.PreviewAsync',
+            'generated package is validated by existing updater Preview before builder success'
+          )) {
+            if (-not $src.Contains($required)) { throw "builder boundary marker missing: $required" }
+          }
+          foreach ($forbidden in @('ProcessStartInfo','HttpClient','WebClient','RegistryKey','ServiceController','git fetch','git push')) {
+            if ($src.Contains($forbidden)) { throw "forbidden builder execution surface found: $forbidden" }
+          }
+          Write-Host 'package builder authority ceiling: PASS'
+
+      - name: Execute real register, build-package, updater-preview and apply fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v037-builder-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escapedProject = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escapedProject" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+
+          @'
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          static void Require(bool condition, string message) { if (!condition) throw new Exception(message); }
+
+          var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v037-fixture-" + Guid.NewGuid().ToString("N"));
+          Directory.CreateDirectory(Path.Combine(workspace, "Workbench"));
+          var apps = Path.Combine(workspace, "Apps");
+          var candidates = Path.Combine(workspace, LocalApplicationPackageBuilderService.CandidatesDirectoryName);
+          Directory.CreateDirectory(apps);
+          Directory.CreateDirectory(candidates);
+
+          // Positive app: register real predecessor bytes.
+          var app = Path.Combine(apps, "demo.app");
+          Directory.CreateDirectory(Path.Combine(app, "data"));
+          File.WriteAllText(Path.Combine(app, "hello.txt"), "hello-v1\n", new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(app, "data", "config.json"), "{\"enabled\":true}\n", new UTF8Encoding(false));
+          var registration = new LocalApplicationRegistrationService();
+          var registrationPlan = await registration.PreviewAsync(app, workspace, CancellationToken.None);
+          var registered = await registration.RegisterAsync(registrationPlan, workspace, CancellationToken.None);
+          Require(registered.Receipt.Status == "LOCAL_APPLICATION_REGISTERED_UPDATE_AUTHORITY_NOT_CREATED", "registration failed");
+          var baseline = registered.Receipt.Identity.Version;
+          var identityPath = Path.Combine(app, LocalApplicationMaintenanceService.IdentityFileName);
+          var identityBefore = File.ReadAllBytes(identityPath);
+
+          // Candidate: one Replace, one NoOp, one Add, metadata only.
+          var candidate = Path.Combine(candidates, "demo.app");
+          Directory.CreateDirectory(Path.Combine(candidate, "data"));
+          File.WriteAllText(Path.Combine(candidate, "hello.txt"), "hello-v2\n", new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(candidate, "data", "config.json"), "{\"enabled\":true}\n", new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(candidate, "new.txt"), "new-file\n", new UTF8Encoding(false));
+          var targetMetadata = new LocalApplicationTargetMetadata(LocalApplicationPackageBuilderService.TargetSchema, "demo.app", "1.0.0");
+          File.WriteAllText(
+              Path.Combine(candidate, LocalApplicationPackageBuilderService.TargetMetadataFileName),
+              JsonSerializer.Serialize(targetMetadata, new JsonSerializerOptions { WriteIndented = true }),
+              new UTF8Encoding(false));
+
+          var builder = new LocalApplicationPackageBuilderService();
+          var builderPlan = await builder.PreviewAsync(app, workspace, CancellationToken.None);
+          Require(builderPlan.ReadyForExplicitPackageWriteAuthority, "builder preview not READY");
+          Require(builderPlan.CurrentVersion == baseline && builderPlan.TargetVersion == "1.0.0", "builder version relation mismatch");
+          Require(builderPlan.Changes.Any(x => x.Path == "hello.txt" && x.Action == "Replace"), "Replace missing");
+          Require(builderPlan.Changes.Any(x => x.Path == "data/config.json" && x.Action == "NoOp"), "NoOp missing");
+          Require(builderPlan.Changes.Any(x => x.Path == "new.txt" && x.Action == "Add"), "Add missing");
+          Require(builderPlan.CurrentIdentitySha256 == Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(identityBefore)).ToLowerInvariant(), "builder did not derive current identity hash from actual bytes");
+
+          var built = await builder.BuildAsync(builderPlan, workspace, CancellationToken.None);
+          Require(built.Receipt.Status == "LOCAL_APPLICATION_UPDATE_PACKAGE_BUILT_EXISTING_UPDATER_PREVIEW_READY", "builder status mismatch");
+          Require(built.Receipt.ExistingUpdaterPreviewReady, "existing updater preview was not READY");
+          Require(!built.Receipt.ApplicationMutationPerformed && !built.Receipt.UpdateAuthorityCreated && !built.Receipt.ApplicationLaunchPerformed, "builder crossed authority ceiling");
+          Require(File.Exists(built.Receipt.PackagePath), "generated package missing");
+          Require(File.ReadAllText(Path.Combine(app, "hello.txt")) == "hello-v1\n", "builder mutated current app before update");
+          Require(!File.Exists(Path.Combine(app, "new.txt")), "builder created target file before update");
+
+          // Apply only through the already accepted updater as a separate step.
+          var updater = new LocalApplicationMaintenanceService();
+          var applied = await updater.ApplyAsync(built.UpdaterPreview, workspace, CancellationToken.None);
+          Require(applied.Receipt.Status == "LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED", "updater status mismatch");
+          Require(!applied.Receipt.AppLaunchPerformed, "updater launched app");
+          Require(File.ReadAllText(Path.Combine(app, "hello.txt")) == "hello-v2\n", "Replace target mismatch");
+          Require(File.ReadAllText(Path.Combine(app, "new.txt")) == "new-file\n", "Add target mismatch");
+          var finalIdentity = JsonSerializer.Deserialize<LocalApplicationIdentity>(File.ReadAllBytes(identityPath))!;
+          Require(finalIdentity.Version == "1.0.0", "target identity mismatch");
+
+          // Negative app: omission of current file would imply Delete and must fail closed.
+          var deleteApp = Path.Combine(apps, "delete.app");
+          Directory.CreateDirectory(deleteApp);
+          File.WriteAllText(Path.Combine(deleteApp, "keep.txt"), "keep\n", new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(deleteApp, "change.txt"), "old\n", new UTF8Encoding(false));
+          var deleteRegPlan = await registration.PreviewAsync(deleteApp, workspace, CancellationToken.None);
+          await registration.RegisterAsync(deleteRegPlan, workspace, CancellationToken.None);
+          var deleteCandidate = Path.Combine(candidates, "delete.app");
+          Directory.CreateDirectory(deleteCandidate);
+          File.WriteAllText(Path.Combine(deleteCandidate, "change.txt"), "new\n", new UTF8Encoding(false));
+          var deleteMeta = new LocalApplicationTargetMetadata(LocalApplicationPackageBuilderService.TargetSchema, "delete.app", "2.0.0");
+          File.WriteAllText(Path.Combine(deleteCandidate, LocalApplicationPackageBuilderService.TargetMetadataFileName), JsonSerializer.Serialize(deleteMeta), new UTF8Encoding(false));
+          var deleteRefused = false;
+          try { await builder.PreviewAsync(deleteApp, workspace, CancellationToken.None); }
+          catch (InvalidDataException ex) when (ex.Message.Contains("implicit Delete", StringComparison.Ordinal)) { deleteRefused = true; }
+          Require(deleteRefused, "builder did not refuse implicit Delete");
+
+          Console.WriteLine($"REGISTER_BUILD_PREVIEW_APPLY_FIXTURE_PASS baseline={baseline} package={built.Receipt.PackageSha256} deleteRefused={deleteRefused}");
+          Directory.Delete(workspace, true);
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'real builder fixture failed' }
+
+      - name: Verify v0.37 successor contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV037AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV037Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV037Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.37' -or $accept -notmatch '"0\.37\.0"') { throw 'v0.37 acceptance successor missing' }
+          if ($checkpoint -notmatch 'workbench-v0\.37-accepted' -or $checkpoint -notmatch '8f8bac01661c0b5614422c3708f1afb78a483c8b') { throw 'v0.37 checkpoint successor mismatch' }
+          if ($publisher -notmatch 'workbench-v0\.37-accepted' -or $publisher -notmatch 'ExpectedParent = "8f8bac01661c0b5614422c3708f1afb78a483c8b"') { throw 'v0.37 publication successor mismatch' }
+          Write-Host 'v0.37 successor contracts: PASS'
+
+      - name: Verify non-App implementation unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '8f8bac01661c0b5614422c3708f1afb78a483c8b'
+          $changed = git diff --name-only $base HEAD
+          $forbidden = $changed | Where-Object {
+            $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or
+            $_ -like 'src/Matawaka.Workbench.Runtime/*' -or
+            $_ -like 'src/Matawaka.Workbench.Protocol/*' -or
+            $_ -like 'src/Matawaka.Workbench.Engine/*' -or
+            $_ -like 'src/Matawaka.Workbench.Catalog/*' -or
+            $_ -like 'src/Matawaka.Workbench.SemanticHost/*'
+          }
+          if ($forbidden) { throw "unexpected non-App implementation mutation: $($forbidden -join ', ')" }
+          Write-Host 'non-App implementation unchanged: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.37 Workbench package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'README.md',
+            'START-HERE.md',
+            'LOCAL-APP-MAINTENANCE.md',
+            'PATCH-v0.37.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V037.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV037AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV037Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV037Service.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.37-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "payload file missing: $file" }
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.37.0';
+            PredecessorTag='workbench-v0.36-accepted'; PredecessorCommit='8f8bac01661c0b5614422c3708f1afb78a483c8b';
+            TargetTag='workbench-v0.37-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('source-only package; no local-app package/update effect on creation','package validity does not authorize materialization/build/launch/checkpoint/publication')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.37-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.37-source-only.sha256.txt'), "$sha  workbench-v0.37-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.37 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.37-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.37-source-only.zip
+            ${{ runner.temp }}/workbench-v0.37-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
