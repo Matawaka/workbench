@@ -187,7 +187,7 @@ public sealed class FixedGitHubPublicationV0411Service
 
     private static async Task<string?> ReadRemoteMainAsync(string root, CancellationToken ct)
     {
-        var r = await RunGitAsync(root, cancellationToken: ct, "ls-remote", RemoteName, "refs/heads/main");
+        var r = await RunGitAsync(root, ct, "ls-remote", RemoteName, "refs/heads/main");
         var line = SplitLines(r.Stdout).SingleOrDefault();
         return line is null ? null : ParseLsRemoteSha(line);
     }
