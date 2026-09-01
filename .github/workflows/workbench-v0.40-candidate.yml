@@ -1,0 +1,188 @@
+name: Workbench v0.40 one-confirmation bootstrap qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.40-one-confirmation-bootstrap
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.40 Release build failed' }
+
+      - name: Verify eight-button bootstrap surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.40\.0') { throw 'v0.40 title missing' }
+          if ($xaml -notmatch 'Loaded="Window_LoadedV040"') { throw 'v0.40 first-boot Loaded route missing' }
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if (-not $surface) { throw 'PrimaryMaintenanceSurface missing' }
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 8) { throw 'active button count is not 8' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'active checkbox count is not 0' }
+          foreach ($handler in @('UpdateCandidateV040Button_Click','LaunchCandidateV039Button_Click','SelfTestV040Button_Click','AcceptCheckpointV040Button_Click','PublishAcceptedV040Button_Click')) {
+            if ($surface -notmatch [regex]::Escape($handler)) { throw "v0.40 handler missing: $handler" }
+          }
+          Write-Host 'v0.40 eight-button bootstrap surface: PASS'
+
+      - name: Verify bootstrap authority ceiling and ordering
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $service = Get-Content 'src/Matawaka.Workbench.App/TransitionBootstrapV040Service.cs' -Raw
+          $ui = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V040.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV040Service.cs' -Raw
+          foreach ($required in @('PREPARED','ACTIVATED','CONSUMING','COMPLETED_ACCEPTED','FAILED_NO_RETRY','FileMode.CreateNew','PublishAllowed = false','LifecycleAllowed = false','RetryAuthorized = false')) {
+            if (-not $service.Contains($required)) { throw "bootstrap marker missing: $required" }
+          }
+          foreach ($required in @('orchestrator.ExecuteConfirmedAsync','PrepareAsync','LaunchCandidateAsync','ObserveAndPersistAsync','ActivateAsync','PredecessorSelfCloseScheduled = true','TryClaimFirstBootAsync','if (!tested.Receipt.Passed)','AcceptFromBootstrapAsync','AutomaticPublishPerformed = false')) {
+            if (-not $ui.Contains($required)) { throw "UI bootstrap marker missing: $required" }
+          }
+          $passIndex = $ui.IndexOf('if (!tested.Receipt.Passed)')
+          $acceptIndex = $ui.IndexOf('AcceptFromBootstrapAsync')
+          if ($passIndex -lt 0 -or $acceptIndex -lt 0 -or $passIndex -ge $acceptIndex) { throw 'auto Accept is not ordered after Self-test PASS gate' }
+          if ($checkpoint -notmatch 'ExplicitUiConfirmationRequired=false' -and $checkpoint -notmatch 'explicitUiConfirmationRequired: false') { throw 'bootstrap checkpoint authority is not distinguished from manual UI confirmation' }
+          if ($ui -match 'PublishAcceptedV040Button_Click\([^)]*\).*Window_LoadedV040') { throw 'unexpected publication coupling' }
+          Write-Host 'v0.40 bootstrap authority ceiling/order: PASS'
+
+      - name: Verify accepted maintenance and non-App bytes unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'd877005b2070759cf24ea4ea5f31e90545cd2bcf'
+          $mustRemain = @(
+            'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs',
+            'src/Matawaka.Workbench.App/CandidateLaunchHandoffV039Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V039.cs',
+            'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V033.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationManagedRoleGuardV0371Service.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuildReceiptStoreV038Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV038.cs',
+            'src/Matawaka.Workbench.Runtime',
+            'src/Matawaka.Workbench.Protocol',
+            'src/Matawaka.Workbench.AgentHost',
+            'src/Matawaka.Workbench.Engine',
+            'src/Matawaka.Workbench.Catalog',
+            'src/Matawaka.Workbench.SemanticHost'
+          )
+          foreach ($path in $mustRemain) {
+            git diff --quiet $base HEAD -- $path
+            if ($LASTEXITCODE -ne 0) { throw "unexpected accepted implementation change: $path" }
+          }
+          Write-Host 'accepted maintenance/local-app/non-App bytes unchanged: PASS'
+
+      - name: Verify product diff bounded
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'd877005b2070759cf24ea4ea5f31e90545cd2bcf'
+          $allowed = @(
+            '.github/workflows/workbench-v0.40-candidate.yml',
+            'PATCH-v0.40.md',
+            'START-HERE.md',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV040Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV040Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V040.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/TransitionBootstrapV040Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV040AcceptanceHarness.cs'
+          ) | Sort-Object
+          $actual = @(git diff --name-only $base HEAD) | Sort-Object
+          if (($actual -join "`n") -ne ($allowed -join "`n")) { throw "unexpected v0.40 diff:`n$($actual -join "`n")" }
+          Write-Host 'v0.40 product diff bounded: PASS'
+
+      - name: Verify successor contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV040AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV040Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV040Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.40' -or $accept -notmatch '"0\.40\.0"') { throw 'v0.40 acceptance contract missing' }
+          if ($checkpoint -notmatch 'ExpectedPredecessorCommit = "d877005b2070759cf24ea4ea5f31e90545cd2bcf"' -or $checkpoint -notmatch 'workbench-v0\.40-accepted') { throw 'v0.40 checkpoint contract mismatch' }
+          if ($publisher -notmatch 'ExpectedParent = "d877005b2070759cf24ea4ea5f31e90545cd2bcf"' -or $publisher -notmatch 'workbench-v0\.40-accepted') { throw 'v0.40 publisher contract mismatch' }
+          Write-Host 'v0.40 successor contracts: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.40 package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.40.md',
+            'START-HERE.md',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV040Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV040Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V040.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/TransitionBootstrapV040Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV040AcceptanceHarness.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.40-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.40.0';
+            PredecessorTag='workbench-v0.39.1-accepted'; PredecessorCommit='d877005b2070759cf24ea4ea5f31e90545cd2bcf';
+            TargetTag='workbench-v0.40-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('source package creates no bootstrap/launch/acceptance effect by itself','v0.40 bootstrap starts only after explicit Update Workbench confirmation in the running accepted implementation','Publish and Lifecycle remain separate')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.40-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.40-source-only.sha256.txt'), "$sha  workbench-v0.40-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.40 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.40-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.40-source-only.zip
+            ${{ runner.temp }}/workbench-v0.40-source-only.sha256.txt
+          retention-days: 30
