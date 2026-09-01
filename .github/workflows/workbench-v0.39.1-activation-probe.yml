@@ -1,0 +1,164 @@
+name: Workbench v0.39.1 handoff activation probe qualification
+
+on:
+  push:
+    branches:
+      - qualify/workbench-v0.39.1-handoff-activation
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Windows build and activation-probe qualification
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify v0.39.1 eight-button surface and retained v0.39 launch handler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.39\.1') { throw 'v0.39.1 title missing' }
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if (-not $surface) { throw 'PrimaryMaintenanceSurface missing' }
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 8) { throw 'active button count is not 8' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'active checkbox count is not 0' }
+          if ($surface -notmatch 'Click="LaunchCandidateV039Button_Click"') { throw 'accepted v0.39 launch handler not retained' }
+          foreach ($handler in @('SelfTestV0391Button_Click','AcceptCheckpointV0391Button_Click','PublishAcceptedV0391Button_Click')) {
+            if ($surface -notmatch [regex]::Escape($handler)) { throw "v0.39.1 handler missing: $handler" }
+          }
+          Write-Host 'v0.39.1 8/0 surface + retained v0.39 launch handler: PASS'
+
+      - name: Verify accepted v0.39 runtime bytes unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '13f8618c6862b58a9e9de8772c69365058f34e91'
+          $mustRemain = @(
+            'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs',
+            'src/Matawaka.Workbench.App/CandidateLaunchHandoffV039Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V039.cs',
+            'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationManagedRoleGuardV0371Service.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuildReceiptStoreV038Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV038.cs',
+            'src/Matawaka.Workbench.Runtime',
+            'src/Matawaka.Workbench.Protocol',
+            'src/Matawaka.Workbench.AgentHost',
+            'src/Matawaka.Workbench.Engine',
+            'src/Matawaka.Workbench.Catalog',
+            'src/Matawaka.Workbench.SemanticHost'
+          )
+          foreach ($path in $mustRemain) {
+            git diff --quiet $base HEAD -- $path
+            if ($LASTEXITCODE -ne 0) { throw "activation probe changed accepted runtime: $path" }
+          }
+          Write-Host 'accepted v0.39 launch/handoff/local-app/non-App bytes unchanged: PASS'
+
+      - name: Verify v0.39.1 successor contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0391AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0391Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0391Service.cs' -Raw
+          $ui = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0391.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.39\.1' -or $accept -notmatch '"0\.39\.1"') { throw 'v0.39.1 acceptance contract missing' }
+          if ($checkpoint -notmatch 'ExpectedPredecessorCommit = "13f8618c6862b58a9e9de8772c69365058f34e91"' -or $checkpoint -notmatch 'workbench-v0\.39\.1-accepted') { throw 'v0.39.1 checkpoint contract mismatch' }
+          if ($publisher -notmatch 'ExpectedParent = "13f8618c6862b58a9e9de8772c69365058f34e91"' -or $publisher -notmatch 'workbench-v0\.39\.1-accepted') { throw 'v0.39.1 publisher contract mismatch' }
+          if ($ui -match 'LaunchCandidateV0391Button_Click') { throw 'activation probe must not replace v0.39 launch handler' }
+          Write-Host 'v0.39.1 activation-probe successor contracts: PASS'
+
+      - name: Verify product diff is activation-probe only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '13f8618c6862b58a9e9de8772c69365058f34e91'
+          $allowed = @(
+            '.github/workflows/workbench-v0.39.1-activation-probe.yml',
+            'PATCH-v0.39.1.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V0391.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0391AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0391Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0391Service.cs'
+          ) | Sort-Object
+          $actual = @(git diff --name-only $base HEAD) | Sort-Object
+          if (($actual -join "`n") -ne ($allowed -join "`n")) {
+            throw "unexpected v0.39.1 diff:`n$($actual -join "`n")"
+          }
+          Write-Host 'activation-probe diff exactly 6 product files + CI workflow: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.39.1 package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.39.1.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V0391.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0391AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0391Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0391Service.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.39.1-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "payload file missing: $file" }
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.39.1';
+            PredecessorTag='workbench-v0.39-accepted'; PredecessorCommit='13f8618c6862b58a9e9de8772c69365058f34e91';
+            TargetTag='workbench-v0.39.1-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('activation probe source only; package creation performs no launch/handoff/self-close/acceptance effect','v0.39 launch/handoff runtime bytes are not part of this package')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.39.1-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.39.1-source-only.sha256.txt'), "$sha  workbench-v0.39.1-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.39.1 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.39.1-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.39.1-source-only.zip
+            ${{ runner.temp }}/workbench-v0.39.1-source-only.sha256.txt
+          retention-days: 30
