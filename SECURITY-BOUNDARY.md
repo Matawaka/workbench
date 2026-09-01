@@ -1,8 +1,14 @@
 # Matawaka Workbench — Security boundary
 
-This document describes stable security/authority boundaries. Exact release identities belong to accepted tags, package previews and `PATCH-v*.md` history rather than permanent candidate-state prose.
+This document describes stable security/authority boundaries. Exact release identities belong to accepted tags, package previews and `PATCH-v*.md` history rather than permanent release-planning prose.
 
 The established semantic/runtime boundary remains unchanged: fixed verified SemanticHost, restricted Low-integrity token, Windows Job Object, runtime attestation before semantic input, read-only proposal behavior and denied Execute control.
+
+These rules apply across accepted patch/minor transitions and do not infer authority from version labels.
+
+Release-specific source identities are evidence inputs, not trust or authorization roots.
+
+Maintenance convenience never collapses the independently reviewed action boundaries described below.
 
 ## Maintenance distinctions
 
