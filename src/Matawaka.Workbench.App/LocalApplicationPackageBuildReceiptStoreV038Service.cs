@@ -8,8 +8,9 @@ namespace Matawaka.Workbench.App;
 
 /// <summary>
 /// Persists an already-successful package-builder receipt as local evidence only.
-/// Before writing JSON it rechecks the surviving generated ZIP, package SHA-256,
-/// manifest SHA-256, output root, and the no-mutation/no-update/no-launch flags.
+/// Before publication of the JSON artifact it rechecks the surviving generated ZIP,
+/// package SHA-256, manifest SHA-256, output root and no-effect flags, then validates
+/// a temporary JSON copy and atomically moves it into its final evidence name.
 /// </summary>
 public sealed class LocalApplicationPackageBuildReceiptStoreV038Service
 {
@@ -63,28 +64,39 @@ public sealed class LocalApplicationPackageBuildReceiptStoreV038Service
 
         var safeApp = SafeToken(receipt.ApplicationId);
         var safeTarget = SafeToken(receipt.TargetVersion);
-        var receiptPath = Path.Combine(
+        var finalPath = Path.Combine(
             outputDir,
             $"local-app-package-build-{safeApp}-{safeTarget}-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
-        await File.WriteAllTextAsync(
-            receiptPath,
-            JsonSerializer.Serialize(receipt, JsonOptions),
-            new UTF8Encoding(false),
-            cancellationToken);
+        var tempPath = finalPath + $".tmp-{Guid.NewGuid():N}";
 
-        var parsed = JsonSerializer.Deserialize<LocalApplicationPackageBuilderReceipt>(
-            await File.ReadAllTextAsync(receiptPath, Encoding.UTF8, cancellationToken),
-            JsonOptions) ?? throw new InvalidDataException("Persisted package-builder receipt could not be parsed back.");
-        if (!string.Equals(parsed.PackageSha256, receipt.PackageSha256, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(parsed.ManifestSha256, receipt.ManifestSha256, StringComparison.OrdinalIgnoreCase) ||
-            parsed.ApplicationId != receipt.ApplicationId ||
-            parsed.CurrentVersion != receipt.CurrentVersion ||
-            parsed.TargetVersion != receipt.TargetVersion ||
-            parsed.Status != receipt.Status ||
-            !parsed.ExistingUpdaterPreviewReady || parsed.ApplicationMutationPerformed || parsed.UpdateAuthorityCreated || parsed.ApplicationLaunchPerformed)
-            throw new InvalidDataException("Persisted package-builder receipt round-trip differs from the successful in-memory receipt.");
+        try
+        {
+            await File.WriteAllTextAsync(
+                tempPath,
+                JsonSerializer.Serialize(receipt, JsonOptions),
+                new UTF8Encoding(false),
+                cancellationToken);
 
-        return receiptPath;
+            var parsed = JsonSerializer.Deserialize<LocalApplicationPackageBuilderReceipt>(
+                await File.ReadAllTextAsync(tempPath, Encoding.UTF8, cancellationToken),
+                JsonOptions) ?? throw new InvalidDataException("Temporary package-builder receipt could not be parsed back.");
+            RequireEquivalent(parsed, receipt);
+            if (File.Exists(finalPath))
+                throw new InvalidDataException("Package-builder receipt destination unexpectedly already exists.");
+            File.Move(tempPath, finalPath);
+
+            var finalParsed = JsonSerializer.Deserialize<LocalApplicationPackageBuilderReceipt>(
+                await File.ReadAllTextAsync(finalPath, Encoding.UTF8, cancellationToken),
+                JsonOptions) ?? throw new InvalidDataException("Persisted package-builder receipt could not be parsed after atomic move.");
+            RequireEquivalent(finalParsed, receipt);
+            return finalPath;
+        }
+        catch
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+            if (File.Exists(finalPath)) File.Delete(finalPath);
+            throw;
+        }
     }
 
     public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunOfflineContractChecks() => new[]
@@ -92,9 +104,32 @@ public sealed class LocalApplicationPackageBuildReceiptStoreV038Service
         ("builder-receipt-store-fixed-root", true, "Workbench/artifacts/local-app-packages", "fixed local evidence root"),
         ("builder-receipt-store-success-only", true, "ExistingUpdaterPreviewReady=true; mutation/update/launch=false", "success only"),
         ("builder-receipt-store-package-digest-recheck", true, "package SHA-256 + manifest SHA-256", "rechecked before JSON write"),
+        ("builder-receipt-store-atomic-finalization", true, "temporary JSON -> parse-back -> atomic move", "validated final artifact only"),
         ("builder-receipt-store-network-authority", true, "false", "false"),
         ("builder-receipt-store-app-mutation-authority", true, "false", "false")
     };
+
+    private static void RequireEquivalent(
+        LocalApplicationPackageBuilderReceipt parsed,
+        LocalApplicationPackageBuilderReceipt expected)
+    {
+        if (!string.Equals(parsed.PackageSha256, expected.PackageSha256, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(parsed.ManifestSha256, expected.ManifestSha256, StringComparison.OrdinalIgnoreCase) ||
+            parsed.ApplicationId != expected.ApplicationId ||
+            parsed.ApplicationRoot != expected.ApplicationRoot ||
+            parsed.CandidateRoot != expected.CandidateRoot ||
+            parsed.CurrentVersion != expected.CurrentVersion ||
+            parsed.TargetVersion != expected.TargetVersion ||
+            parsed.PackagePath != expected.PackagePath ||
+            parsed.Status != expected.Status ||
+            parsed.FreshPreviewVerified != expected.FreshPreviewVerified ||
+            !parsed.ExistingUpdaterPreviewReady ||
+            parsed.ApplicationMutationPerformed ||
+            parsed.UpdateAuthorityCreated ||
+            parsed.ApplicationLaunchPerformed ||
+            parsed.Changes.Count != expected.Changes.Count)
+            throw new InvalidDataException("Persisted package-builder receipt round-trip differs from the successful in-memory receipt.");
+    }
 
     private static string SafeToken(string value)
     {
