@@ -16,6 +16,7 @@ public sealed class FixedGitHubPublicationV034Service
     public const string RemoteName = "github-workbench";
     public const string RemoteUrl = "https://github.com/Matawaka/workbench.git";
     public const string AcceptedTag = "workbench-v0.34-accepted";
+    public const string ExpectedParent = "df211d1f4d80d0b1f238f1166460758e73ce18d2";
     public const string ReceiptSchema = "matawaka.workbench-fixed-github-publication-receipt/v0.34";
     public const string AuthoritySchema = "matawaka.workbench-fixed-github-publication-authority-receipt/v0.34";
 
@@ -31,8 +32,8 @@ public sealed class FixedGitHubPublicationV034Service
 
         var head = RequireSha((await RunGitAsync(repositoryRoot, cancellationToken, "rev-parse", "HEAD")).Stdout, "HEAD");
         var parent = RequireSha((await RunGitAsync(repositoryRoot, cancellationToken, "rev-parse", "HEAD^")).Stdout, "HEAD parent");
-        if (!string.Equals(parent, MaintenanceLifecycleReceiptService.PredecessorCommit, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"v0.34 accepted publication parent must be exact v0.33 predecessor {MaintenanceLifecycleReceiptService.PredecessorCommit}; observed={parent}");
+        if (!string.Equals(parent, ExpectedParent, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"v0.34 accepted publication parent must be exact v0.33 predecessor {ExpectedParent}; observed={parent}");
         var tagHead = RequireSha((await RunGitAsync(repositoryRoot, cancellationToken, "rev-list", "-n", "1", AcceptedTag)).Stdout, AcceptedTag);
         if (!string.Equals(tagHead, head, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Accepted tag {AcceptedTag} does not point at current HEAD. tag={tagHead}; head={head}");
@@ -54,7 +55,7 @@ public sealed class FixedGitHubPublicationV034Service
             !string.Equals(candidate.RemoteName, RemoteName, StringComparison.Ordinal) ||
             !SameRemoteUrl(candidate.RemoteUrl, RemoteUrl) ||
             !string.Equals(candidate.AcceptedTag, AcceptedTag, StringComparison.Ordinal) ||
-            !string.Equals(candidate.Parent, MaintenanceLifecycleReceiptService.PredecessorCommit, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(candidate.Parent, ExpectedParent, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Publication candidate does not match the fixed v0.34 publication contract.");
 
         await ReverifyLocalCandidateAsync(candidate, cancellationToken);
@@ -188,7 +189,7 @@ public sealed class FixedGitHubPublicationV034Service
             ("publisher-v034-fixed-remote-name", RemoteName == "github-workbench", RemoteName, "github-workbench"),
             ("publisher-v034-fixed-remote-url", RemoteUrl == "https://github.com/Matawaka/workbench.git", RemoteUrl, "fixed Matawaka/workbench URL"),
             ("publisher-v034-fixed-tag", AcceptedTag == "workbench-v0.34-accepted", AcceptedTag, "workbench-v0.34-accepted"),
-            ("publisher-v034-fixed-predecessor", MaintenanceLifecycleReceiptService.PredecessorCommit == "df211d1f4d80d0b1f238f1166460758e73ce18d2", MaintenanceLifecycleReceiptService.PredecessorCommit, "accepted v0.33"),
+            ("publisher-v034-fixed-predecessor", ExpectedParent == "df211d1f4d80d0b1f238f1166460758e73ce18d2", ExpectedParent, "accepted v0.33"),
             ("publisher-v034-parent-fast-forward", ClassifyRemoteMain("a", "b", "a") == "PARENT", ClassifyRemoteMain("a", "b", "a"), "PARENT"),
             ("publisher-v034-idempotent-main", ClassifyRemoteMain("a", "b", "b") == "ALREADY_HEAD", ClassifyRemoteMain("a", "b", "b"), "ALREADY_HEAD"),
             ("publisher-v034-conflicting-main-refused", ClassifyRemoteMain("a", "b", "c") == "CONFLICT", ClassifyRemoteMain("a", "b", "c"), "CONFLICT"),
@@ -221,7 +222,7 @@ public sealed class FixedGitHubPublicationV034Service
         var tagHead = RequireSha((await RunGitAsync(candidate.RepositoryRoot, cancellationToken, "rev-list", "-n", "1", AcceptedTag)).Stdout, AcceptedTag);
         if (!string.Equals(head, candidate.Head, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(parent, candidate.Parent, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(parent, MaintenanceLifecycleReceiptService.PredecessorCommit, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(parent, ExpectedParent, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(tagHead, candidate.Head, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Local accepted Workbench v0.34 frontier changed after publication preview.");
     }
