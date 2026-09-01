@@ -33,7 +33,7 @@ public partial class MainWindow
         DisableLegacyManualControlsV042();
 
         Activated += WindowV042_Activated;
-        UpdateLocalAppButton.Click += (_, _) => Dispatcher.BeginInvoke(RefreshInstalledAppsV042);
+        UpdateLocalAppButton.Click += (_, _) => Dispatcher.BeginInvoke(new Action(RefreshInstalledAppsV042));
         RefreshInstalledAppsV042();
     }
 
