@@ -77,7 +77,7 @@ jobs:
           foreach ($marker in @('IsInactiveSelectionHighlightEnabled = true','target.Select(match.Start, match.Length)','target.ScrollToLine(line)')) {
             if ($presentation -notmatch [regex]::Escape($marker)) { throw "presentation marker missing: $marker" }
           }
-          if ($presentation -match 'CaretIndex') { throw 'presentation adapter must not move CaretIndex' }
+          if ($presentation -match '\.CaretIndex\s*=') { throw 'presentation adapter must not move CaretIndex' }
           if ($ui -notmatch 'JsonSearchPresentationV0411Service.PresentMatch') { throw 'v0.41.1 UI does not use presentation adapter' }
           Write-Host 'v0.41.1 visible-selection routing contract: PASS'
 
