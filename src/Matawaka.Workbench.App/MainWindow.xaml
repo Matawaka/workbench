@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.35.0" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Title="Matawaka Workbench v0.35.1" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -12,7 +12,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- v0.35 active product surface: eight buttons, no persistent authority checkboxes. -->
+        <!-- Active product surface remains eight buttons, zero persistent authority checkboxes. -->
         <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
             <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0"
                     Click="UpdateCandidateButton_Click"
@@ -24,16 +24,16 @@
                     Click="UpdateLocalAppButton_Click"
                     ToolTip="Только локальный ZIP и только &lt;WorkspaceRoot&gt;\Apps\&lt;ApplicationId&gt;; no network, installer or auto-launch"/>
             <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0"
-                    Click="SelfTestV035Button_Click"
-                    ToolTip="Явный bounded read-only acceptance test; отдельная постоянная Agent-enabled галочка больше не нужна"/>
+                    Click="SelfTestV0351Button_Click"
+                    ToolTip="Read-only v0.35 matrix + lifecycle v2 version-key regression checks; no lifecycle effect"/>
             <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False"
-                    Click="AcceptCheckpointV035Button_Click"/>
+                    Click="AcceptCheckpointV0351Button_Click"/>
             <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0"
-                    Click="PublishAcceptedV035Button_Click"
+                    Click="PublishAcceptedV0351Button_Click"
                     ToolTip="Fixed Matawaka/workbench, exact fast-forward/tag only, no force"/>
             <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0"
-                    Click="LifecycleReceiptGenericButton_Click"
-                    ToolTip="Read-only successor-generic lifecycle evidence composition; summary != authority"/>
+                    Click="LifecycleReceiptV2Button_Click"
+                    ToolTip="Lifecycle v2: accepted tag/schema token and semantic runtime Version are bound separately; summary != authority"/>
             <Button x:Name="CancelButton" Content="Stop" Width="75" IsEnabled="False" Click="CancelButton_Click"/>
         </WrapPanel>
 
@@ -62,7 +62,7 @@
                     <ColumnDefinition Width="2*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Managed local apps: Workspace\Apps\&lt;ApplicationId&gt;" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="No persistent git-fetch/Agent checkboxes. Settings save automatically on actions/close. Local app update != app launch."
+                <TextBlock Grid.Column="1" Text="Lifecycle v2: tag/schema token != semantic runtime Version. No persistent git-fetch/Agent checkboxes. Local app update != app launch."
                            TextWrapping="Wrap" FontStyle="Italic" VerticalAlignment="Center"/>
             </Grid>
         </Border>
@@ -109,7 +109,6 @@
                              FontFamily="Consolas" TextWrapping="NoWrap"/>
                 </TabItem>
 
-                <!-- Historical/advanced output surfaces retained for source compatibility, not active product navigation. -->
                 <TabItem x:Name="ResultTab" Header="Result" Visibility="Collapsed"><TextBox x:Name="ResultTextBox" IsReadOnly="True"/></TabItem>
                 <TabItem x:Name="EvidenceTab" Header="Evidence" Visibility="Collapsed"><TextBox x:Name="EvidenceTextBox" IsReadOnly="True"/></TabItem>
                 <TabItem x:Name="AuthorityTab" Header="Authority" Visibility="Collapsed"><TextBox x:Name="AuthorityTextBox" IsReadOnly="True"/></TabItem>
@@ -121,7 +120,6 @@
             </TabControl>
         </Grid>
 
-        <!-- Hidden compatibility fields preserve accepted legacy handlers/run-state code without exposing unused controls. -->
         <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
             <Button x:Name="PasteButton"/><Button x:Name="FileButton"/><Button x:Name="ValidateButton"/><Button x:Name="RunButton"/>
             <Button x:Name="UpdatePlanButton"/><Button x:Name="MaterializeUpdateButton"/><Button x:Name="StagedApplyPlanButton"/><Button x:Name="ApplyBuildUpdateButton"/>
