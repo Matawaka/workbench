@@ -1,0 +1,300 @@
+name: Workbench v0.36 local apps registration qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.36-local-apps-manager
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Windows build, register and update fixture
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify eight-button contextual Local Apps surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.36\.0') { throw 'v0.36 title missing' }
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if (-not $surface) { throw 'PrimaryMaintenanceSurface missing' }
+          $buttons = [regex]::Matches($surface, '<Button\b').Count
+          $checks = [regex]::Matches($surface, '<CheckBox\b').Count
+          if ($buttons -ne 8) { throw "expected 8 active buttons, observed $buttons" }
+          if ($checks -ne 0) { throw "expected zero active checkboxes, observed $checks" }
+          if ($surface -notmatch 'Content="Local apps"') { throw 'contextual Local apps button missing' }
+          if ($surface -notmatch 'Click="LocalAppsButton_Click"') { throw 'Local apps handler not wired' }
+          if ($surface -match 'Content="Update local app"') { throw 'old dedicated Update local app label still active' }
+          Write-Host 'eight-button contextual Local Apps surface: PASS'
+
+      - name: Verify registration authority ceiling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content 'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs' -Raw
+          foreach ($required in @(
+            'Only a direct child of <WorkspaceRoot>/Apps may be registered',
+            'baseline-',
+            'IdentityCreateOnly: true',
+            'CopyAllowed: false',
+            'MoveAllowed: false',
+            'DeleteAllowed: false',
+            'ReplaceExistingAppFileAllowed: false',
+            'NetworkAllowed: false',
+            'ProcessLaunchAllowed: false',
+            'InstallerExecutionAllowed: false',
+            'GitAllowed: false',
+            'AgentExecuteAllowed: false',
+            'Reparse points are not allowed',
+            'Application inventory exceeds registration bounds',
+            'Registration preview is stale'
+          )) {
+            if (-not $src.Contains($required)) { throw "registration boundary marker missing: $required" }
+          }
+          foreach ($forbidden in @('ProcessStartInfo','HttpClient','WebClient','git fetch','git push','RegistryKey','ServiceController')) {
+            if ($src.Contains($forbidden)) { throw "forbidden registration execution surface found: $forbidden" }
+          }
+          Write-Host 'registration authority ceiling: PASS'
+
+      - name: Execute real registration and registered-app update fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v036-local-app-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escapedProject = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escapedProject" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+
+          @'
+          using System.IO.Compression;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          static string Sha(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+          static string ShaFile(string path) => Sha(File.ReadAllBytes(path));
+          static void Require(bool condition, string message) { if (!condition) throw new Exception(message); }
+
+          var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v036-fixture-" + Guid.NewGuid().ToString("N"));
+          Directory.CreateDirectory(Path.Combine(workspace, "Workbench"));
+          var apps = Path.Combine(workspace, "Apps");
+          var app = Path.Combine(apps, "demo.app");
+          Directory.CreateDirectory(Path.Combine(app, "data"));
+          var hello = Path.Combine(app, "hello.txt");
+          var config = Path.Combine(app, "data", "config.json");
+          File.WriteAllText(hello, "hello-v1\n", new UTF8Encoding(false));
+          File.WriteAllText(config, "{\"enabled\":true}\n", new UTF8Encoding(false));
+          var helloBefore = ShaFile(hello);
+          var configBefore = ShaFile(config);
+
+          var registration = new LocalApplicationRegistrationService();
+          var preview = await registration.PreviewAsync(app, workspace, CancellationToken.None);
+          Require(preview.ReadyForExplicitRegistrationAuthority, "registration preview not READY");
+          Require(!File.Exists(Path.Combine(app, LocalApplicationRegistrationService.IdentityFileName)), "identity exists before register");
+          Require(preview.ProposedIdentity.Version == "baseline-" + preview.TreeSha256[..16], "baseline token mismatch");
+
+          var registered = await registration.RegisterAsync(preview, workspace, CancellationToken.None);
+          var identityPath = Path.Combine(app, LocalApplicationRegistrationService.IdentityFileName);
+          Require(File.Exists(identityPath), "identity missing after register");
+          Require(File.Exists(registered.ArtifactPath), "registration receipt missing");
+          Require(!registered.Receipt.OtherApplicationFileChanged, "registration claims app file mutation");
+          Require(!registered.Receipt.ApplicationLaunchPerformed, "registration launched app");
+          Require(!registered.Receipt.VendorVersionClaimCreated, "registration created vendor version claim");
+          Require(ShaFile(hello) == helloBefore && ShaFile(config) == configBefore, "registration changed pre-existing app bytes");
+
+          var secondRefused = false;
+          try { await registration.PreviewAsync(app, workspace, CancellationToken.None); }
+          catch (InvalidDataException) { secondRefused = true; }
+          Require(secondRefused, "second registration was not refused");
+
+          var outside = Path.Combine(workspace, "outside.app");
+          Directory.CreateDirectory(outside);
+          File.WriteAllText(Path.Combine(outside, "x.txt"), "x");
+          var outsideRefused = false;
+          try { await registration.PreviewAsync(outside, workspace, CancellationToken.None); }
+          catch (InvalidDataException) { outsideRefused = true; }
+          Require(outsideRefused, "outside managed root registration was not refused");
+
+          var container = Path.Combine(apps, "container");
+          var nested = Path.Combine(container, "nested.app");
+          Directory.CreateDirectory(nested);
+          File.WriteAllText(Path.Combine(nested, "x.txt"), "x");
+          var nestedRefused = false;
+          try { await registration.PreviewAsync(nested, workspace, CancellationToken.None); }
+          catch (InvalidDataException) { nestedRefused = true; }
+          Require(nestedRefused, "nested non-direct-child registration was not refused");
+
+          var currentIdentityBytes = File.ReadAllBytes(identityPath);
+          var targetIdentity = new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "demo.app", "1.0.0");
+          var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+          var targetIdentityBytes = JsonSerializer.SerializeToUtf8Bytes(targetIdentity, jsonOptions);
+          var helloV2 = new UTF8Encoding(false).GetBytes("hello-v2\n");
+          var newBytes = new UTF8Encoding(false).GetBytes("new-file\n");
+
+          var manifest = new LocalApplicationUpdateManifest(
+              LocalApplicationMaintenanceService.PackageSchema,
+              "1",
+              "demo.app",
+              preview.ProposedIdentity.Version,
+              "1.0.0",
+              LocalApplicationMaintenanceService.PayloadRoot,
+              new LocalApplicationUpdateFile[] {
+                  new("hello.txt", ShaFile(hello), Sha(helloV2)),
+                  new("new.txt", null, Sha(newBytes)),
+                  new(LocalApplicationMaintenanceService.IdentityFileName, Sha(currentIdentityBytes), Sha(targetIdentityBytes))
+              },
+              false, false, false, false, false, false, false,
+              new[] { "fixture-only; no network or launch" });
+
+          var package = Path.Combine(workspace, "demo-app-update.zip");
+          using (var zip = ZipFile.Open(package, ZipArchiveMode.Create)) {
+              static void Add(ZipArchive zip, string name, byte[] bytes) {
+                  var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
+                  using var stream = entry.Open(); stream.Write(bytes);
+              }
+              Add(zip, LocalApplicationMaintenanceService.ManifestFileName, JsonSerializer.SerializeToUtf8Bytes(manifest, jsonOptions));
+              Add(zip, LocalApplicationMaintenanceService.PayloadRoot + "hello.txt", helloV2);
+              Add(zip, LocalApplicationMaintenanceService.PayloadRoot + "new.txt", newBytes);
+              Add(zip, LocalApplicationMaintenanceService.PayloadRoot + LocalApplicationMaintenanceService.IdentityFileName, targetIdentityBytes);
+          }
+
+          var updater = new LocalApplicationMaintenanceService();
+          var updatePreview = await updater.PreviewAsync(package, workspace, CancellationToken.None);
+          Require(updatePreview.CurrentVersion == preview.ProposedIdentity.Version, "updater did not consume registration baseline");
+          Require(updatePreview.TargetVersion == "1.0.0", "update target mismatch");
+          var updated = await updater.ApplyAsync(updatePreview, workspace, CancellationToken.None);
+          Require(updated.Receipt.Status == "LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED", "update status mismatch");
+          Require(!updated.Receipt.AppLaunchPerformed, "updater launched application");
+          Require(File.ReadAllText(hello) == "hello-v2\n", "hello target bytes mismatch");
+          Require(File.ReadAllText(Path.Combine(app, "new.txt")) == "new-file\n", "new target bytes mismatch");
+          var finalIdentity = JsonSerializer.Deserialize<LocalApplicationIdentity>(File.ReadAllBytes(identityPath), jsonOptions)!;
+          Require(finalIdentity.Version == "1.0.0" && finalIdentity.ApplicationId == "demo.app", "final identity mismatch");
+
+          Console.WriteLine($"REGISTRATION_UPDATE_FIXTURE_PASS baseline={preview.ProposedIdentity.Version} registrationReceipt={registered.ArtifactPath} updateReceipt={updated.ArtifactPath}");
+          Directory.Delete(workspace, true);
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'real registration/update fixture probe failed' }
+
+      - name: Verify v0.36 successor contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV036AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV036Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV036Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.36' -or $accept -notmatch '"0\.36\.0"') { throw 'v0.36 acceptance successor missing' }
+          if ($checkpoint -notmatch 'workbench-v0\.36-accepted' -or $checkpoint -notmatch 'bf4c59e251c4e9642cc0ca7085e5c3af24622707') { throw 'v0.36 checkpoint successor mismatch' }
+          if ($publisher -notmatch 'workbench-v0\.36-accepted' -or $publisher -notmatch 'ExpectedParent = "bf4c59e251c4e9642cc0ca7085e5c3af24622707"') { throw 'v0.36 publication successor mismatch' }
+          Write-Host 'v0.36 successor contracts: PASS'
+
+      - name: Verify non-App implementation unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'bf4c59e251c4e9642cc0ca7085e5c3af24622707'
+          $changed = git diff --name-only $base HEAD
+          $forbidden = $changed | Where-Object {
+            $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or
+            $_ -like 'src/Matawaka.Workbench.Runtime/*' -or
+            $_ -like 'src/Matawaka.Workbench.Protocol/*' -or
+            $_ -like 'src/Matawaka.Workbench.Engine/*' -or
+            $_ -like 'src/Matawaka.Workbench.Catalog/*' -or
+            $_ -like 'src/Matawaka.Workbench.SemanticHost/*'
+          }
+          if ($forbidden) { throw "unexpected non-App implementation mutation: $($forbidden -join ', ')" }
+          Write-Host 'non-App implementation unchanged: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.36 Workbench package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'README.md',
+            'START-HERE.md',
+            'LOCAL-APP-MAINTENANCE.md',
+            'PATCH-v0.36.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V036.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV036AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV036Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV036Service.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.36-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "payload file missing: $file" }
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.36.0';
+            PredecessorTag='workbench-v0.35.1-accepted'; PredecessorCommit='bf4c59e251c4e9642cc0ca7085e5c3af24622707';
+            TargetTag='workbench-v0.36-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('source-only package; no app registration/update effect on creation','package validity does not authorize materialization/build/launch/checkpoint/publication')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.36-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.36-source-only.sha256.txt'), "$sha  workbench-v0.36-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.36 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.36-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.36-source-only.zip
+            ${{ runner.temp }}/workbench-v0.36-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
