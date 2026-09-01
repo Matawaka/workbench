@@ -1,0 +1,234 @@
+name: Workbench v0.35.1 lifecycle version-key stabilization
+
+on:
+  push:
+    branches:
+      - stabilize/workbench-v0.35.1-lifecycle-version-key
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Windows build and lifecycle version-key regression
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify v0.35.1 active UI wiring
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.35\.1') { throw 'v0.35.1 title missing' }
+          if ($xaml -notmatch 'SelfTestV0351Button_Click') { throw 'v0.35.1 Self-test handler missing' }
+          if ($xaml -notmatch 'AcceptCheckpointV0351Button_Click') { throw 'v0.35.1 checkpoint handler missing' }
+          if ($xaml -notmatch 'PublishAcceptedV0351Button_Click') { throw 'v0.35.1 publisher handler missing' }
+          if ($xaml -notmatch 'LifecycleReceiptV2Button_Click') { throw 'lifecycle v2 handler missing' }
+
+          $start = $xaml.IndexOf('<WrapPanel x:Name="PrimaryMaintenanceSurface"')
+          $end = $xaml.IndexOf('</WrapPanel>', $start)
+          if ($start -lt 0 -or $end -lt 0) { throw 'PrimaryMaintenanceSurface not found' }
+          $surface = $xaml.Substring($start, $end - $start)
+          $buttons = ([regex]::Matches($surface, '<Button\b')).Count
+          $checks = ([regex]::Matches($surface, '<CheckBox\b')).Count
+          if ($buttons -ne 8) { throw "expected 8 active buttons, observed $buttons" }
+          if ($checks -ne 0) { throw "expected 0 active checkboxes, observed $checks" }
+          Write-Host 'v0.35.1 active UI wiring: PASS'
+
+      - name: Execute lifecycle version-key regression probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probeRoot = Join-Path $env:RUNNER_TEMP 'lifecycle-v2-probe'
+          New-Item -ItemType Directory -Path $probeRoot -Force | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $project = @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+            </PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="$appProject" />
+            </ItemGroup>
+          </Project>
+          "@
+          [IO.File]::WriteAllText((Join-Path $probeRoot 'Probe.csproj'), $project, [Text.UTF8Encoding]::new($false))
+          $program = @'
+          using Matawaka.Workbench.App;
+
+          static void Eq(string observed, string expected, string id)
+          {
+              if (!string.Equals(observed, expected, StringComparison.Ordinal))
+                  throw new Exception($"{id}: observed={observed}; expected={expected}");
+          }
+
+          Eq(MaintenanceLifecycleReceiptV2Service.NormalizeSemanticVersionForAcceptedToken("0.34.1"), "0.34.1", "patch-preserved");
+          Eq(MaintenanceLifecycleReceiptV2Service.NormalizeSemanticVersionForAcceptedToken("0.35.0"), "0.35", "minor-zero-patch-normalized");
+          Eq(MaintenanceLifecycleReceiptV2Service.NormalizeSemanticVersionForAcceptedToken("0.35.1"), "0.35.1", "nonzero-patch-preserved");
+
+          MaintenanceLifecycleReceiptV2Service.RequireSemanticVersionMatchesToken("0.35.0", "0.35");
+          MaintenanceLifecycleReceiptV2Service.RequireSemanticVersionMatchesToken("0.35.1", "0.35.1");
+
+          var refused = false;
+          try
+          {
+              MaintenanceLifecycleReceiptV2Service.RequireSemanticVersionMatchesToken("0.35.1", "0.35");
+          }
+          catch (InvalidDataException)
+          {
+              refused = true;
+          }
+          if (!refused) throw new Exception("non-zero patch collapse was not refused");
+
+          var checks = MaintenanceLifecycleReceiptV2Service.RunOfflineContractChecks();
+          if (checks.Count == 0 || checks.Any(c => !c.Passed))
+              throw new Exception("lifecycle v2 offline contract checks failed");
+
+          Console.WriteLine("LIFECYCLE_VERSION_KEY_REGRESSION_PASS");
+          '@
+          [IO.File]::WriteAllText((Join-Path $probeRoot 'Program.cs'), $program, [Text.UTF8Encoding]::new($false))
+          dotnet run --project (Join-Path $probeRoot 'Probe.csproj') -c Release -p:RestoreIgnoreFailedSources=true
+
+      - name: Verify lifecycle v2 binding model and read-only ceiling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content 'src/Matawaka.Workbench.App/MaintenanceLifecycleReceiptV2Service.cs' -Raw
+          if ($src -notmatch 'CheckpointSchemaForToken\(targetTagToken\)') { throw 'checkpoint schema token binding missing' }
+          if ($src -notmatch 'semanticTargetVersion = JsonString\(checkpoint, "Version"\)') { throw 'semantic version not derived from unique checkpoint' }
+          if ($src -notmatch 'NormalizeSemanticVersionForAcceptedToken\(semanticTargetVersion\)') { throw 'semantic/tag normalization missing' }
+          if ($src -match 'JsonString\(doc, "Version"\) == targetTagToken') { throw 'old tag-token == semantic-version checkpoint filter returned' }
+          if ($src -notmatch 'ValidateReadOnlyGitArgs') { throw 'read-only git allowlist missing' }
+          if ($src -match 'RunGitAsync') { throw 'generic mutable Git helper unexpectedly present in lifecycle v2' }
+          Write-Host 'lifecycle v2 binding model/read-only ceiling: PASS'
+
+      - name: Verify v0.35.1 successor contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $acceptance = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0351AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0351Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0351Service.cs' -Raw
+          if ($acceptance -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.35\.1') { throw 'v0.35.1 acceptance schema missing' }
+          if ($checkpoint -notmatch 'ExpectedPredecessorCommit = "689cdf5ef2f9f403efe09bb251c91da1c5951ec6"') { throw 'v0.35.1 checkpoint predecessor mismatch' }
+          if ($checkpoint -notmatch 'TargetTag = "workbench-v0\.35\.1-accepted"') { throw 'v0.35.1 checkpoint target tag missing' }
+          if ($publisher -notmatch 'ExpectedParent = "689cdf5ef2f9f403efe09bb251c91da1c5951ec6"') { throw 'v0.35.1 publisher parent mismatch' }
+          if ($publisher -notmatch 'AcceptedTag = "workbench-v0\.35\.1-accepted"') { throw 'v0.35.1 publisher tag missing' }
+          if ($publisher -match '"--force') { throw 'force push literal found in v0.35.1 publisher' }
+          Write-Host 'v0.35.1 successor contracts: PASS'
+
+      - name: Verify non-App implementation unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '689cdf5ef2f9f403efe09bb251c91da1c5951ec6'
+          git cat-file -e "$base^{commit}"
+          $changed = git diff --name-only $base HEAD
+          $forbidden = $changed | Where-Object {
+            $_ -like 'src/Matawaka.Workbench.AgentHost/*' -or
+            $_ -like 'src/Matawaka.Workbench.Runtime/*' -or
+            $_ -like 'src/Matawaka.Workbench.Protocol/*' -or
+            $_ -like 'src/Matawaka.Workbench.Engine/*' -or
+            $_ -like 'src/Matawaka.Workbench.Catalog/*' -or
+            $_ -like 'src/Matawaka.Workbench.SemanticHost/*'
+          }
+          if ($forbidden) { throw "unexpected non-App mutation: $($forbidden -join ', ')" }
+          Write-Host 'non-App implementation unchanged: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.35.1 stabilization package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.35.1.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V0351.cs',
+            'src/Matawaka.Workbench.App/MaintenanceLifecycleReceiptV2Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0351AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0351Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0351Service.cs'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "package payload file missing: $file" }
+          }
+
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.35.1-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            $manifestFiles += [ordered]@{ Path = $file; Sha256 = $sha }
+          }
+
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.35.1'
+            PredecessorTag = 'workbench-v0.35-accepted'
+            PredecessorCommit = '689cdf5ef2f9f403efe09bb251c91da1c5951ec6'
+            TargetTag = 'workbench-v0.35.1-accepted'
+            PayloadRoot = 'payload/'
+            Files = $manifestFiles
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'source-only lifecycle stabilization package; no effect on creation',
+              'no local application update performed by package validation',
+              'no network/catalog/AgentExecute requested by package',
+              'package validity does not authorize build/launch/checkpoint/publication/lifecycle'
+            )
+          }
+          $manifestPath = Join-Path $root 'workbench-update-manifest.json'
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.35.1-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $zipSha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.35.1-source-only.sha256.txt'), "$zipSha  workbench-v0.35.1-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$zipSha"
+          Write-Host "payload files=$($files.Count)"
+
+      - name: Upload v0.35.1 source-only stabilization package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.35.1-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.35.1-source-only.zip
+            ${{ runner.temp }}/workbench-v0.35.1-source-only.sha256.txt
+          if-no-files-found: error
+          retention-days: 30
