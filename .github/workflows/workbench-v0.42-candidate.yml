@@ -1,0 +1,291 @@
+name: Workbench v0.42 compact operator surface qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.42-compact-operator-surface
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.42 Release build failed' }
+
+      - name: Verify accepted predecessor implementations unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '4eb94de604de60909058b51dc3e0a1dc06fd9984'
+          $mustRemain = @(
+            'src/Matawaka.Workbench.App/JsonOutputSearchV041Service.cs',
+            'src/Matawaka.Workbench.App/JsonSearchPresentationV0412Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0412.cs',
+            'src/Matawaka.Workbench.App/TransitionBootstrapV040Service.cs',
+            'src/Matawaka.Workbench.App/CandidateLaunchHandoffV039Service.cs',
+            'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs',
+            'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs',
+            'src/Matawaka.Workbench.Runtime',
+            'src/Matawaka.Workbench.Protocol',
+            'src/Matawaka.Workbench.AgentHost',
+            'src/Matawaka.Workbench.Engine',
+            'src/Matawaka.Workbench.Catalog',
+            'src/Matawaka.Workbench.SemanticHost'
+          )
+          foreach ($path in $mustRemain) {
+            git diff --quiet $base HEAD -- $path
+            if ($LASTEXITCODE -ne 0) { throw "accepted predecessor implementation changed unexpectedly: $path" }
+          }
+          Write-Host 'accepted v0.41.2 search/focus/bootstrap/local-app/non-App implementation bytes unchanged: PASS'
+
+      - name: Verify compact visible shell contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 5) { throw 'visible top-level maintenance button count is not 5' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'visible top-level persistent checkbox count is not 0' }
+          foreach ($name in @('UpdateCandidateButton','LaunchCandidateButton','UpdateLocalAppButton','PublishAcceptedButton','LifecycleReceiptButton')) {
+            if ($surface -notmatch [regex]::Escape("x:Name=\"$name\"")) { throw "missing visible button: $name" }
+          }
+          foreach ($name in @('SelfTestButton','AcceptCheckpointButton','CancelButton')) {
+            if ($surface -match [regex]::Escape("x:Name=\"$name\"")) { throw "legacy manual button still visible: $name" }
+          }
+          if ([regex]::Matches($surface, '<LineBreak\s*/>').Count -lt 5) { throw 'two-word visible button labels are not split over two lines' }
+          $hidden = [regex]::Match($xaml, '<StackPanel x:Name="HistoricalCompatibilityBindings"[\s\S]*?</StackPanel>').Value
+          if ($hidden -notmatch 'Visibility="Collapsed"') { throw 'historical compatibility bindings are not collapsed' }
+          foreach ($name in @('WorkspaceRootBox','CatalogRootBox','SelfTestButton','AcceptCheckpointButton','CancelButton')) {
+            if ($hidden -notmatch [regex]::Escape("x:Name=\"$name\"")) { throw "hidden compatibility control missing: $name" }
+          }
+          if ($xaml -notmatch 'x:Name="InstalledAppsList"' -or $xaml -notmatch 'x:Name="InstalledAppsSummaryText"') { throw 'installed Apps strip missing' }
+          $tabsAt = $xaml.IndexOf('x:Name="OutputTabs"', [StringComparison]::Ordinal)
+          $findAt = $xaml.IndexOf('x:Name="JsonSearchSurface"', [StringComparison]::Ordinal)
+          $statusAt = $xaml.IndexOf('x:Name="StatusProgressSurface"', [StringComparison]::Ordinal)
+          if ($tabsAt -lt 0 -or $findAt -le $tabsAt -or $statusAt -le $findAt) { throw 'required vertical order is OutputTabs -> Find -> bottom Status/Progress' }
+          $statusSurface = [regex]::Match($xaml, '<Grid x:Name="StatusProgressSurface"[\s\S]*?</Grid>').Value
+          if ($statusSurface -notmatch 'x:Name="ProgressBar"' -or $statusSurface -notmatch 'x:Name="StatusText"') { throw 'status is not overlaid in same progress surface' }
+          if ($statusSurface.IndexOf('ProgressBar', [StringComparison]::Ordinal) -gt $statusSurface.IndexOf('StatusText', [StringComparison]::Ordinal)) { throw 'status text must be layered after ProgressBar' }
+          Write-Host 'v0.42 compact visible shell layout: PASS'
+
+      - name: Verify v0.42 routing and release contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          $ui = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V042.cs' -Raw
+          $shell = Get-Content 'src/Matawaka.Workbench.App/WorkbenchShellV042Service.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV042Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV042Service.cs' -Raw
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV042AcceptanceHarness.cs' -Raw
+          foreach ($marker in @('ConfigureV042Routing','ConfigureV0412Routing','Window_LoadedV042','AcceptFromBootstrapAsync','AutomaticAcceptPerformed = true','ManualSelfTestButtonAvailable = false','StopButtonAvailable = false')) {
+            if (($app + $ui) -notmatch [regex]::Escape($marker)) { throw "v0.42 routing marker missing: $marker" }
+          }
+          foreach ($marker in @('InstalledAppsV042Service','StatusForegroundV042Converter','Brushes.ForestGreen','Brushes.Red','Brushes.Goldenrod')) {
+            if ($shell -notmatch [regex]::Escape($marker)) { throw "v0.42 shell marker missing: $marker" }
+          }
+          if ($checkpoint -notmatch 'Version = "0\.42\.0"' -or $checkpoint -notmatch 'ExpectedPredecessorCommit = "4eb94de604de60909058b51dc3e0a1dc06fd9984"' -or $checkpoint -notmatch 'workbench-v0\.42-accepted') { throw 'v0.42 checkpoint contract mismatch' }
+          if ($checkpoint -match 'public Task<LocalCheckpointReceipt> AcceptAsync') { throw 'v0.42 checkpoint unexpectedly exposes manual AcceptAsync' }
+          if ($publisher -notmatch 'ExpectedParent = "4eb94de604de60909058b51dc3e0a1dc06fd9984"' -or $publisher -notmatch 'workbench-v0\.42-accepted') { throw 'v0.42 publication contract mismatch' }
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.42' -or $accept -notmatch '"0\.42\.0"') { throw 'v0.42 acceptance identity missing' }
+          Write-Host 'v0.42 routing/release contracts: PASS'
+
+      - name: Execute compiled shell observation and status probes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v042-shell-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.Text.Json;
+          using System.Windows;
+          using System.Windows.Controls;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              [STAThread]
+              private static void Main()
+              {
+                  if (StatusForegroundV042Converter.ClassifyStatus("COMPLETED: ok") != "positive") throw new Exception("COMPLETED not positive");
+                  if (StatusForegroundV042Converter.ClassifyStatus("ERROR: bad") != "error") throw new Exception("ERROR not error");
+                  if (StatusForegroundV042Converter.ClassifyStatus("FAILED: bad") != "error") throw new Exception("FAILED not error");
+                  if (StatusForegroundV042Converter.ClassifyStatus("WARNING: check") != "warning") throw new Exception("WARNING not warning");
+
+                  var root = Path.Combine(Path.GetTempPath(), "matawaka-v042-apps-" + Guid.NewGuid().ToString("N"));
+                  var apps = Path.Combine(root, "Apps");
+                  Directory.CreateDirectory(Path.Combine(apps, "alpha"));
+                  Directory.CreateDirectory(Path.Combine(apps, "beta"));
+                  Directory.CreateDirectory(Path.Combine(apps, "broken"));
+                  File.WriteAllText(Path.Combine(apps, "alpha", ".matawaka-app.json"), JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "1.0")));
+                  File.WriteAllText(Path.Combine(apps, "beta", ".matawaka-app.json"), JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "beta", "2.5")));
+                  File.WriteAllText(Path.Combine(apps, "broken", ".matawaka-app.json"), "{broken");
+                  var observed = InstalledAppsV042Service.Read(root);
+                  if (observed.Count != 2 || observed[0].Display != "alpha · 1.0" || observed[1].Display != "beta · 2.5") throw new Exception("installed Apps observation mismatch");
+
+                  var window = new MainWindow();
+                  var surface = (WrapPanel?)window.FindName("PrimaryMaintenanceSurface") ?? throw new Exception("primary surface missing");
+                  if (surface.Children.OfType<Button>().Count() != 5) throw new Exception("runtime visible button count != 5");
+                  var hidden = (StackPanel?)window.FindName("HistoricalCompatibilityBindings") ?? throw new Exception("hidden compatibility surface missing");
+                  if (hidden.Visibility != Visibility.Collapsed) throw new Exception("hidden compatibility surface visible");
+                  var progressSurface = (Grid?)window.FindName("StatusProgressSurface") ?? throw new Exception("status/progress surface missing");
+                  if (progressSurface.Children.Count != 2 || progressSurface.Children[0] is not ProgressBar || progressSurface.Children[1] is not TextBlock) throw new Exception("status is not layered over progress");
+                  window.Close();
+                  Directory.Delete(root, true);
+                  Console.WriteLine("V042_SHELL_PASS buttons=5 apps=2 statusClasses=positive/error/warning overlay=True");
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.42 compiled shell probe failed' }
+
+      - name: Verify remote predecessor remains exact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = @(git ls-remote $remote refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLine.Count -ne 1) { throw 'unable to read remote main' }
+          $main = ($mainLine[0] -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '4eb94de604de60909058b51dc3e0a1dc06fd9984') { throw "remote main moved from accepted v0.41.2: $main" }
+          $tagLines = @(git ls-remote $remote refs/tags/workbench-v0.41.2-accepted refs/tags/workbench-v0.41.2-accepted^'{}')
+          if ($LASTEXITCODE -ne 0) { throw 'unable to read predecessor accepted tag' }
+          $peeled = @($tagLines | Where-Object { $_ -match 'refs/tags/workbench-v0\.41\.2-accepted\^\{\}$' })
+          if ($peeled.Count -ne 1 -or (($peeled[0] -split '\s+')[0].ToLowerInvariant()) -ne $main) { throw 'predecessor accepted tag does not peel to remote main' }
+          $target = @(git ls-remote $remote refs/tags/workbench-v0.42-accepted refs/tags/workbench-v0.42-accepted^'{}')
+          if ($target.Count -ne 0) { throw 'v0.42 target tag already exists remotely' }
+          Write-Host 'remote predecessor main/tag exact; v0.42 tag absent: PASS'
+
+      - name: Verify product diff bounded
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '4eb94de604de60909058b51dc3e0a1dc06fd9984'
+          $allowed = @(
+            '.github/workflows/workbench-v0.42-candidate.yml',
+            'PATCH-v0.42.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV042Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV042Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V042.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/WorkbenchShellV042Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV042AcceptanceHarness.cs'
+          ) | Sort-Object
+          $actual = @(git diff --name-only $base HEAD) | Sort-Object
+          if (($actual -join "`n") -ne ($allowed -join "`n")) { throw "unexpected v0.42 diff:`n$($actual -join "`n")" }
+          Write-Host 'v0.42 product diff bounded: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build and audit source-only v0.42 package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.42.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV042Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV042Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V042.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/WorkbenchShellV042Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV042AcceptanceHarness.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.42-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.42.0';
+            PredecessorTag='workbench-v0.41.2-accepted'; PredecessorCommit='4eb94de604de60909058b51dc3e0a1dc06fd9984';
+            TargetTag='workbench-v0.42-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('manual button removal does not remove bootstrap validation','installed Apps list is read-only observation','status color/progress overlay is presentation-only','Publish and Lifecycle remain separate')
+          }
+          $manifestPath = Join-Path $root 'workbench-update-manifest.json'
+          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.42-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+
+          $audit = Join-Path $env:RUNNER_TEMP 'workbench-v0.42-audit'
+          if (Test-Path $audit) { Remove-Item $audit -Recurse -Force }
+          [IO.Compression.ZipFile]::ExtractToDirectory($zip, $audit)
+          $m = Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if ($m.TargetVersion -ne '0.42.0' -or $m.PredecessorCommit -ne '4eb94de604de60909058b51dc3e0a1dc06fd9984' -or $m.PredecessorTag -ne 'workbench-v0.41.2-accepted' -or $m.TargetTag -ne 'workbench-v0.42-accepted') { throw 'package identity/predecessor audit failed' }
+          if ($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested) { throw 'package requested forbidden capability' }
+          $bound = @($m.Files | ForEach-Object { $_.Path } | Sort-Object)
+          if (($bound -join "`n") -ne (($files | Sort-Object) -join "`n")) { throw 'manifest payload file set mismatch' }
+          foreach ($item in $m.Files) {
+            $full = Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "manifest payload missing: $($item.Path)" }
+            $actualSha = (Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualSha -ne $item.Sha256.ToLowerInvariant()) { throw "manifest hash mismatch: $($item.Path)" }
+          }
+          $actualPayload = @(Get-ChildItem (Join-Path $audit 'payload') -File -Recurse | ForEach-Object { [IO.Path]::GetRelativePath((Join-Path $audit 'payload'), $_.FullName).Replace('\','/') } | Sort-Object)
+          if (($actualPayload -join "`n") -ne (($files | Sort-Object) -join "`n")) { throw 'extra/missing payload files after ZIP extraction' }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.42-source-only.sha256.txt'), "$sha  workbench-v0.42-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "V042_SOURCE_PACKAGE_AUDIT_PASS sha256=$sha payloadFiles=$($files.Count) forbiddenFlags=False"
+
+      - name: Upload v0.42 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.42-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.42-source-only.zip
+            ${{ runner.temp }}/workbench-v0.42-source-only.sha256.txt
+          retention-days: 30
