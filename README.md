@@ -4,7 +4,7 @@ Windows/.NET 10 WPF control plane for bounded Matawaka maintenance, evidence ins
 
 ## Accepted-state rule
 
-The repository default branch `main` is the remotely published accepted source frontier. Development branches are not accepted merely because their source exists. The exact accepted version is the single `workbench-v<token>-accepted` tag at `main` HEAD; semantic runtime `Version` may be more specific than the tag/schema token (for example `0.35.0` under token `0.35`).
+The repository default branch `main` is the remotely published accepted source frontier. Development branches are not accepted merely because their source exists. The exact accepted version is the single `workbench-v<token>-accepted` tag at `main` HEAD; semantic runtime `Version` may be more specific than the tag/schema token.
 
 `Accepted Source Documentation != Version-Specific Planning Document`
 
@@ -20,29 +20,106 @@ Workbench is a product/application implementation, not UU-AAP Stable Core:
 - `Matawaka.Workbench.Catalog` — local Matawaka catalog inspection;
 - `Matawaka.Workbench.SemanticHost` — fixed verified semantic host.
 
-Historical analysis/recovery/catalog controls remain source/evidence history, but the active product surface is intentionally smaller.
+Historical analysis/recovery/catalog controls remain source/evidence history, while the active product surface stays intentionally small.
 
 ## Active product surface
 
 The normal window exposes exactly eight maintenance actions:
 
-1. **Update Workbench** — bounded package → materialize → apply-plan → apply/build session;
-2. **Launch candidate** — separate exact receipt-bound Workbench launch;
-3. **Local apps** — contextual registration or bounded update of a managed local application;
-4. **Self-test** — explicit bounded read-only acceptance matrix;
-5. **Accept** — separate local Workbench commit/tag;
-6. **Publish accepted** — separate fixed GitHub fast-forward/tag publication;
-7. **Lifecycle receipt** — post-publication evidence composition only;
-8. **Stop** — cancel the current bounded run.
+1. **Update Workbench**;
+2. **Launch candidate**;
+3. **Local apps**;
+4. **Self-test**;
+5. **Accept**;
+6. **Publish accepted**;
+7. **Lifecycle receipt**;
+8. **Stop**.
 
-There are no persistent `Agent enabled` or `Allow git fetch` checkboxes in the active product surface. Historical JSON/agent/catalog/recovery controls remain hidden compatibility/source surfaces and are not erased.
+There are no persistent Agent/git-fetch authority checkboxes in the active surface.
+
+`Contextual Local Apps Action != Authority Collapse`
+
+## Managed local applications
+
+Current managed app bytes live only under:
 
 ```text
-Hidden Control != Deleted Capability
-Persistent Checkbox Removed != Authority Made Implicit
-Self-test Click != Agent Execute
-Contextual Local Apps Action != Authority Collapse
+<WorkspaceRoot>\Apps\<ApplicationId>\
 ```
+
+Desired candidate bytes for package building live only under:
+
+```text
+<WorkspaceRoot>\AppCandidates\<ApplicationId>\
+```
+
+The visible **Local apps** action remains one top-level control:
+
+- unregistered app → **Register**;
+- registered app → choose **Update from package** or **Build update package**.
+
+### Registration
+
+Registration accepts only an existing direct child of `Workspace\Apps`, inventories its bytes, computes a deterministic tree digest, and after separate confirmation creates only `.matawaka-app.json`. Its `baseline-*` version is an observed-byte baseline, not a vendor/upstream version claim.
+
+```text
+Register Local App != Import App
+Register Local App != Update App
+Register Local App != Launch App
+```
+
+### Update from package
+
+The existing updater accepts only `matawaka.local-app-update-package/v1` ZIPs, derives the target root from `WorkspaceRoot + Apps + ApplicationId`, binds existing files by exact `CurrentSha256`, validates exact target payload digests, performs fresh revalidation, allows Add/Replace only, backs up predecessor bytes and rolls back on failure.
+
+```text
+Package Validity != Mutation Authority
+Local App Update != App Launch
+```
+
+### Build update package
+
+The builder removes the need to hand-author predecessor SHA-256 values.
+
+A registered app is compared with the fixed candidate root `Workspace\AppCandidates\<ApplicationId>`. The candidate root contains desired target files plus:
+
+```text
+.matawaka-target.json
+```
+
+using schema `matawaka.local-app-target/v1` with exact `ApplicationId` and `TargetVersion`.
+
+Builder Preview:
+
+- reads current SHA-256 values directly from the registered app;
+- reads target SHA-256 values from the fixed candidate root;
+- derives Add / Replace / NoOp;
+- refuses candidate omission that would imply Delete;
+- generates target `.matawaka-app.json` bytes itself;
+- synthesizes the exact updater manifest in memory;
+- creates no package/update authority.
+
+After separate confirmation the builder freshly revalidates both roots, writes one ZIP under `Workbench/artifacts/local-app-packages`, then immediately re-opens that ZIP through the existing updater `PreviewAsync`.
+
+Builder success is reported only when:
+
+```text
+Existing Updater Preview == READY
+```
+
+This directly addresses byte-level package-authoring drift such as semantically equal JSON with different line endings.
+
+```text
+Semantic Equality != Byte Equality
+Builder Preview != Package Write Authority
+Package Write != Update Authority
+Builder Success => Existing Updater Preview READY
+Build Package != Update App != Launch App
+```
+
+The builder does not write under `Apps` or `AppCandidates`, perform the update, launch the app, use network/Git/installers, or create Agent Execute/ActionPermit.
+
+See `LOCAL-APP-MAINTENANCE.md` for the stable registration/update/package-builder contract.
 
 ## Workbench maintenance model
 
@@ -55,62 +132,7 @@ Update Workbench
 -> optional Lifecycle receipt
 ```
 
-`Update Workbench` sequences existing typed package intake, staging materialization, staged apply plan and exact apply/build gates. Successful build still does not launch the candidate automatically.
-
-## Managed local applications
-
-Managed applications live only under:
-
-```text
-<WorkspaceRoot>\Apps\<ApplicationId>\
-```
-
-The visible **Local apps** action first asks the operator to choose one direct child directory of `Workspace\Apps`.
-
-### Register an existing managed-directory app
-
-If `.matawaka-app.json` is absent, Workbench offers a separate registration preview.
-
-Registration:
-
-- derives `ApplicationId` from the direct-child folder name;
-- refuses arbitrary/outside roots and reparse-point boundaries;
-- inventories up to 4096 existing regular files / 2 GiB total;
-- binds exact normalized relative paths, file sizes and SHA-256s;
-- computes a deterministic tree SHA-256;
-- proposes identity schema `matawaka.local-app-identity/v1` with `Version = baseline-<first16-tree-digest>`;
-- freshly re-runs the complete inventory after confirmation;
-- creates **only** `.matawaka-app.json` atomically;
-- verifies all pre-existing application bytes remain unchanged;
-- writes a Workbench-local registration receipt.
-
-The `baseline-*` value is an observed-byte baseline, not a claim about a vendor/upstream product version.
-
-```text
-Register Local App != Import App
-Register Local App != Update App
-Register Local App != Launch App
-Registration Baseline != Vendor Version Claim
-Identity Creation != General Filesystem Authority
-```
-
-Workbench does not copy/move an external app into `Workspace\Apps`; the operator intentionally places an application directory there before registration.
-
-### Update a registered app
-
-If `.matawaka-app.json` exists, **Local apps** asks for a local ZIP using schema `matawaka.local-app-update-package/v1` and delegates to the bounded updater.
-
-The updater derives the target root only from `WorkspaceRoot + Apps + ApplicationId`, validates the exact ZIP entry set/current and target SHA-256s, performs a fresh preview, backs up replacement bytes, allows Add/Replace only, applies the identity last, verifies the target state, and rolls back predecessor bytes on failure.
-
-It does **not** download packages, run installers/scripts, launch the updated app, mutate Git/registry/services/environment/catalog, or create Agent Execute/ActionPermit authority.
-
-```text
-Package Validity != Mutation Authority
-Local App Update != App Launch
-Managed Root != Arbitrary Target Root
-```
-
-See `LOCAL-APP-MAINTENANCE.md` for the registration/update contract.
+Successful build never implies launch/accept/publication authority.
 
 ## Maintenance Lifecycle Receipt
 
@@ -119,23 +141,16 @@ Lifecycle V2 is evidence composition only. It derives accepted tag/schema token 
 ```text
 Summary != Authority
 Observed Sequence != Authorized Sequence
-Accepted Tag Discovery != Trust Discovery
 Tag/Schema Token != Semantic Runtime Version
 Lifecycle Receipt != ActionPermit
 ```
 
 ## Fixed accepted-source publication
 
-`Publish accepted` remains a separate human maintenance network gate with one destination only:
-
-- remote name `github-workbench`;
-- URL `https://github.com/Matawaka/workbench.git`;
-- `refs/heads/main` plus the exact locally accepted tag.
-
-Remote main must be exact local parent or already exact local HEAD. Conflicting main/tag fails closed. No force push, arbitrary remote, local-app authority, catalog mutation, Agent Execute, ActionPermit or general Workbench network authority is admitted.
+`Publish accepted` remains a separate human maintenance network gate with one destination only: `github-workbench` / `https://github.com/Matawaka/workbench.git`. Remote main must be exact local parent or already exact local HEAD. Conflicting main/tag fails closed; no force push or arbitrary remote is admitted.
 
 ## Qualification discipline
 
-Real product capabilities receive real fixture/use evidence where possible. Patch-level stabilization is preferred over feature inflation when evidence reveals a recurring defect. A negative qualification result is valid.
+Real product capabilities receive executable fixture/use evidence where possible. Patch-level stabilization is preferred over feature inflation when evidence reveals a recurring defect. A negative qualification result is valid.
 
-Workbench utility, successful local-app maintenance or successful source publication does not establish canonical UU-AAP conformance, Stable Core membership, identity/trust, legal authority or general execution authority.
+Workbench utility, successful local-app maintenance or source publication does not establish canonical UU-AAP conformance, Stable Core membership, identity/trust, legal authority or general execution authority.

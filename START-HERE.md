@@ -1,6 +1,6 @@
 # Start here — Matawaka Workbench
 
-This page describes the stable operator path. Exact release-specific predecessor/target identities are shown by the update package preview, accepted tag at HEAD, and `PATCH-v*.md` history rather than hard-coded here.
+This page describes the stable operator path. Exact release-specific predecessor/target identities are shown by update previews, the accepted tag at HEAD and `PATCH-v*.md` history rather than hard-coded here.
 
 ## Active controls
 
@@ -15,84 +15,106 @@ The normal window intentionally exposes only:
 - **Lifecycle receipt**
 - **Stop**
 
-There are no persistent Agent or git-fetch checkboxes. Historical JSON/analysis/catalog/recovery controls remain source/evidence history but are not active top-level product controls.
+There are no persistent Agent or git-fetch checkboxes.
 
-Workspace/Catalog path edits are saved on normal actions and window close; there is no separate Save button.
+## Workbench update lifecycle
 
-## Install/build a Workbench successor
-
-1. Click **Update Workbench** and choose the source-only ZIP.
-2. Review package SHA-256, exact predecessor commit/tag, target version/tag, payload count and bytes.
-3. Explicitly confirm the maintenance session.
-4. Workbench sequences fresh plan → staging materialization → staged apply plan → exact apply/build.
-5. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
-6. Click **Launch candidate** separately and confirm the exact built executable SHA-256.
-
-`Update Workbench != Launch authority`.
-
-## Accept / publish / lifecycle
-
-1. In the launched candidate click **Self-test** and require `Passed=true`.
-2. Click **Accept** and explicitly create the local accepted checkpoint/tag.
-3. Click **Publish accepted** separately; require fixed remote main/tag exact readback and unchanged local state.
-4. Click **Lifecycle receipt** separately; require exact checkpoint/Self-test/orchestrator/publication bindings and `Complete=true`.
+1. **Update Workbench** → choose the source-only ZIP and confirm the bounded maintenance session.
+2. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
+3. **Launch candidate** separately.
+4. In the candidate run **Self-test** and require `Passed=true`.
+5. **Accept** separately.
+6. **Publish accepted** separately.
+7. Optionally create **Lifecycle receipt** after publication and require `Complete=true`.
 
 ```text
-Self-test Click != Agent Execute
-Self-test PASS != Checkpoint Authority
-Accepted Checkpoint != Publish Authority
-Publication Success != Lifecycle Authority
-Summary != Authority
+Build != Launch
+Launch != Self-test
+Self-test PASS != Accept
+Accept != Publish
+Publish != Lifecycle authority
 ```
 
-## Local apps — register or update
+## Local apps
 
-`Local apps` is contextual. First choose one **direct child** of:
+`Local apps` is contextual. Choose one direct child of:
 
 ```text
 <WorkspaceRoot>\Apps\<ApplicationId>\
 ```
 
-Workbench does not import/copy a folder from elsewhere. Put the application directory under `Workspace\Apps` intentionally first.
+### Unregistered app
 
-### If `.matawaka-app.json` is absent
-
-Workbench offers **Register local app**:
-
-1. it derives ApplicationId from the selected folder name;
-2. performs a read-only SHA-256 inventory of the existing app bytes;
-3. shows file count/bytes/tree SHA-256 and proposed `baseline-<digest>` identity;
-4. after explicit confirmation it freshly repeats the inventory;
-5. it creates only `.matawaka-app.json`;
-6. it re-verifies all pre-existing app files stayed unchanged;
-7. it writes a registration receipt.
+If `.matawaka-app.json` is absent, Workbench offers **Register**. Registration inventories the existing bytes, derives a deterministic `baseline-*` identity, freshly rechecks the bytes, then creates only `.matawaka-app.json`.
 
 Expected status:
 
 `LOCAL_APPLICATION_REGISTERED_UPDATE_AUTHORITY_NOT_CREATED`
 
-The baseline is an observed-byte marker, not a vendor version claim.
+### Registered app
+
+If `.matawaka-app.json` exists, Workbench offers three possible local-app paths through the same top-level control:
+
+- **Update from package**;
+- **Build update package**;
+- Cancel.
+
+#### Update from package
+
+Choose an existing `matawaka.local-app-update-package/v1` ZIP. Workbench validates exact current SHA-256 bindings and target payload digests, freshly revalidates, backs up predecessor bytes, applies Add/Replace only, verifies target identity and rolls back on failure.
+
+Expected status:
+
+`LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED`
+
+#### Build update package
+
+Place desired target files under:
 
 ```text
-Register != Import
-Register != Update
-Register != Launch
-Identity Creation != Vendor Identity Assertion
+<WorkspaceRoot>\AppCandidates\<ApplicationId>\
 ```
 
-### If `.matawaka-app.json` already exists
+and add:
 
-Workbench asks for a local `matawaka.local-app-update-package/v1` ZIP and performs the existing bounded update flow:
+```text
+.matawaka-target.json
+```
 
-1. preview exact ApplicationId/root/current→target version/package SHA-256/Add/Replace paths;
-2. explicit confirmation;
-3. fresh preview revalidation;
-4. predecessor backup for Replace files;
-5. exact Add/Replace apply, target identity last;
-6. exact digest verification or rollback;
-7. status `LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED`.
+Example:
 
-No app is launched automatically.
+```json
+{
+  "Schema": "matawaka.local-app-target/v1",
+  "ApplicationId": "demo.app",
+  "TargetVersion": "1.1.0"
+}
+```
+
+Then choose **Local apps → registered app → Build update package**.
+
+Workbench:
+
+1. reads current SHA-256 values directly from `Workspace\Apps\<ApplicationId>`;
+2. reads target bytes from the fixed `Workspace\AppCandidates\<ApplicationId>` root;
+3. derives Add / Replace / NoOp;
+4. refuses any candidate omission that would imply Delete;
+5. generates target `.matawaka-app.json` itself;
+6. shows a read-only package plan;
+7. after explicit confirmation freshly recomputes both sides;
+8. writes one ZIP only under `Workbench\artifacts\local-app-packages`;
+9. immediately validates that generated ZIP through the existing updater Preview.
+
+Successful builder status means the package is already acceptable to the existing updater Preview, but no update has occurred.
+
+```text
+Semantic Equality != Byte Equality
+Builder Preview != Package Write Authority
+Package Write != Update Authority
+Build Package != Update App != Launch App
+```
+
+To actually apply it, use **Local apps** again → **Update from package** and select the generated ZIP.
 
 ## Historical capabilities
 
