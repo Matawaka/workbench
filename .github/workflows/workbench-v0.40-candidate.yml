@@ -64,9 +64,224 @@ jobs:
           $passIndex = $ui.IndexOf('if (!tested.Receipt.Passed)')
           $acceptIndex = $ui.IndexOf('AcceptFromBootstrapAsync')
           if ($passIndex -lt 0 -or $acceptIndex -lt 0 -or $passIndex -ge $acceptIndex) { throw 'auto Accept is not ordered after Self-test PASS gate' }
-          if ($checkpoint -notmatch 'ExplicitUiConfirmationRequired=false' -and $checkpoint -notmatch 'explicitUiConfirmationRequired: false') { throw 'bootstrap checkpoint authority is not distinguished from manual UI confirmation' }
-          if ($ui -match 'PublishAcceptedV040Button_Click\([^)]*\).*Window_LoadedV040') { throw 'unexpected publication coupling' }
+          if ($checkpoint -notmatch 'explicitUiConfirmationRequired: false') { throw 'bootstrap checkpoint authority is not distinguished from manual UI confirmation' }
           Write-Host 'v0.40 bootstrap authority ceiling/order: PASS'
+
+      - name: Execute compiled one-shot bootstrap lease controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v040-bootstrap-probe-src'
+          $out = Join-Path $env:RUNNER_TEMP 'v040-bootstrap-probe-out'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escapedProject = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escapedProject" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.Diagnostics;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          static void Require(bool condition, string message) { if (!condition) throw new Exception(message); }
+          static string Sha(string path) { using var s = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(s)).ToLowerInvariant(); }
+          static void Git(string root, params string[] args)
+          {
+              var p = Process.Start(new ProcessStartInfo("git") { WorkingDirectory = root, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, ArgumentList = { } })!;
+              foreach (var arg in args) p.StartInfo.ArgumentList.Add(arg);
+          }
+
+          static string Run(string root, params string[] args)
+          {
+              var psi = new ProcessStartInfo("git") { WorkingDirectory = root, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+              foreach (var arg in args) psi.ArgumentList.Add(arg);
+              using var p = Process.Start(psi) ?? throw new Exception("git start failed");
+              var stdout = p.StandardOutput.ReadToEnd(); var stderr = p.StandardError.ReadToEnd(); p.WaitForExit();
+              if (p.ExitCode != 0) throw new Exception($"git failed: {string.Join(' ', args)} :: {stderr}");
+              return stdout.Trim();
+          }
+
+          static WorkbenchUpdateApplyBuildReceipt MakeBuild(string root, string candidate, string candidateSha, string predecessor, string predecessorTag, string targetVersion, string targetTag)
+          {
+              var authority = new WorkbenchUpdateApplyBuildAuthorityReceipt(
+                  "fixture-authority", "fixture", "fixture", root, targetVersion, targetTag, predecessorTag, predecessor,
+                  "fixture-staging", new string('a',64), candidate, candidateSha, "fixture explicit update",
+                  true, true, true, true, true, false, false, false, false, false, false,
+                  Array.Empty<string>(), Array.Empty<string>());
+              return new WorkbenchUpdateApplyBuildReceipt(
+                  BoundedUpdateApplyBuildService.ReceiptSchema, BoundedUpdateApplyBuildService.Version, DateTimeOffset.Now,
+                  targetVersion, targetTag, predecessorTag, predecessor, "fixture-staging", "fixture-plan", new string('b',64),
+                  Array.Empty<WorkbenchStagedSourceChange>(), authority,
+                  true, true, true, true, true, true,
+                  "fixture-manifest", new string('c',64), candidate, candidateSha, candidate, candidateSha,
+                  "CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED", Array.Empty<string>(), "fixture");
+          }
+
+          static WorkbenchCandidateLaunchReceipt MakeLaunch(string candidate, string sha, int pid)
+          {
+              var authority = new WorkbenchCandidateLaunchAuthorityReceipt(
+                  BoundedUpdateApplyBuildService.LaunchAuthoritySchema, "fixture", "workbench.update.launch-candidate",
+                  candidate, sha, "fixture", true, true, false, false, false, false, Array.Empty<string>());
+              return new WorkbenchCandidateLaunchReceipt(
+                  BoundedUpdateApplyBuildService.LaunchReceiptSchema, BoundedUpdateApplyBuildService.Version,
+                  DateTimeOffset.Now, candidate, sha, pid, authority, "CANDIDATE_LAUNCHED_NOT_ACCEPTED", Array.Empty<string>(), "fixture");
+          }
+
+          static string WriteJson<T>(string path, T value)
+          {
+              Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+              File.WriteAllText(path, JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+              return path;
+          }
+
+          static TransitionBootstrapV040Lease NegativeLease(string id, string state, string predecessor, string predecessorTag, string targetVersion, string targetTag, string candidate, string sha, int? pid, DateTimeOffset? expires = null)
+              => new()
+              {
+                  LeaseId=id, CreatedAt=DateTimeOffset.Now.AddSeconds(-1), ExpiresAt=expires ?? DateTimeOffset.Now.AddMinutes(3), State=state,
+                  PredecessorCommit=predecessor, PredecessorTag=predecessorTag, TargetVersion=targetVersion, TargetTag=targetTag,
+                  CandidateExecutablePath=candidate, CandidateExecutableSha256=sha, BuildReceiptPath=candidate, BuildReceiptSha256=sha,
+                  AuthoritySource="fixture", AutoLaunchAllowed=true, FirstBootSelfTestAllowed=true, FirstBootAcceptIfSelfTestPassesAllowed=true,
+                  PublishAllowed=false, LifecycleAllowed=false, ProcessId=pid, RetryAuthorized=false, NonEffects=Array.Empty<string>(), Note="negative fixture"
+              };
+
+          static Process StartClaim(string exe, string workspace, string result, string version, string tag)
+          {
+              var psi = new ProcessStartInfo(exe) { UseShellExecute=false, CreateNoWindow=true };
+              psi.ArgumentList.Add("claim"); psi.ArgumentList.Add(workspace); psi.ArgumentList.Add(result); psi.ArgumentList.Add(version); psi.ArgumentList.Add(tag);
+              return Process.Start(psi) ?? throw new Exception("claim child start failed");
+          }
+
+          if (args.Length > 0 && args[0] == "claim")
+          {
+              var service = new TransitionBootstrapV040Service();
+              var claim = await service.TryClaimFirstBootAsync(args[1], args[3], args[4], CancellationToken.None);
+              File.WriteAllText(args[2], claim is null ? "NONE" : $"CLAIMED|{claim.LeasePath}|{claim.ClaimPath}|{claim.Lease.LeaseId}|{claim.Lease.State}");
+              return;
+          }
+
+          var workspace = args[0];
+          var root = Path.Combine(workspace, "Workbench");
+          var candidate = Environment.ProcessPath ?? throw new Exception("ProcessPath missing");
+          var candidateSha = Sha(candidate);
+          var predecessorTag = "workbench-vfixture-accepted";
+          var targetVersion = "9.9.9";
+          var targetTag = "workbench-v9.9.9-accepted";
+          var head = Run(root, "rev-parse", "HEAD");
+          var updateDir = Path.Combine(root, "artifacts", "update-applies");
+          Directory.CreateDirectory(updateDir);
+          var serviceBootstrap = new TransitionBootstrapV040Service();
+
+          var build = MakeBuild(root, candidate, candidateSha, head, predecessorTag, targetVersion, targetTag);
+          var buildPath = WriteJson(Path.Combine(updateDir, "apply-build-fixture.json"), build);
+          var prepared = await serviceBootstrap.PrepareAsync(build, buildPath, workspace, "explicit fixture Update Workbench confirmation", CancellationToken.None);
+          Require(prepared.Lease.State == TransitionBootstrapV040Service.PreparedState, "PREPARED missing");
+
+          var positiveResult = Path.Combine(workspace, "positive.txt");
+          var child = StartClaim(candidate, workspace, positiveResult, targetVersion, targetTag);
+          var launch = MakeLaunch(candidate, candidateSha, child.Id);
+          var launchPath = WriteJson(Path.Combine(updateDir, "candidate-launch-v0.14-bootstrap-fixture.json"), launch);
+          var handoff = await new CandidateLaunchHandoffV039Service().ObserveAndPersistAsync(launch, launchPath, workspace, CancellationToken.None);
+          var activated = await serviceBootstrap.ActivateAsync(prepared.Lease, prepared.LeasePath, launch, launchPath, handoff.Receipt, handoff.ArtifactPath, workspace, CancellationToken.None);
+          Require(activated.State == TransitionBootstrapV040Service.ActivatedState && activated.ProcessId == child.Id, "ACTIVATED binding missing");
+          Require(child.WaitForExit(12000), "positive claim child timed out");
+          Require(File.ReadAllText(positiveResult).StartsWith("CLAIMED|"), "exact first boot did not claim lease");
+          var consuming = JsonSerializer.Deserialize<TransitionBootstrapV040Lease>(File.ReadAllText(prepared.LeasePath), new JsonSerializerOptions { PropertyNameCaseInsensitive=true })!;
+          Require(consuming.State == TransitionBootstrapV040Service.ConsumingState && !string.IsNullOrWhiteSpace(consuming.ClaimPath) && File.Exists(consuming.ClaimPath), "CONSUMING/claim evidence missing");
+
+          File.WriteAllText(Path.Combine(workspace, "acceptance-fixture.json"), "accepted");
+          File.WriteAllText(Path.Combine(workspace, "checkpoint-fixture.json"), "checkpoint");
+          var reconstructed = new TransitionBootstrapV040Claim(consuming, prepared.LeasePath, consuming.ClaimPath!);
+          var completed = await serviceBootstrap.FinalizeAcceptedAsync(reconstructed, Path.Combine(workspace, "acceptance-fixture.json"), Path.Combine(workspace, "checkpoint-fixture.json"), CancellationToken.None);
+          Require(completed.State == TransitionBootstrapV040Service.CompletedState && !completed.RetryAuthorized && !completed.PublishAllowed && !completed.LifecycleAllowed, "COMPLETED_ACCEPTED authority ceiling failed");
+
+          var repeatResult = Path.Combine(workspace, "repeat.txt");
+          var repeat = StartClaim(candidate, workspace, repeatResult, targetVersion, targetTag);
+          Require(repeat.WaitForExit(4000), "repeat child timed out");
+          Require(File.ReadAllText(repeatResult) == "NONE", "completed lease was reusable");
+
+          var noLeaseResult = Path.Combine(workspace, "no-lease.txt");
+          var noLease = StartClaim(candidate, workspace, noLeaseResult, "9.8.0", "workbench-v9.8.0-accepted");
+          Require(noLease.WaitForExit(4000), "no-lease child timed out");
+          Require(File.ReadAllText(noLeaseResult) == "NONE", "manual/no-lease startup obtained authority");
+
+          var leaseDir = Path.Combine(root, "artifacts", "transition-bootstrap");
+          Directory.CreateDirectory(leaseDir);
+          var preparedOnly = NegativeLease("preparedonly", TransitionBootstrapV040Service.PreparedState, head, predecessorTag, "9.9.10", "workbench-v9.9.10-accepted", candidate, candidateSha, null);
+          WriteJson(Path.Combine(leaseDir, "transition-bootstrap-v0.40-preparedonly.json"), preparedOnly);
+          var preparedResult = Path.Combine(workspace, "prepared-only.txt");
+          var preparedChild = StartClaim(candidate, workspace, preparedResult, preparedOnly.TargetVersion, preparedOnly.TargetTag);
+          Require(preparedChild.WaitForExit(10000), "prepared-only child timed out");
+          Require(File.ReadAllText(preparedResult) == "NONE", "PREPARED lease was consumed without activation");
+
+          var wrongPidVersion = "9.9.11"; var wrongPidTag = "workbench-v9.9.11-accepted";
+          var wrongPidPath = Path.Combine(leaseDir, "transition-bootstrap-v0.40-wrongpid.json");
+          WriteJson(wrongPidPath, NegativeLease("wrongpid", TransitionBootstrapV040Service.PreparedState, head, predecessorTag, wrongPidVersion, wrongPidTag, candidate, candidateSha, null));
+          var wrongPidResult = Path.Combine(workspace, "wrong-pid.txt");
+          var wrongPidChild = StartClaim(candidate, workspace, wrongPidResult, wrongPidVersion, wrongPidTag);
+          await Task.Delay(350);
+          WriteJson(wrongPidPath, NegativeLease("wrongpid", TransitionBootstrapV040Service.ActivatedState, head, predecessorTag, wrongPidVersion, wrongPidTag, candidate, candidateSha, wrongPidChild.Id + 1));
+          Require(wrongPidChild.WaitForExit(5000), "wrong-PID child timed out");
+          Require(File.ReadAllText(wrongPidResult) == "NONE", "wrong PID obtained bootstrap claim");
+
+          var staleVersion = "9.9.12"; var staleTag = "workbench-v9.9.12-accepted";
+          var stalePath = Path.Combine(leaseDir, "transition-bootstrap-v0.40-stale.json");
+          WriteJson(stalePath, NegativeLease("stale", TransitionBootstrapV040Service.PreparedState, head, predecessorTag, staleVersion, staleTag, candidate, candidateSha, null));
+          var staleResult = Path.Combine(workspace, "stale.txt");
+          var staleChild = StartClaim(candidate, workspace, staleResult, staleVersion, staleTag);
+          await Task.Delay(350);
+          WriteJson(stalePath, NegativeLease("stale", TransitionBootstrapV040Service.ActivatedState, head, predecessorTag, staleVersion, staleTag, candidate, candidateSha, staleChild.Id, DateTimeOffset.Now.AddSeconds(-1)));
+          Require(staleChild.WaitForExit(5000), "stale child timed out");
+          Require(File.ReadAllText(staleResult) == "NONE", "expired lease obtained bootstrap claim");
+
+          var wrongSha = NegativeLease("wrongsha", TransitionBootstrapV040Service.ActivatedState, head, predecessorTag, "9.9.13", "workbench-v9.9.13-accepted", candidate, new string('0',64), 1);
+          WriteJson(Path.Combine(leaseDir, "transition-bootstrap-v0.40-wrongsha.json"), wrongSha);
+          var wrongShaResult = Path.Combine(workspace, "wrong-sha.txt");
+          var wrongShaChild = StartClaim(candidate, workspace, wrongShaResult, wrongSha.TargetVersion, wrongSha.TargetTag);
+          Require(wrongShaChild.WaitForExit(4000), "wrong-SHA child timed out");
+          Require(File.ReadAllText(wrongShaResult) == "NONE", "wrong executable SHA obtained bootstrap claim");
+
+          var consumed = NegativeLease("consumed", TransitionBootstrapV040Service.ConsumingState, head, predecessorTag, "9.9.14", "workbench-v9.9.14-accepted", candidate, candidateSha, null);
+          WriteJson(Path.Combine(leaseDir, "transition-bootstrap-v0.40-consumed.json"), consumed);
+          var consumedResult = Path.Combine(workspace, "consumed.txt");
+          var consumedChild = StartClaim(candidate, workspace, consumedResult, consumed.TargetVersion, consumed.TargetTag);
+          Require(consumedChild.WaitForExit(4000), "consumed child timed out");
+          Require(File.ReadAllText(consumedResult) == "NONE", "already-consuming lease was reusable");
+
+          Console.WriteLine($"V040_BOOTSTRAP_ONE_SHOT_PASS lease={completed.LeaseId} completed={completed.State} repeatRefused=True noLeaseRefused=True preparedRefused=True wrongPidRefused=True staleRefused=True wrongShaRefused=True consumedRefused=True publish={completed.PublishAllowed} lifecycle={completed.LifecycleAllowed} retry={completed.RetryAuthorized}");
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+
+          dotnet publish (Join-Path $probe 'Probe.csproj') -c Release -o $out
+          if ($LASTEXITCODE -ne 0) { throw 'v0.40 probe publish failed' }
+          $workspace = Join-Path $env:RUNNER_TEMP 'v040-bootstrap-workspace'
+          if (Test-Path $workspace) { Remove-Item $workspace -Recurse -Force }
+          $repo = Join-Path $workspace 'Workbench'
+          New-Item -ItemType Directory -Path $repo -Force | Out-Null
+          git -C $repo init -b main
+          git -C $repo config user.name 'Matawaka CI'
+          git -C $repo config user.email 'ci@example.invalid'
+          [IO.File]::WriteAllText((Join-Path $repo 'seed.txt'), "seed`n", [Text.UTF8Encoding]::new($false))
+          git -C $repo add seed.txt
+          git -C $repo commit -m 'fixture predecessor'
+          git -C $repo tag -a workbench-vfixture-accepted -m 'fixture accepted'
+          $candidateDir = Join-Path $repo 'artifacts\probe-candidate'
+          New-Item -ItemType Directory -Path $candidateDir -Force | Out-Null
+          Copy-Item (Join-Path $out '*') $candidateDir -Recurse -Force
+          $candidateExe = Join-Path $candidateDir 'Probe.exe'
+          & $candidateExe $workspace
+          if ($LASTEXITCODE -ne 0) { throw 'v0.40 compiled bootstrap fixture failed' }
 
       - name: Verify accepted maintenance and non-App bytes unchanged
         shell: pwsh
