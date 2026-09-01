@@ -1,0 +1,172 @@
+name: Workbench v0.40.1 one-confirmation activation qualification
+
+on:
+  push:
+    branches:
+      - qualify/workbench-v0.40.1-one-confirmation-activation
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.40.1 Release build failed' }
+
+      - name: Verify accepted v0.40 bootstrap runtime unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '26e12f75abbba99323190f79693d585790e55bc1'
+          $mustRemain = @(
+            'src/Matawaka.Workbench.App/TransitionBootstrapV040Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V040.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/CandidateLaunchHandoffV039Service.cs',
+            'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs',
+            'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V033.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationManagedRoleGuardV0371Service.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuildReceiptStoreV038Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV038.cs',
+            'src/Matawaka.Workbench.Runtime',
+            'src/Matawaka.Workbench.Protocol',
+            'src/Matawaka.Workbench.AgentHost',
+            'src/Matawaka.Workbench.Engine',
+            'src/Matawaka.Workbench.Catalog',
+            'src/Matawaka.Workbench.SemanticHost'
+          )
+          foreach ($path in $mustRemain) {
+            git diff --quiet $base HEAD -- $path
+            if ($LASTEXITCODE -ne 0) { throw "accepted v0.40 runtime changed unexpectedly: $path" }
+          }
+          Write-Host 'accepted v0.40 bootstrap/update/handoff/local-app/non-App bytes unchanged: PASS'
+
+      - name: Verify successor startup routing and eight-button surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          $routing = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0401.cs' -Raw
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          foreach ($marker in @('ConfigureV0401Routing','window.ConfigureV0401Routing();','Window_LoadedV0401','TryClaimFirstBootAsync','LocalCheckpointV0401Service.Version','AcceptFromBootstrapAsync','FinalizeAcceptedAsync','AutomaticPublishPerformed = false')) {
+            if (($app + $routing) -notmatch [regex]::Escape($marker)) { throw "v0.40.1 routing marker missing: $marker" }
+          }
+          if ($routing -notmatch 'Loaded -= Window_LoadedV040' -or $routing -notmatch 'SelfTestButton.Click -= SelfTestV040Button_Click') { throw 'v0.40 handlers are not explicitly detached before successor Show' }
+          if ($routing -notmatch 'Title = "Matawaka Workbench v0.40.1"') { throw 'dynamic v0.40.1 title missing' }
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 8) { throw 'active button count is not 8' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'active checkbox count is not 0' }
+          if ($surface -notmatch 'UpdateCandidateV040Button_Click') { throw 'accepted v0.40 Update Workbench handler is not retained' }
+          Write-Host 'v0.40.1 pre-Show routing + eight-button surface: PASS'
+
+      - name: Verify version-bound acceptance checkpoint publication contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0401AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0401Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0401Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.40\.1' -or $accept -notmatch '"0\.40\.1"') { throw 'v0.40.1 acceptance contract missing' }
+          if ($checkpoint -notmatch 'ExpectedPredecessorCommit = "26e12f75abbba99323190f79693d585790e55bc1"' -or $checkpoint -notmatch 'workbench-v0\.40\.1-accepted') { throw 'v0.40.1 checkpoint contract mismatch' }
+          if ($checkpoint -notmatch 'explicitUiConfirmationRequired: false') { throw 'automatic checkpoint authority is not distinguished from manual confirmation' }
+          if ($checkpoint -notmatch 'v0\.40\.1-source-manifest' -or $checkpoint -notmatch 'build-source-manifest/v0\.40') { throw 'v0.40.1 build-source binding mismatch' }
+          if ($publisher -notmatch 'ExpectedParent = "26e12f75abbba99323190f79693d585790e55bc1"' -or $publisher -notmatch 'workbench-v0\.40\.1-accepted') { throw 'v0.40.1 publisher contract mismatch' }
+          Write-Host 'v0.40.1 acceptance/checkpoint/publication contracts: PASS'
+
+      - name: Verify product diff bounded
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '26e12f75abbba99323190f79693d585790e55bc1'
+          $allowed = @(
+            '.github/workflows/workbench-v0.40.1-activation.yml',
+            'PATCH-v0.40.1.md',
+            'src/Matawaka.Workbench.App/App.xaml',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0401Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0401Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0401.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0401AcceptanceHarness.cs'
+          ) | Sort-Object
+          $actual = @(git diff --name-only $base HEAD) | Sort-Object
+          if (($actual -join "`n") -ne ($allowed -join "`n")) { throw "unexpected v0.40.1 diff:`n$($actual -join "`n")" }
+          Write-Host 'v0.40.1 product diff bounded: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.40.1 package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.40.1.md',
+            'src/Matawaka.Workbench.App/App.xaml',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0401Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0401Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0401.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0401AcceptanceHarness.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.40.1-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.40.1';
+            PredecessorTag='workbench-v0.40-accepted'; PredecessorCommit='26e12f75abbba99323190f79693d585790e55bc1';
+            TargetTag='workbench-v0.40.1-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('source package creates no transition authority by itself','accepted v0.40 bootstrap runtime is not included in payload','Publish and Lifecycle remain separate')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.40.1-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.40.1-source-only.sha256.txt'), "$sha  workbench-v0.40.1-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.40.1 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.40.1-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.40.1-source-only.zip
+            ${{ runner.temp }}/workbench-v0.40.1-source-only.sha256.txt
+          retention-days: 30
