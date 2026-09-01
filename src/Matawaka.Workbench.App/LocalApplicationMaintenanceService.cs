@@ -1,3 +1,4 @@
+using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -113,12 +114,12 @@ public sealed record LocalApplicationUpdateReceipt(
     string Note);
 
 /// <summary>
-/// v0.35 local-application maintenance boundary.
-/// Only apps under <WorkspaceRoot>/Apps/<ApplicationId> are eligible.
-/// The service consumes one local ZIP with exact manifest/payload SHA-256 bindings,
-/// freshly revalidates the app before mutation, applies Add/Replace only, and rolls
-/// back exact bytes on failure. It has no network, process-launch, Git, installer,
-/// registry, service, environment, catalog or Agent Execute capability.
+/// Bounded local-application maintenance. Only already-registered applications
+/// under &lt;WorkspaceRoot&gt;/Apps/&lt;ApplicationId&gt; are eligible. Preview is read-only;
+/// Apply freshly revalidates the exact package/app relation, backs up replacement
+/// bytes, performs Add/Replace only, verifies target bytes/identity, and rolls back
+/// exact predecessor bytes on failure. No network, process launch, Git, installer,
+/// registry, service, environment, catalog or Agent Execute capability exists here.
 /// </summary>
 public sealed class LocalApplicationMaintenanceService
 {
@@ -135,8 +136,16 @@ public sealed class LocalApplicationMaintenanceService
 
     private const long MaxPackageBytes = 512L * 1024L * 1024L;
     private const int MaxPayloadFiles = 2048;
-    private static readonly Regex ApplicationIdRegex = new("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
-    private static readonly Regex Sha256Regex = new("^[0-9a-fA-F]{64}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private const long MaxJsonEntryBytes = 8L * 1024L * 1024L;
+
+    private static readonly Regex ApplicationIdRegex = new(
+        "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex Sha256Regex = new(
+        "^[0-9a-fA-F]{64}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -151,9 +160,10 @@ public sealed class LocalApplicationMaintenanceService
         cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(packagePath) || !File.Exists(packagePath))
             throw new InvalidDataException("Local application update ZIP is missing.");
+
         var packageInfo = new FileInfo(packagePath);
         if (packageInfo.Length <= 0 || packageInfo.Length > MaxPackageBytes)
-            throw new InvalidDataException($"Local application update ZIP size is outside the bounded limit: {packageInfo.Length} bytes.");
+            throw new InvalidDataException($"Local application update ZIP size is outside bounded limits: {packageInfo.Length} bytes.");
 
         var workspace = ResolveWorkspaceRoot(workspaceRoot);
         var appsRoot = Path.GetFullPath(Path.Combine(workspace, AppsDirectoryName));
@@ -163,20 +173,8 @@ public sealed class LocalApplicationMaintenanceService
 
         var packageSha = HashFile(packagePath);
         using var zip = ZipFile.OpenRead(packagePath);
-        var fileEntries = zip.Entries
-            .Where(entry => !string.IsNullOrEmpty(entry.Name))
-            .ToArray();
-        if (fileEntries.Length == 0)
-            throw new InvalidDataException("Local application update ZIP contains no files.");
-
-        var entryMap = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in fileEntries)
-        {
-            var normalized = NormalizeZipEntryName(entry.FullName);
-            if (!entryMap.TryAdd(normalized, entry))
-                throw new InvalidDataException($"Duplicate/case-colliding ZIP entry: {normalized}");
-        }
-        if (!entryMap.TryGetValue(ManifestFileName, out var manifestEntry))
+        var entries = BuildEntryMap(zip);
+        if (!entries.TryGetValue(ManifestFileName, out var manifestEntry))
             throw new InvalidDataException($"Package manifest is missing: {ManifestFileName}");
 
         var manifestBytes = await ReadEntryBytesAsync(manifestEntry, cancellationToken);
@@ -195,6 +193,8 @@ public sealed class LocalApplicationMaintenanceService
         if (!File.Exists(identityPath))
             throw new InvalidDataException($"Managed application identity file is missing: {identityPath}");
         EnsureNoReparsePointBoundary(appRoot, IdentityFileName);
+        EnsurePathIsNotReparsePoint(identityPath, "application identity file");
+
         var currentIdentity = ReadIdentity(identityPath);
         if (!string.Equals(currentIdentity.Schema, IdentitySchema, StringComparison.Ordinal) ||
             !string.Equals(currentIdentity.ApplicationId, applicationId, StringComparison.Ordinal) ||
@@ -202,28 +202,14 @@ public sealed class LocalApplicationMaintenanceService
             throw new InvalidDataException("Managed application identity/version does not match package predecessor contract.");
         var identitySha = HashFile(identityPath);
 
-        var manifestFiles = manifest.Files
-            .OrderBy(file => NormalizeRelativePath(file.Path), StringComparer.Ordinal)
-            .ToArray();
-        if (manifestFiles.Length == 0 || manifestFiles.Length > MaxPayloadFiles)
-            throw new InvalidDataException($"Package payload file count is outside bounded range: {manifestFiles.Length}");
-        var uniquePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in manifestFiles)
-        {
-            var normalized = NormalizeRelativePath(file.Path);
-            if (!uniquePaths.Add(normalized))
-                throw new InvalidDataException($"Duplicate/case-colliding manifest path: {normalized}");
-            RequireSha256(file.Sha256, $"target SHA-256 for {normalized}");
-            if (!string.IsNullOrWhiteSpace(file.CurrentSha256))
-                RequireSha256(file.CurrentSha256!, $"current SHA-256 for {normalized}");
-        }
-        if (!uniquePaths.Contains(IdentityFileName))
+        var manifestFiles = ValidateManifestFiles(manifest.Files);
+        if (!manifestFiles.Any(file => file.Path.Equals(IdentityFileName, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidDataException($"Package must include target {IdentityFileName} identity bytes.");
 
         var expectedEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ManifestFileName };
-        foreach (var path in uniquePaths)
-            expectedEntries.Add(PayloadRoot + path);
-        var actualEntries = entryMap.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in manifestFiles)
+            expectedEntries.Add(PayloadRoot + file.Path);
+        var actualEntries = entries.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (!actualEntries.SetEquals(expectedEntries))
         {
             var extra = actualEntries.Except(expectedEntries, StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.Ordinal).ToArray();
@@ -231,48 +217,47 @@ public sealed class LocalApplicationMaintenanceService
             throw new InvalidDataException($"ZIP entry set differs from exact manifest payload. extra=[{string.Join(',', extra)}]; missing=[{string.Join(',', missing)}]");
         }
 
-        var changes = new List<LocalApplicationUpdateChange>(manifestFiles.Length);
+        var changes = new List<LocalApplicationUpdateChange>(manifestFiles.Count);
         foreach (var file in manifestFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var path = NormalizeRelativePath(file.Path);
-            EnsureNoReparsePointBoundary(appRoot, path);
-            var destination = ResolveApplicationPath(appRoot, path);
+            EnsureNoReparsePointBoundary(appRoot, file.Path);
+            var destination = ResolveApplicationPath(appRoot, file.Path);
+            if (File.Exists(destination))
+                EnsurePathIsNotReparsePoint(destination, $"application file {file.Path}");
             if (Directory.Exists(destination))
-                throw new InvalidDataException($"Manifest file path resolves to an existing directory: {path}");
+                throw new InvalidDataException($"Manifest file path resolves to an existing directory: {file.Path}");
 
-            var payloadEntry = entryMap[PayloadRoot + path];
+            var payloadEntry = entries[PayloadRoot + file.Path];
             var payloadSha = await HashEntryAsync(payloadEntry, cancellationToken);
             if (!string.Equals(payloadSha, file.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException($"Payload SHA-256 mismatch: {path}");
+                throw new InvalidDataException($"Payload SHA-256 mismatch: {file.Path}");
 
             if (File.Exists(destination))
             {
                 if (string.IsNullOrWhiteSpace(file.CurrentSha256))
-                    throw new InvalidDataException($"Existing file requires CurrentSha256 replacement binding: {path}");
+                    throw new InvalidDataException($"Existing file requires CurrentSha256 replacement binding: {file.Path}");
                 var currentSha = HashFile(destination);
                 if (!string.Equals(currentSha, file.CurrentSha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException($"Current application file drifted from package predecessor binding: {path}");
-                changes.Add(new LocalApplicationUpdateChange(path, "Replace", currentSha, payloadSha, payloadEntry.Length));
+                    throw new InvalidDataException($"Current application file drifted from package predecessor binding: {file.Path}");
+                changes.Add(new LocalApplicationUpdateChange(file.Path, "Replace", currentSha, payloadSha, payloadEntry.Length));
             }
             else
             {
                 if (!string.IsNullOrWhiteSpace(file.CurrentSha256))
-                    throw new InvalidDataException($"Missing destination cannot satisfy a replacement CurrentSha256: {path}");
-                changes.Add(new LocalApplicationUpdateChange(path, "Add", null, payloadSha, payloadEntry.Length));
+                    throw new InvalidDataException($"Missing destination cannot satisfy replacement CurrentSha256: {file.Path}");
+                changes.Add(new LocalApplicationUpdateChange(file.Path, "Add", null, payloadSha, payloadEntry.Length));
             }
         }
 
-        var targetIdentityEntry = entryMap[PayloadRoot + IdentityFileName];
-        var targetIdentityBytes = await ReadEntryBytesAsync(targetIdentityEntry, cancellationToken);
+        var targetIdentityBytes = await ReadEntryBytesAsync(entries[PayloadRoot + IdentityFileName], cancellationToken);
         var targetIdentity = JsonSerializer.Deserialize<LocalApplicationIdentity>(targetIdentityBytes, JsonOptions)
             ?? throw new InvalidDataException("Target application identity payload could not be parsed.");
         if (!string.Equals(targetIdentity.Schema, IdentitySchema, StringComparison.Ordinal) ||
             !string.Equals(targetIdentity.ApplicationId, applicationId, StringComparison.Ordinal) ||
             !string.Equals(targetIdentity.Version, manifest.TargetVersion, StringComparison.Ordinal))
-            throw new InvalidDataException("Target identity payload does not match package application/target version.");
+            throw new InvalidDataException("Target identity payload does not match package ApplicationId/TargetVersion.");
 
-        var nonEffects = DefaultNonEffects();
         return new LocalApplicationUpdatePlan(
             PlanSchema,
             Version,
@@ -293,8 +278,8 @@ public sealed class LocalApplicationMaintenanceService
             true,
             true,
             true,
-            nonEffects,
-            "Read-only local-app update preview. READY means only that a later explicit UI confirmation may authorize exact Add/Replace under the fixed managed app root; no mutation, network, launch, installer or Agent Execute authority is created by preview.");
+            DefaultNonEffects(),
+            "Read-only local-app update preview. READY means only that a later explicit UI confirmation may authorize exact Add/Replace under the fixed managed app root; preview creates no mutation/network/launch/installer/Agent Execute authority.");
     }
 
     public async Task<(LocalApplicationUpdateReceipt Receipt, string ArtifactPath)> ApplyAsync(
@@ -304,6 +289,7 @@ public sealed class LocalApplicationMaintenanceService
     {
         if (confirmedPlan is null || !confirmedPlan.ReadyForExplicitApplyAuthority)
             throw new InvalidDataException("A READY local-app update preview is required before apply.");
+
         var fresh = await PreviewAsync(confirmedPlan.PackagePath, workspaceRoot, cancellationToken);
         VerifyEquivalentPlan(confirmedPlan, fresh);
 
@@ -311,6 +297,7 @@ public sealed class LocalApplicationMaintenanceService
         var workbenchRoot = Path.GetFullPath(Path.Combine(workspace, "Workbench"));
         if (!Directory.Exists(workbenchRoot))
             throw new InvalidDataException($"Workbench root is missing: {workbenchRoot}");
+
         var backupRoot = Path.Combine(
             workbenchRoot,
             ".workbench",
@@ -321,45 +308,44 @@ public sealed class LocalApplicationMaintenanceService
 
         var nonEffects = DefaultNonEffects();
         var authority = new LocalApplicationUpdateAuthorityReceipt(
-            AuthoritySchema,
-            "human-operator-at-workbench-ui",
-            "workbench.local-app.apply-bounded-update",
-            confirmedPlan.ApplicationId,
-            confirmedPlan.ApplicationRoot,
-            confirmedPlan.PackageSha256,
-            confirmedPlan.ManifestSha256,
-            "explicit Update local app confirmation after a fresh exact preview",
-            true,
-            true,
-            true,
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            new[]
+            Schema: AuthoritySchema,
+            Subject: "human-operator-at-workbench-ui",
+            Operation: "workbench.local-app.apply-bounded-update",
+            ApplicationId: confirmedPlan.ApplicationId,
+            ApplicationRoot: confirmedPlan.ApplicationRoot,
+            PackageSha256: confirmedPlan.PackageSha256,
+            ManifestSha256: confirmedPlan.ManifestSha256,
+            AuthoritySource: "explicit Update local app confirmation after a fresh exact preview",
+            ExplicitUiConfirmationRequired: true,
+            FreshPreviewRevalidationRequired: true,
+            ExactManagedRootOnly: true,
+            AddReplaceOnly: true,
+            DeleteAllowed: false,
+            NetworkAllowed: false,
+            ProcessLaunchAllowed: false,
+            InstallerExecutionAllowed: false,
+            RegistryMutationAllowed: false,
+            ServiceMutationAllowed: false,
+            EnvironmentMutationAllowed: false,
+            AgentExecuteAllowed: false,
+            AllowedEffects: new[]
             {
                 "backup exact predecessor bytes for Replace paths",
                 "add/replace exact manifest-declared payload files under the fixed managed app root",
                 "verify exact target SHA-256 and target .matawaka-app.json identity/version",
                 "write one Workbench-local update receipt"
             },
-            nonEffects);
+            NonEffects: nonEffects);
 
-        var rollbackRequired = false;
+        var rollbackArmed = false;
         var rollbackPerformed = false;
         try
         {
             BackupReplacements(confirmedPlan, backupRoot);
-            rollbackRequired = true;
-            using var zip = ZipFile.OpenRead(confirmedPlan.PackagePath);
-            var entries = zip.Entries
-                .Where(entry => !string.IsNullOrEmpty(entry.Name))
-                .ToDictionary(entry => NormalizeZipEntryName(entry.FullName), StringComparer.OrdinalIgnoreCase);
+            rollbackArmed = true;
 
+            using var zip = ZipFile.OpenRead(confirmedPlan.PackagePath);
+            var entries = BuildEntryMap(zip);
             foreach (var change in confirmedPlan.Changes
                          .OrderBy(change => change.Path.Equals(IdentityFileName, StringComparison.OrdinalIgnoreCase) ? 1 : 0)
                          .ThenBy(change => change.Path, StringComparer.Ordinal))
@@ -367,17 +353,29 @@ public sealed class LocalApplicationMaintenanceService
                 cancellationToken.ThrowIfCancellationRequested();
                 EnsureNoReparsePointBoundary(confirmedPlan.ApplicationRoot, change.Path);
                 var destination = ResolveApplicationPath(confirmedPlan.ApplicationRoot, change.Path);
-                if (change.Action == "Add" && File.Exists(destination))
-                    throw new InvalidDataException($"Add destination appeared after fresh preview: {change.Path}");
-                if (change.Action == "Replace")
+                if (File.Exists(destination))
+                    EnsurePathIsNotReparsePoint(destination, $"application file {change.Path}");
+
+                if (change.Action == "Add")
+                {
+                    if (File.Exists(destination) || Directory.Exists(destination))
+                        throw new InvalidDataException($"Add destination appeared after fresh preview: {change.Path}");
+                }
+                else if (change.Action == "Replace")
                 {
                     if (!File.Exists(destination) ||
                         !string.Equals(HashFile(destination), change.CurrentSha256, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException($"Replacement source changed after fresh preview: {change.Path}");
                 }
+                else
+                {
+                    throw new InvalidDataException($"Unsupported local-app mutation action: {change.Action}");
+                }
 
                 var entry = entries[PayloadRoot + change.Path];
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                EnsureNoReparsePointBoundary(confirmedPlan.ApplicationRoot, change.Path);
+
                 var temp = destination + ".matawaka-app-update-" + Guid.NewGuid().ToString("N") + ".tmp";
                 try
                 {
@@ -393,8 +391,7 @@ public sealed class LocalApplicationMaintenanceService
             }
 
             VerifyTargetState(confirmedPlan);
-            var currentIdentitySha = HashFile(confirmedPlan.IdentityPath);
-            rollbackRequired = false;
+            rollbackArmed = false;
 
             var receipt = new LocalApplicationUpdateReceipt(
                 ReceiptSchema,
@@ -407,7 +404,7 @@ public sealed class LocalApplicationMaintenanceService
                 confirmedPlan.PackageSha256,
                 confirmedPlan.ManifestSha256,
                 confirmedPlan.IdentitySha256,
-                currentIdentitySha,
+                HashFile(confirmedPlan.IdentityPath),
                 confirmedPlan.Changes,
                 backupRoot,
                 true,
@@ -420,13 +417,14 @@ public sealed class LocalApplicationMaintenanceService
                 nonEffects,
                 "LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED",
                 "Exact local package bytes were applied only under the fixed managed application root after fresh revalidation. The application was not launched; update success creates no network, installer, registry, service, Agent Execute or general filesystem authority.");
+
             var artifactPath = await WriteReceiptAsync(workbenchRoot, receipt, cancellationToken);
             return (receipt, artifactPath);
         }
         catch (Exception original)
         {
             Exception? rollbackFailure = null;
-            if (rollbackRequired)
+            if (rollbackArmed)
             {
                 try
                 {
@@ -455,6 +453,7 @@ public sealed class LocalApplicationMaintenanceService
         var badIdRefused = Refuses(() => ValidateApplicationId("../app"));
         var safePath = NormalizeRelativePath("bin/app.exe") == "bin/app.exe";
         var identityPath = NormalizeRelativePath(IdentityFileName) == IdentityFileName;
+
         return new[]
         {
             ("local-app-fixed-managed-root", true, "<WorkspaceRoot>/Apps/<ApplicationId>", "no arbitrary absolute target root"),
@@ -472,19 +471,56 @@ public sealed class LocalApplicationMaintenanceService
         };
     }
 
+    private static Dictionary<string, ZipArchiveEntry> BuildEntryMap(ZipArchive zip)
+    {
+        var map = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in zip.Entries.Where(entry => !string.IsNullOrEmpty(entry.Name)))
+        {
+            var normalized = NormalizeZipEntryName(entry.FullName);
+            if (!map.TryAdd(normalized, entry))
+                throw new InvalidDataException($"Duplicate/case-colliding ZIP entry: {normalized}");
+        }
+        if (map.Count == 0)
+            throw new InvalidDataException("Local application update ZIP contains no files.");
+        return map;
+    }
+
+    private static IReadOnlyList<LocalApplicationUpdateFile> ValidateManifestFiles(
+        IReadOnlyList<LocalApplicationUpdateFile>? files)
+    {
+        if (files is null || files.Count == 0 || files.Count > MaxPayloadFiles)
+            throw new InvalidDataException($"Package payload file count is outside bounded range: {files?.Count ?? 0}");
+
+        var normalized = new List<LocalApplicationUpdateFile>(files.Count);
+        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+        {
+            var path = NormalizeRelativePath(file.Path);
+            if (!unique.Add(path))
+                throw new InvalidDataException($"Duplicate/case-colliding manifest path: {path}");
+            RequireSha256(file.Sha256, $"target SHA-256 for {path}");
+            if (!string.IsNullOrWhiteSpace(file.CurrentSha256))
+                RequireSha256(file.CurrentSha256!, $"current SHA-256 for {path}");
+            normalized.Add(new LocalApplicationUpdateFile(path, file.CurrentSha256?.Trim().ToLowerInvariant(), file.Sha256.Trim().ToLowerInvariant()));
+        }
+        return normalized.OrderBy(file => file.Path, StringComparer.Ordinal).ToArray();
+    }
+
     private static void ValidateManifestEnvelope(LocalApplicationUpdateManifest manifest)
     {
         if (!string.Equals(manifest.Schema, PackageSchema, StringComparison.Ordinal) ||
             !string.Equals(manifest.PackageVersion, "1", StringComparison.Ordinal))
             throw new InvalidDataException("Unsupported local application update package schema/version.");
+
         ValidateApplicationId(manifest.ApplicationId);
-        if (string.IsNullOrWhiteSpace(manifest.ExpectedCurrentVersion) || string.IsNullOrWhiteSpace(manifest.TargetVersion) ||
+        if (string.IsNullOrWhiteSpace(manifest.ExpectedCurrentVersion) ||
+            string.IsNullOrWhiteSpace(manifest.TargetVersion) ||
             string.Equals(manifest.ExpectedCurrentVersion, manifest.TargetVersion, StringComparison.Ordinal))
             throw new InvalidDataException("Package current/target versions are missing or identical.");
+
         if (!string.Equals(manifest.PayloadRoot, PayloadRoot, StringComparison.Ordinal))
             throw new InvalidDataException($"Package payload root must be exactly {PayloadRoot}");
-        if (manifest.Files is null)
-            throw new InvalidDataException("Package Files array is required.");
+
         if (manifest.NetworkAccessRequested || manifest.ProcessLaunchRequested || manifest.InstallerScriptExecutionRequested ||
             manifest.RegistryMutationRequested || manifest.ServiceMutationRequested || manifest.EnvironmentMutationRequested ||
             manifest.AgentExecuteRequested)
@@ -502,10 +538,12 @@ public sealed class LocalApplicationMaintenanceService
             !string.Equals(expected.CurrentVersion, observed.CurrentVersion, StringComparison.Ordinal) ||
             !string.Equals(expected.TargetVersion, observed.TargetVersion, StringComparison.Ordinal))
             throw new InvalidDataException("Fresh local-app preview identity differs from the confirmed preview.");
+
         var a = expected.Changes.OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
         var b = observed.Changes.OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
         if (a.Length != b.Length)
             throw new InvalidDataException("Fresh local-app preview file count changed.");
+
         for (var i = 0; i < a.Length; i++)
         {
             if (!string.Equals(a[i].Path, b[i].Path, StringComparison.Ordinal) ||
@@ -519,11 +557,14 @@ public sealed class LocalApplicationMaintenanceService
 
     private static void BackupReplacements(LocalApplicationUpdatePlan plan, string backupRoot)
     {
-        foreach (var change in plan.Changes.Where(x => x.Action == "Replace"))
+        foreach (var change in plan.Changes.Where(change => change.Action == "Replace"))
         {
+            EnsureNoReparsePointBoundary(plan.ApplicationRoot, change.Path);
             var source = ResolveApplicationPath(plan.ApplicationRoot, change.Path);
+            EnsurePathIsNotReparsePoint(source, $"application file {change.Path}");
             if (!File.Exists(source) || !string.Equals(HashFile(source), change.CurrentSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Replacement source drifted before backup: {change.Path}");
+
             var backup = ResolveBoundedPath(backupRoot, change.Path, "backup");
             Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
             File.Copy(source, backup, overwrite: false);
@@ -536,18 +577,23 @@ public sealed class LocalApplicationMaintenanceService
     {
         foreach (var change in plan.Changes.Reverse())
         {
+            EnsureNoReparsePointBoundary(plan.ApplicationRoot, change.Path);
             var destination = ResolveApplicationPath(plan.ApplicationRoot, change.Path);
             if (change.Action == "Add")
             {
-                if (File.Exists(destination)) File.Delete(destination);
+                if (File.Exists(destination))
+                {
+                    EnsurePathIsNotReparsePoint(destination, $"rollback add path {change.Path}");
+                    File.Delete(destination);
+                }
+                continue;
             }
-            else
-            {
-                var backup = ResolveBoundedPath(backupRoot, change.Path, "backup");
-                if (!File.Exists(backup)) throw new InvalidDataException($"Rollback backup missing: {change.Path}");
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                File.Copy(backup, destination, overwrite: true);
-            }
+
+            var backup = ResolveBoundedPath(backupRoot, change.Path, "backup");
+            if (!File.Exists(backup))
+                throw new InvalidDataException($"Rollback backup missing: {change.Path}");
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(backup, destination, overwrite: true);
         }
     }
 
@@ -555,10 +601,15 @@ public sealed class LocalApplicationMaintenanceService
     {
         foreach (var change in plan.Changes)
         {
+            EnsureNoReparsePointBoundary(plan.ApplicationRoot, change.Path);
             var destination = ResolveApplicationPath(plan.ApplicationRoot, change.Path);
-            if (!File.Exists(destination) || !string.Equals(HashFile(destination), change.TargetSha256, StringComparison.OrdinalIgnoreCase))
+            if (!File.Exists(destination))
+                throw new InvalidDataException($"Target application file is missing: {change.Path}");
+            EnsurePathIsNotReparsePoint(destination, $"target application file {change.Path}");
+            if (!string.Equals(HashFile(destination), change.TargetSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Target application file verification failed: {change.Path}");
         }
+
         var identity = ReadIdentity(plan.IdentityPath);
         if (!string.Equals(identity.Schema, IdentitySchema, StringComparison.Ordinal) ||
             !string.Equals(identity.ApplicationId, plan.ApplicationId, StringComparison.Ordinal) ||
@@ -573,14 +624,18 @@ public sealed class LocalApplicationMaintenanceService
             var destination = ResolveApplicationPath(plan.ApplicationRoot, change.Path);
             if (change.Action == "Add")
             {
-                if (File.Exists(destination)) throw new InvalidDataException($"Rollback left added path behind: {change.Path}");
+                if (File.Exists(destination))
+                    throw new InvalidDataException($"Rollback left added path behind: {change.Path}");
+                continue;
             }
-            else if (!File.Exists(destination) ||
-                     !string.Equals(HashFile(destination), change.CurrentSha256, StringComparison.OrdinalIgnoreCase))
-            {
+
+            if (!File.Exists(destination))
+                throw new InvalidDataException($"Rollback replacement path missing: {change.Path}");
+            EnsurePathIsNotReparsePoint(destination, $"rollback application file {change.Path}");
+            if (!string.Equals(HashFile(destination), change.CurrentSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Rollback predecessor digest verification failed: {change.Path}");
-            }
         }
+
         if (!string.Equals(HashFile(plan.IdentityPath), plan.IdentitySha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Rollback did not restore exact predecessor identity bytes.");
         var identity = ReadIdentity(plan.IdentityPath);
@@ -589,7 +644,10 @@ public sealed class LocalApplicationMaintenanceService
             throw new InvalidDataException("Rollback predecessor identity/version verification failed.");
     }
 
-    private static async Task<string> WriteReceiptAsync(string workbenchRoot, LocalApplicationUpdateReceipt receipt, CancellationToken cancellationToken)
+    private static async Task<string> WriteReceiptAsync(
+        string workbenchRoot,
+        LocalApplicationUpdateReceipt receipt,
+        CancellationToken cancellationToken)
     {
         var directory = Path.Combine(workbenchRoot, "artifacts", "local-app-updates");
         Directory.CreateDirectory(directory);
@@ -604,16 +662,19 @@ public sealed class LocalApplicationMaintenanceService
 
     private static string ResolveWorkspaceRoot(string workspaceRoot)
     {
-        if (string.IsNullOrWhiteSpace(workspaceRoot)) throw new InvalidDataException("Workspace root is required.");
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            throw new InvalidDataException("Workspace root is required.");
         var root = Path.GetFullPath(workspaceRoot.Trim());
-        if (!Directory.Exists(root)) throw new InvalidDataException($"Workspace root does not exist: {root}");
+        if (!Directory.Exists(root))
+            throw new InvalidDataException($"Workspace root does not exist: {root}");
         return root;
     }
 
     private static string ResolveApplicationRoot(string appsRoot, string applicationId)
     {
         ValidateApplicationId(applicationId);
-        var rootPrefix = Path.GetFullPath(appsRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var rootPrefix = Path.GetFullPath(appsRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var candidate = Path.GetFullPath(Path.Combine(appsRoot, applicationId));
         if (!candidate.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Application root escapes the fixed managed Apps root.");
@@ -625,8 +686,11 @@ public sealed class LocalApplicationMaintenanceService
 
     private static string ResolveBoundedPath(string rootPath, string relativePath, string label)
     {
-        var root = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        var destination = Path.GetFullPath(Path.Combine(rootPath, NormalizeRelativePath(relativePath).Replace('/', Path.DirectorySeparatorChar)));
+        var root = Path.GetFullPath(rootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var destination = Path.GetFullPath(Path.Combine(
+            rootPath,
+            NormalizeRelativePath(relativePath).Replace('/', Path.DirectorySeparatorChar)));
         if (!destination.StartsWith(root, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Path escapes fixed {label} root: {relativePath}");
         return destination;
@@ -634,7 +698,8 @@ public sealed class LocalApplicationMaintenanceService
 
     public static string NormalizeRelativePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path)) throw new InvalidDataException("Empty local-app update path.");
+        if (string.IsNullOrWhiteSpace(path))
+            throw new InvalidDataException("Empty local-app update path.");
         var normalized = path.Replace('\\', '/').Trim('/');
         var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (normalized.Length == 0 || normalized.Contains(':') || normalized.Contains('\0') ||
@@ -645,12 +710,13 @@ public sealed class LocalApplicationMaintenanceService
 
     private static string NormalizeZipEntryName(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new InvalidDataException("Empty ZIP entry name.");
         var normalized = path.Replace('\\', '/').Trim('/');
-        if (string.IsNullOrWhiteSpace(normalized) || normalized.Contains(':') || normalized.Contains('\0'))
-            throw new InvalidDataException($"Unsafe ZIP entry name: {path}");
         var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Any(part => part is "." or ".."))
-            throw new InvalidDataException($"Unsafe ZIP entry traversal: {path}");
+        if (normalized.Length == 0 || normalized.Contains(':') || normalized.Contains('\0') ||
+            Path.IsPathRooted(normalized) || parts.Any(part => part is "." or ".."))
+            throw new InvalidDataException($"Unsafe ZIP entry name: {path}");
         return string.Join('/', parts);
     }
 
@@ -703,18 +769,17 @@ public sealed class LocalApplicationMaintenanceService
     private static async Task<string> HashEntryAsync(ZipArchiveEntry entry, CancellationToken cancellationToken)
     {
         await using var stream = entry.Open();
-        using var sha = SHA256.Create();
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[81920];
         int read;
         while ((read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
-            sha.TransformBlock(buffer, 0, read, null, 0);
-        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-        return Convert.ToHexString(sha.Hash!).ToLowerInvariant();
+            hash.AppendData(buffer, 0, read);
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
 
     private static async Task<byte[]> ReadEntryBytesAsync(ZipArchiveEntry entry, CancellationToken cancellationToken)
     {
-        if (entry.Length > 8L * 1024L * 1024L)
+        if (entry.Length > MaxJsonEntryBytes)
             throw new InvalidDataException($"Manifest/identity JSON entry is unexpectedly large: {entry.FullName}");
         await using var source = entry.Open();
         using var memory = new MemoryStream((int)Math.Min(entry.Length, int.MaxValue));
@@ -722,18 +787,34 @@ public sealed class LocalApplicationMaintenanceService
         return memory.ToArray();
     }
 
-    private static async Task CopyEntryToFileAsync(ZipArchiveEntry entry, string path, CancellationToken cancellationToken)
+    private static async Task CopyEntryToFileAsync(
+        ZipArchiveEntry entry,
+        string path,
+        CancellationToken cancellationToken)
     {
         await using var source = entry.Open();
-        await using var destination = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+        await using var destination = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            81920,
+            useAsync: true);
         await source.CopyToAsync(destination, cancellationToken);
         await destination.FlushAsync(cancellationToken);
     }
 
     private static bool Refuses(Action action)
     {
-        try { action(); return false; }
-        catch (InvalidDataException) { return true; }
+        try
+        {
+            action();
+            return false;
+        }
+        catch (InvalidDataException)
+        {
+            return true;
+        }
     }
 
     private static string[] DefaultNonEffects()
