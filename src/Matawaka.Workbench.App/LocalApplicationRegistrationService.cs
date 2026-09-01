@@ -6,10 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace Matawaka.Workbench.App;
 
-public sealed record LocalApplicationRegistrationFile(
-    string Path,
-    string Sha256,
-    long Bytes);
+public sealed record LocalApplicationRegistrationFile(string Path, string Sha256, long Bytes);
 
 public sealed record LocalApplicationRegistrationPlan(
     string Schema,
@@ -81,10 +78,9 @@ public sealed record LocalApplicationRegistrationReceipt(
     string Note);
 
 /// <summary>
-/// Registers one existing direct child of <WorkspaceRoot>/Apps by creating only
-/// .matawaka-app.json after a fresh byte-for-byte inventory revalidation.
-/// It does not import/copy/move/update/launch the application and creates no
-/// vendor-version claim; the baseline token is derived from observed bytes.
+/// Identity-only adoption of one existing direct child of Workspace/Apps.
+/// Registration creates exactly one sidecar and never imports, copies, moves,
+/// updates or launches application content.
 /// </summary>
 public sealed class LocalApplicationRegistrationService
 {
@@ -98,7 +94,7 @@ public sealed class LocalApplicationRegistrationService
 
     private const int MaxFiles = 4096;
     private const long MaxTotalBytes = 2L * 1024L * 1024L * 1024L;
-    private static readonly Regex ApplicationIdRegex = new(
+    private static readonly Regex AppIdRegex = new(
         "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -113,42 +109,30 @@ public sealed class LocalApplicationRegistrationService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var workspace = ResolveWorkspaceRoot(workspaceRoot);
-        var appsRoot = Path.GetFullPath(Path.Combine(workspace, AppsDirectoryName));
-        if (!Directory.Exists(appsRoot))
-            throw new InvalidDataException($"Managed Apps root is missing: {appsRoot}");
-        EnsureNotReparse(appsRoot, "managed Apps root");
+        var workspace = RequireDirectory(workspaceRoot, "Workspace root");
+        var appsRoot = RequireDirectory(Path.Combine(workspace, AppsDirectoryName), "Managed Apps root");
+        RejectReparse(appsRoot, "Managed Apps root");
 
-        if (string.IsNullOrWhiteSpace(selectedApplicationRoot))
-            throw new InvalidDataException("Application directory selection is required.");
-        var appRoot = Path.GetFullPath(selectedApplicationRoot.Trim());
-        if (!Directory.Exists(appRoot))
-            throw new InvalidDataException($"Selected application directory is missing: {appRoot}");
-        EnsureNotReparse(appRoot, "selected application root");
-
+        var appRoot = RequireDirectory(selectedApplicationRoot, "Selected application root");
+        RejectReparse(appRoot, "Selected application root");
         var parent = Directory.GetParent(appRoot)?.FullName;
-        if (string.IsNullOrWhiteSpace(parent) ||
-            !string.Equals(Path.GetFullPath(parent), appsRoot, StringComparison.OrdinalIgnoreCase))
+        if (parent is null || !Path.GetFullPath(parent).Equals(Path.GetFullPath(appsRoot), StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Only a direct child of <WorkspaceRoot>/Apps may be registered.");
 
         var appId = Path.GetFileName(appRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (!ApplicationIdRegex.IsMatch(appId))
-            throw new InvalidDataException($"Application folder name is not a safe ApplicationId token: {appId}");
+        if (!AppIdRegex.IsMatch(appId))
+            throw new InvalidDataException($"Application directory name is not a safe ApplicationId token: {appId}");
 
         var identityPath = Path.Combine(appRoot, IdentityFileName);
         if (File.Exists(identityPath) || Directory.Exists(identityPath))
-            throw new InvalidDataException($"Application is already registered or identity path is occupied: {identityPath}");
+            throw new InvalidDataException("Selected application is already registered or the identity path is occupied.");
 
         var files = Inventory(appRoot, cancellationToken);
         if (files.Count == 0)
             throw new InvalidDataException("Refusing to register an empty application directory.");
         var totalBytes = files.Sum(item => item.Bytes);
-        if (files.Count > MaxFiles || totalBytes > MaxTotalBytes)
-            throw new InvalidDataException($"Application inventory exceeds registration bounds. files={files.Count}; bytes={totalBytes}");
-
-        var treeSha = ComputeTreeDigest(files);
-        var baseline = "baseline-" + treeSha[..16];
-        var identity = new LocalApplicationIdentity(IdentitySchema, appId, baseline);
+        var tree = ComputeTreeDigest(files);
+        var identity = new LocalApplicationIdentity(IdentitySchema, appId, "baseline-" + tree[..16]);
         var identityBytes = SerializeIdentity(identity);
         var nonEffects = DefaultNonEffects();
 
@@ -161,7 +145,7 @@ public sealed class LocalApplicationRegistrationService
             identityPath,
             files.Count,
             totalBytes,
-            treeSha,
+            tree,
             identity,
             HashBytes(identityBytes),
             files,
@@ -171,7 +155,7 @@ public sealed class LocalApplicationRegistrationService
             true,
             true,
             nonEffects,
-            "Read-only registration preview. READY authorizes nothing by itself. Proposed baseline version is derived from observed application bytes and is not a vendor/upstream version claim."));
+            "READY means only that a later explicit confirmation may create the exact identity sidecar. baseline-* is a deterministic observed-byte baseline, not a vendor version claim."));
     }
 
     public async Task<(LocalApplicationRegistrationReceipt Receipt, string ArtifactPath)> RegisterAsync(
@@ -183,11 +167,11 @@ public sealed class LocalApplicationRegistrationService
             throw new InvalidDataException("A READY registration preview is required.");
 
         var fresh = await PreviewAsync(confirmedPlan.ApplicationRoot, workspaceRoot, cancellationToken);
-        VerifyEquivalent(confirmedPlan, fresh);
-
+        RequireEquivalent(confirmedPlan, fresh);
         var identityBytes = SerializeIdentity(fresh.ProposedIdentity);
-        if (!HashBytes(identityBytes).Equals(fresh.ProposedIdentitySha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Proposed identity digest drifted after fresh preview.");
+        var identitySha = HashBytes(identityBytes);
+        if (!identitySha.Equals(fresh.ProposedIdentitySha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Proposed identity bytes drifted after fresh preview.");
 
         var nonEffects = DefaultNonEffects();
         var authority = new LocalApplicationRegistrationAuthorityReceipt(
@@ -216,43 +200,43 @@ public sealed class LocalApplicationRegistrationService
             AllowedEffects: new[]
             {
                 "atomically create exact <AppRoot>/.matawaka-app.json when absent",
-                "verify the pre-existing application inventory/tree digest remains unchanged",
+                "verify all pre-existing application bytes remain at the confirmed tree digest",
                 "write one Workbench-local registration receipt"
             },
             NonEffects: nonEffects);
 
-        var identityCreated = false;
+        var created = false;
         string? receiptPath = null;
         try
         {
-            EnsureNoReparseBoundary(fresh.ApplicationRoot);
             if (File.Exists(fresh.IdentityPath) || Directory.Exists(fresh.IdentityPath))
                 throw new InvalidDataException("Identity path appeared after fresh preview.");
 
-            var tempIdentity = fresh.IdentityPath + ".matawaka-register-" + Guid.NewGuid().ToString("N") + ".tmp";
+            var temp = fresh.IdentityPath + ".matawaka-register-" + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                await File.WriteAllBytesAsync(tempIdentity, identityBytes, cancellationToken);
-                if (!HashFile(tempIdentity).Equals(fresh.ProposedIdentitySha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Temporary identity bytes do not match the preview digest.");
-                File.Move(tempIdentity, fresh.IdentityPath, overwrite: false);
-                identityCreated = true;
+                await File.WriteAllBytesAsync(temp, identityBytes, cancellationToken);
+                RejectReparse(temp, "temporary identity file");
+                if (!HashFile(temp).Equals(identitySha, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Temporary identity digest mismatch.");
+                File.Move(temp, fresh.IdentityPath, overwrite: false);
+                created = true;
             }
             finally
             {
-                if (File.Exists(tempIdentity)) File.Delete(tempIdentity);
+                if (File.Exists(temp)) File.Delete(temp);
             }
 
+            RejectReparse(fresh.IdentityPath, "application identity file");
             var observedIdentity = JsonSerializer.Deserialize<LocalApplicationIdentity>(
                 await File.ReadAllBytesAsync(fresh.IdentityPath, cancellationToken), JsonOptions)
                 ?? throw new InvalidDataException("Created identity could not be parsed.");
             if (!Equals(observedIdentity, fresh.ProposedIdentity) ||
-                !HashFile(fresh.IdentityPath).Equals(fresh.ProposedIdentitySha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Created identity does not exactly match the confirmed registration preview.");
+                !HashFile(fresh.IdentityPath).Equals(identitySha, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Created identity does not equal confirmed bytes/fields.");
 
-            var postFiles = Inventory(fresh.ApplicationRoot, cancellationToken);
-            if (!SameFiles(fresh.Files, postFiles) ||
-                !ComputeTreeDigest(postFiles).Equals(fresh.TreeSha256, StringComparison.OrdinalIgnoreCase))
+            var after = Inventory(fresh.ApplicationRoot, cancellationToken);
+            if (!SameFiles(fresh.Files, after) || !ComputeTreeDigest(after).Equals(fresh.TreeSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("A pre-existing application file changed during registration.");
 
             var receipt = new LocalApplicationRegistrationReceipt(
@@ -266,7 +250,7 @@ public sealed class LocalApplicationRegistrationService
                 fresh.TotalBytes,
                 fresh.Files,
                 fresh.ProposedIdentity,
-                fresh.ProposedIdentitySha256,
+                identitySha,
                 true,
                 true,
                 false,
@@ -275,44 +259,38 @@ public sealed class LocalApplicationRegistrationService
                 authority,
                 nonEffects,
                 "LOCAL_APPLICATION_REGISTERED_UPDATE_AUTHORITY_NOT_CREATED",
-                "Registration created only the Workbench-local app identity sidecar. baseline-* is an observed-byte baseline, not a vendor version claim. Update and launch remain separate later decisions.");
+                "Only .matawaka-app.json was created. baseline-* identifies the observed byte baseline and is not an upstream/vendor version assertion. Update and launch remain separate later decisions.");
 
             receiptPath = await WriteReceiptAsync(workspaceRoot, receipt, cancellationToken);
             return (receipt, receiptPath);
         }
         catch
         {
-            if (identityCreated && File.Exists(fresh.IdentityPath))
-                File.Delete(fresh.IdentityPath);
-            if (receiptPath is not null && File.Exists(receiptPath))
-                File.Delete(receiptPath);
-
-            var rollbackFiles = Inventory(fresh.ApplicationRoot, CancellationToken.None);
-            if (!SameFiles(fresh.Files, rollbackFiles) ||
-                !ComputeTreeDigest(rollbackFiles).Equals(fresh.TreeSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Registration failed and pre-existing application bytes no longer match the confirmed baseline.");
+            if (created && File.Exists(fresh.IdentityPath)) File.Delete(fresh.IdentityPath);
+            if (receiptPath is not null && File.Exists(receiptPath)) File.Delete(receiptPath);
+            var rollback = Inventory(fresh.ApplicationRoot, CancellationToken.None);
+            if (!SameFiles(fresh.Files, rollback) || !ComputeTreeDigest(rollback).Equals(fresh.TreeSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Registration failed and the original application byte baseline was not restored.");
             throw;
         }
     }
 
     public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunOfflineContractChecks()
     {
-        var safe = ApplicationIdRegex.IsMatch("demo.app_1-test");
-        var unsafeId = !ApplicationIdRegex.IsMatch("../outside");
-        var fixtureFiles = new[]
+        var fixture = new[]
         {
             new LocalApplicationRegistrationFile("a.txt", new string('a', 64), 2),
             new LocalApplicationRegistrationFile("sub/b.bin", new string('b', 64), 3)
         };
-        var digestA = ComputeTreeDigest(fixtureFiles);
-        var digestB = ComputeTreeDigest(fixtureFiles.Reverse().ToArray());
+        var digest1 = ComputeTreeDigest(fixture);
+        var digest2 = ComputeTreeDigest(fixture.Reverse());
         return new[]
         {
-            ("registration-safe-app-id", safe, safe.ToString(), "true"),
-            ("registration-traversal-app-id-refused", unsafeId, unsafeId.ToString(), "true"),
-            ("registration-tree-digest-order-stable", digestA == digestB, digestA, digestB),
-            ("registration-baseline-token-bounded", ("baseline-" + digestA[..16]).Length == 25, "baseline-" + digestA[..16], "baseline-<16hex>"),
-            ("registration-identity-only-contract", true, "copy=false; move=false; delete=false; replace=false; launch=false; network=false", "identity create only")
+            ("registration-safe-app-id", AppIdRegex.IsMatch("demo.app_1-test"), "demo.app_1-test", "safe token"),
+            ("registration-traversal-app-id-refused", !AppIdRegex.IsMatch("../outside"), "../outside", "refused"),
+            ("registration-tree-digest-order-stable", digest1 == digest2, digest1, digest2),
+            ("registration-baseline-token-length", ("baseline-" + digest1[..16]).Length == 25, "baseline-" + digest1[..16], "25 chars"),
+            ("registration-identity-only-contract", true, "copy=false;move=false;delete=false;replace=false;launch=false;network=false", "identity create only")
         };
     }
 
@@ -321,141 +299,104 @@ public sealed class LocalApplicationRegistrationService
         LocalApplicationRegistrationReceipt receipt,
         CancellationToken cancellationToken)
     {
-        var workspace = ResolveWorkspaceRoot(workspaceRoot);
-        var workbenchRoot = Path.GetFullPath(Path.Combine(workspace, "Workbench"));
-        if (!Directory.Exists(workbenchRoot))
-            throw new InvalidDataException($"Workbench root is missing: {workbenchRoot}");
+        var workspace = RequireDirectory(workspaceRoot, "Workspace root");
+        var workbenchRoot = RequireDirectory(Path.Combine(workspace, "Workbench"), "Workbench root");
         var directory = Path.Combine(workbenchRoot, "artifacts", "local-app-registration");
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"local-app-registration-{receipt.ApplicationId}-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
-        await File.WriteAllTextAsync(
-            path,
-            JsonSerializer.Serialize(receipt, JsonOptions),
-            new UTF8Encoding(false),
-            cancellationToken);
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(receipt, JsonOptions), new UTF8Encoding(false), cancellationToken);
         return path;
     }
 
-    private static List<LocalApplicationRegistrationFile> Inventory(
-        string appRoot,
-        CancellationToken cancellationToken)
+    private static List<LocalApplicationRegistrationFile> Inventory(string appRoot, CancellationToken cancellationToken)
     {
-        EnsureNoReparseBoundary(appRoot);
+        RejectReparse(appRoot, "application root");
         var files = new List<LocalApplicationRegistrationFile>();
         var stack = new Stack<string>();
         stack.Push(appRoot);
-        long totalBytes = 0;
+        long total = 0;
 
         while (stack.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var current = stack.Pop();
-            EnsureNotReparse(current, "application directory");
+            RejectReparse(current, "application directory");
 
             foreach (var directory in Directory.EnumerateDirectories(current).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             {
-                EnsureNotReparse(directory, "application subdirectory");
+                RejectReparse(directory, "application subdirectory");
                 stack.Push(directory);
             }
-
             foreach (var file in Directory.EnumerateFiles(current).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                EnsureNotReparse(file, "application file");
-                var relative = NormalizeRelativePath(Path.GetRelativePath(appRoot, file));
-                if (relative.Equals(IdentityFileName, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var info = new FileInfo(file);
-                totalBytes += info.Length;
-                if (files.Count + 1 > MaxFiles || totalBytes > MaxTotalBytes)
+                RejectReparse(file, "application file");
+                var relative = NormalizeRelative(Path.GetRelativePath(appRoot, file));
+                if (relative.Equals(IdentityFileName, StringComparison.OrdinalIgnoreCase)) continue;
+                var size = new FileInfo(file).Length;
+                total += size;
+                if (files.Count + 1 > MaxFiles || total > MaxTotalBytes)
                     throw new InvalidDataException($"Application inventory exceeds registration bounds. files>{MaxFiles} or bytes>{MaxTotalBytes}");
-                files.Add(new LocalApplicationRegistrationFile(relative, HashFile(file), info.Length));
+                files.Add(new LocalApplicationRegistrationFile(relative, HashFile(file), size));
             }
         }
-
         return files.OrderBy(item => item.Path, StringComparer.Ordinal).ToList();
     }
 
     public static string ComputeTreeDigest(IEnumerable<LocalApplicationRegistrationFile> files)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (var item in files.OrderBy(x => x.Path, StringComparer.Ordinal))
-        {
-            var line = $"{item.Path}\0{item.Sha256.ToLowerInvariant()}\0{item.Bytes}\n";
-            hash.AppendData(Encoding.UTF8.GetBytes(line));
-        }
+        foreach (var item in files.OrderBy(item => item.Path, StringComparer.Ordinal))
+            hash.AppendData(Encoding.UTF8.GetBytes($"{item.Path}\0{item.Sha256.ToLowerInvariant()}\0{item.Bytes}\n"));
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
 
-    private static void VerifyEquivalent(
-        LocalApplicationRegistrationPlan confirmed,
-        LocalApplicationRegistrationPlan fresh)
+    private static void RequireEquivalent(LocalApplicationRegistrationPlan confirmed, LocalApplicationRegistrationPlan fresh)
     {
-        if (!string.Equals(confirmed.ApplicationId, fresh.ApplicationId, StringComparison.Ordinal) ||
-            !string.Equals(Path.GetFullPath(confirmed.ApplicationRoot), Path.GetFullPath(fresh.ApplicationRoot), StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(confirmed.TreeSha256, fresh.TreeSha256, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(confirmed.ProposedIdentitySha256, fresh.ProposedIdentitySha256, StringComparison.OrdinalIgnoreCase) ||
+        if (!confirmed.ApplicationId.Equals(fresh.ApplicationId, StringComparison.Ordinal) ||
+            !Path.GetFullPath(confirmed.ApplicationRoot).Equals(Path.GetFullPath(fresh.ApplicationRoot), StringComparison.OrdinalIgnoreCase) ||
+            !confirmed.TreeSha256.Equals(fresh.TreeSha256, StringComparison.OrdinalIgnoreCase) ||
+            !confirmed.ProposedIdentitySha256.Equals(fresh.ProposedIdentitySha256, StringComparison.OrdinalIgnoreCase) ||
             !Equals(confirmed.ProposedIdentity, fresh.ProposedIdentity) ||
             !SameFiles(confirmed.Files, fresh.Files))
-            throw new InvalidDataException("Application registration state changed after preview; explicit confirmation is stale.");
+            throw new InvalidDataException("Registration preview is stale; application state changed before confirmation.");
     }
 
-    private static bool SameFiles(
-        IReadOnlyList<LocalApplicationRegistrationFile> left,
-        IReadOnlyList<LocalApplicationRegistrationFile> right)
+    private static bool SameFiles(IReadOnlyList<LocalApplicationRegistrationFile> left, IReadOnlyList<LocalApplicationRegistrationFile> right)
     {
         if (left.Count != right.Count) return false;
         var a = left.OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
         var b = right.OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
-        for (var i = 0; i < a.Length; i++)
-        {
-            if (!string.Equals(a[i].Path, b[i].Path, StringComparison.Ordinal) ||
-                !string.Equals(a[i].Sha256, b[i].Sha256, StringComparison.OrdinalIgnoreCase) ||
-                a[i].Bytes != b[i].Bytes)
-                return false;
-        }
-        return true;
+        return a.Zip(b).All(pair =>
+            pair.First.Path.Equals(pair.Second.Path, StringComparison.Ordinal) &&
+            pair.First.Sha256.Equals(pair.Second.Sha256, StringComparison.OrdinalIgnoreCase) &&
+            pair.First.Bytes == pair.Second.Bytes);
     }
 
     private static byte[] SerializeIdentity(LocalApplicationIdentity identity)
         => JsonSerializer.SerializeToUtf8Bytes(identity, JsonOptions);
 
-    private static string NormalizeRelativePath(string path)
+    private static string NormalizeRelative(string path)
     {
         var normalized = path.Replace('\\', '/').Trim();
-        if (string.IsNullOrWhiteSpace(normalized) ||
-            normalized.StartsWith('/') ||
-            normalized.Contains("../", StringComparison.Ordinal) ||
-            normalized.Contains("/../", StringComparison.Ordinal) ||
-            normalized.Equals("..", StringComparison.Ordinal) ||
-            Path.IsPathRooted(normalized))
+        if (string.IsNullOrWhiteSpace(normalized) || Path.IsPathRooted(normalized) ||
+            normalized.StartsWith('/') || normalized == ".." || normalized.StartsWith("../") || normalized.Contains("/../"))
             throw new InvalidDataException($"Unsafe application relative path: {path}");
         return normalized;
     }
 
-    private static void EnsureNoReparseBoundary(string appRoot)
+    private static string RequireDirectory(string path, string role)
     {
-        EnsureNotReparse(appRoot, "application root");
-        var current = Directory.GetParent(appRoot);
-        if (current is not null) EnsureNotReparse(current.FullName, "Apps root");
+        if (string.IsNullOrWhiteSpace(path)) throw new InvalidDataException($"{role} is required.");
+        var full = Path.GetFullPath(path.Trim());
+        if (!Directory.Exists(full)) throw new InvalidDataException($"{role} does not exist: {full}");
+        return full;
     }
 
-    private static void EnsureNotReparse(string path, string role)
+    private static void RejectReparse(string path, string role)
     {
         if (!File.Exists(path) && !Directory.Exists(path)) return;
-        var attributes = File.GetAttributes(path);
-        if ((attributes & FileAttributes.ReparsePoint) != 0)
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
             throw new InvalidDataException($"Reparse points are not allowed at {role}: {path}");
-    }
-
-    private static string ResolveWorkspaceRoot(string workspaceRoot)
-    {
-        if (string.IsNullOrWhiteSpace(workspaceRoot))
-            throw new InvalidDataException("Workspace root is required.");
-        var full = Path.GetFullPath(workspaceRoot.Trim());
-        if (!Directory.Exists(full))
-            throw new InvalidDataException($"Workspace root does not exist: {full}");
-        return full;
     }
 
     private static string HashFile(string path)
@@ -467,7 +408,7 @@ public sealed class LocalApplicationRegistrationService
     private static string HashBytes(byte[] bytes)
         => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    private static string[] DefaultNonEffects() =>
+    private static string[] DefaultNonEffects() => new[]
     {
         "no application file copy or move",
         "no application file delete or replacement",
