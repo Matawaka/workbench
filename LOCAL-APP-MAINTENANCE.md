@@ -29,6 +29,22 @@ Register Local App != Import App
 Candidate Source != Managed Application
 ```
 
+## Local Apps action selection
+
+For a registered application, the single top-level **Local apps** control opens a dedicated chooser with directly labelled actions:
+
+- **Update from package**
+- **Build update package**
+- **Cancel**
+
+Opening or cancelling the chooser has no effect. No effectful action is selected by default and generic YES/NO semantics are not used.
+
+```text
+Explicit Action Label != Generic Dialog Button Semantics
+Chooser Open != Package Authority
+Chooser Open != Update Authority
+```
+
 ## Registration
 
 Registration exists only for an application directory already under `Workspace\Apps` without `.matawaka-app.json`.
@@ -126,7 +142,7 @@ Preview is read-only and:
 
 Preview creates no ZIP and no update authority.
 
-### Package write
+### Package write and persisted receipt
 
 Only after separate confirmation:
 
@@ -134,7 +150,12 @@ Only after separate confirmation:
 2. it writes one ZIP only under `Workbench\artifacts\local-app-packages`;
 3. it writes no bytes under either `Apps` or `AppCandidates`;
 4. it immediately sends the generated ZIP through the already-accepted `LocalApplicationMaintenanceService.PreviewAsync`;
-5. builder success is returned only if that existing updater Preview is READY and agrees on app/current/target/package/manifest identity.
+5. builder success is returned only if that existing updater Preview is READY and agrees on app/current/target/package/manifest identity;
+6. v0.38 then rechecks the surviving ZIP package SHA-256 and embedded manifest SHA-256 against the successful typed builder receipt;
+7. only after those checks it writes the exact typed `LocalApplicationPackageBuilderReceipt` as UTF-8 JSON under the same `local-app-packages` directory;
+8. the JSON is parsed back and must preserve ApplicationId/current/target/status/package/manifest bindings and `ExistingUpdaterPreviewReady=true`, `ApplicationMutationPerformed=false`, `UpdateAuthorityCreated=false`, `ApplicationLaunchPerformed=false`.
+
+The persisted receipt filename is bound to ApplicationId, target version and build timestamp. The UI output exposes `PackageBuildReceiptPath`.
 
 Success:
 
@@ -143,6 +164,7 @@ Success:
 The generated package still requires a later, separately confirmed **Update from package** action.
 
 ```text
+Artifact Persistence != Receipt Persistence
 Builder Preview != Package Write Authority
 Package Write != Update Authority
 Builder Success => Existing Updater Preview READY
@@ -151,7 +173,7 @@ Build Package != Update App != Launch App
 
 ## Authority ceiling
 
-Registration, builder and updater do not authorize or perform outside their own explicit effect:
+Registration, chooser, builder, receipt persistence and updater do not authorize or perform outside their own explicit effect:
 
 - arbitrary app import/copy/move;
 - arbitrary filesystem roots;
@@ -164,4 +186,4 @@ Registration, builder and updater do not authorize or perform outside their own 
 - Agent Execute / ActionPermit;
 - canonical UU-AAP conformance or Stable Core promotion.
 
-The builder specifically may only write its generated ZIP artifact under Workbench ignored artifacts; it cannot modify the application or candidate source.
+The builder may write only its generated ZIP artifact under Workbench ignored artifacts. The v0.38 receipt store may write only the corresponding local evidence JSON under the same ignored artifact directory after independently rechecking the successful ZIP/manifest binding. Neither may modify the application or candidate source.
