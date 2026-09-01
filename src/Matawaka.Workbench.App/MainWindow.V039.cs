@@ -45,7 +45,7 @@ public partial class MainWindow
             var launched = await _applyBuildService.LaunchCandidateAsync(
                 receipt, WorkspaceRootBox.Text, _cts!.Token);
             var handoff = await _candidateLaunchHandoffV039Service.ObserveAndPersistAsync(
-                launched.Receipt, launched.ArtifactPath, WorkspaceRootBox.Text, _cts.Token);
+                launched.Receipt, launched.ArtifactPath, WorkspaceRootBox.Text, _cts!.Token);
 
             if (!handoff.Receipt.PredecessorSelfCloseEligible ||
                 !handoff.Receipt.CandidateObservedAlive ||
@@ -81,7 +81,7 @@ public partial class MainWindow
             EndRun();
             SetV035PrimaryControlsEnabled(true);
             if (closePredecessor)
-                Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(Close));
+                _ = Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(Close));
         }
     }
 
