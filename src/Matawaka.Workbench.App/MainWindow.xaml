@@ -64,13 +64,13 @@
                 <TabItem x:Name="AcceptanceTab" Header="Acceptance / Publication"><TextBox x:Name="AcceptanceTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
                 <TabItem x:Name="LifecycleTab" Header="Lifecycle"><TextBox x:Name="LifecycleTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" TextWrapping="NoWrap"/></TabItem>
                 <TabItem x:Name="ResultTab" Header="Result" Visibility="Collapsed"><TextBox x:Name="ResultTextBox" IsReadOnly="True"/></TabItem>
-                <TabItem x:Name="EvidenceTab" Header="Evidence" Visibility="Collapsed"><TextBox x:Name="EvidenceTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/></TabItem>
-                <TabItem x:Name="AuthorityTab" Header="Authority" Visibility="Collapsed"><TextBox x:Name="AuthorityTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/></TabItem>
-                <TabItem x:Name="LivenessTab" Header="Liveness" Visibility="Collapsed"><TextBox x:Name="LivenessTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/></TabItem>
-                <TabItem x:Name="SemanticTab" Header="Semantic" Visibility="Collapsed"><TextBox x:Name="SemanticTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/></TabItem>
-                <TabItem x:Name="ProcessBoundaryTab" Header="Process" Visibility="Collapsed"><TextBox x:Name="ProcessBoundaryTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/></TabItem>
-                <TabItem x:Name="RecoveryTab" Header="Recovery" Visibility="Collapsed"><TextBox x:Name="RecoveryTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/></TabItem>
-                <TabItem x:Name="AgentTab" Header="Agent" Visibility="Collapsed"><TextBox x:Name="AgentTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/></TabItem>
+                <TabItem x:Name="EvidenceTab" Header="Evidence" Visibility="Collapsed"><TextBox x:Name="EvidenceTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="AuthorityTab" Header="Authority" Visibility="Collapsed"><TextBox x:Name="AuthorityTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="LivenessTab" Header="Liveness" Visibility="Collapsed"><TextBox x:Name="LivenessTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="SemanticTab" Header="Semantic" Visibility="Collapsed"><TextBox x:Name="SemanticTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="ProcessBoundaryTab" Header="Process" Visibility="Collapsed"><TextBox x:Name="ProcessBoundaryTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="RecoveryTab" Header="Recovery" Visibility="Collapsed"><TextBox x:Name="RecoveryTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="AgentTab" Header="Agent" Visibility="Collapsed"><TextBox x:Name="AgentTextBox" IsReadOnly="True"/></TabItem>
             </TabControl>
         </Grid>
 
