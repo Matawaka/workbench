@@ -1,23 +1,24 @@
 # Matawaka Workbench — Development Audit & Roadmap
 
-## Current accepted frontier
+## Accepted frontier policy
 
-Accepted and remotely published predecessor:
+The default branch `main` is the remotely published accepted source frontier. Its exact version is the single `workbench-v<version>-accepted` tag at `main` HEAD.
 
-- commit `df211d1f4d80d0b1f238f1166460758e73ce18d2`;
-- tag `workbench-v0.33-accepted`;
-- parent `24c98787817b3b37f1a7197ecb5627be130f2581`;
-- tree `ea1fde5f211534f1293e3bb53a594ba612b647ed`.
+Permanent roadmap text does not hard-code the previous release as the current accepted state. Exact release/predecessor history remains in `PATCH-v*.md`, Git tags and issues.
 
-v0.34 candidate source does not change that frontier before explicit local acceptance and separate publication.
+## What is established
 
-## What is now established
+Historical work established:
 
-Historical work through v0.31 established bounded analysis, semantic/runtime separation, liveness, local acceptance, recovery/transport/key evidence boundaries and a self-hosted update loop.
+- bounded local analysis and semantic/runtime separation;
+- visible liveness and evidence/authority receipts;
+- self-hosted candidate update/build/launch with fail-closed rollback;
+- explicit local acceptance and fixed fast-forward-only source publication;
+- active-surface consolidation without evidence erasure;
+- one-session `Update candidate` sequencing over typed maintenance sub-gates;
+- post-publication Maintenance Lifecycle Receipt that can bind one exact completed lifecycle without creating authority.
 
-v0.32 converted that evidence-development line into a cleaner product surface and accepted a fixed fast-forward-only GitHub publisher.
-
-v0.33 accepted/published **Maintenance Update Orchestrator**:
+The stable visible maintenance chain remains:
 
 ```text
 Update candidate
@@ -25,80 +26,96 @@ Update candidate
 -> separate Self-test
 -> separate local Accept
 -> separate Publish accepted
+-> optional Lifecycle receipt
 ```
 
-The one Update candidate session preserves existing typed plan/materialize/staged-plan/apply-build receipts and rollback behavior.
+## Qualification findings after the first complete lifecycle
 
-## v0.34 — Maintenance Lifecycle Receipt
+### Accepted frontier integrity
 
-Goal: make the already-separated lifecycle auditable as one exact relation without creating another action authority.
+`PASS`
 
-Post-publication target:
+The accepted lifecycle release was independently verified on GitHub as one successor commit with matching annotated accepted tag and expected product-only delta.
+
+### Self-lifecycle completeness
+
+`PASS_BOUNDED`
+
+One exact update/build → Self-test → checkpoint → publication relation was successfully composed with all relation checks passing while `AuthorityCreated`, `ActionPerformed`, `RetryAuthorized` and `RollbackAuthorized` remained false.
+
+### Successor lifecycle reuse
+
+Initial outcome:
+
+`LIFECYCLE_NEEDS_ADAPTER`
+
+Reason: the first lifecycle service hard-coded its own target version/tag and exact predecessor, so it could prove its own lifecycle but could not assess the next successor transition without another release-specific service.
+
+### Accepted documentation currentness
+
+`STABILIZATION_REQUIRED`
+
+Permanent public docs were candidate-state documents and became stale immediately after acceptance/publication. This was a recurring lifecycle defect rather than a runtime failure.
+
+## Qualification/stabilization patch
+
+The patch-level response is intentionally not a new feature layer.
+
+### Successor-generic lifecycle evidence routing
+
+The lifecycle service now derives its target/predecessor from exact evidence:
 
 ```text
-existing orchestrator/build evidence
-+ exact passing Self-test artifact
-+ exact local checkpoint receipt
-+ exact publication receipt
-+ current local HEAD/tag/clean state
--> Lifecycle assessment
--> explicit local Lifecycle receipt evidence write
+current HEAD
++ unique workbench-v<version>-accepted tag at HEAD
++ exact checkpoint at HEAD/tag
++ exact Git parent + unique predecessor accepted tag
++ checkpoint-bound passing Self-test artifact
++ unique matching orchestrator receipt
++ unique matching publication receipt
++ exact SHA-256 bindings + clean state
+-> complete lifecycle assessment
 ```
 
-### Required bindings
+Missing/ambiguous evidence fails closed; modification time is never a selection rule. Accepted tag discovery routes evidence only and creates no trust or authority.
 
-- checkpoint at current accepted v0.34 HEAD/tag;
-- acceptance artifact path is taken from checkpoint, not guessed;
-- acceptance artifact SHA-256 equals checkpoint binding;
-- acceptance executable SHA-256 equals checkpoint executable SHA-256;
-- unique orchestrator receipt targets v0.34 and its built candidate executable SHA-256 equals that same Self-test executable;
-- unique publication receipt binds exact predecessor/current accepted commit and exact remote main/tag;
-- every consumed artifact receives an explicit SHA-256 binding;
-- local source tree is clean.
+### Lifecycle-state-neutral public docs
 
-### Required refusals
+Stable README/START/SECURITY/ROADMAP text no longer embeds candidate status or a prior release as the accepted baseline. Candidate-specific details remain in patch notes/package previews/issues.
 
-- no qualifying artifact → fail;
-- more than one qualifying artifact → fail;
-- artifact digest drift → fail;
-- current HEAD/tag mismatch → fail;
-- executable digest discontinuity → fail;
-- publication/current accepted commit mismatch → fail.
+`Accepted Source Documentation != Candidate Planning Document`
 
-`Latest File != Correct File Without Exact Binding`
+## Real successor qualification
 
-### Authority boundary
+A patch-level real successor transition is required to qualify the generic adapter. The sequence is:
 
-```text
-Lifecycle Summary != Authority
-Observed Sequence != Authorized Sequence
-Receipt Binding != Automatic Transition
-Missing/Ambiguous Evidence != Inferred Success
-Publication Success != Retroactive Update Authority
-Lifecycle Receipt != ActionPermit
-```
+1. install a bounded patch through the accepted `Update candidate` path;
+2. separately Launch candidate;
+3. separately Self-test and require PASS;
+4. separately accept local checkpoint;
+5. separately Publish accepted;
+6. run the same generic `Lifecycle receipt` service;
+7. independently verify remote main/tag and accepted bytes.
 
-The lifecycle service may perform only local artifact reads/hashes, fixed read-only Git observations and an explicitly confirmed local evidence write. It does not call update/build/launch/Self-test/checkpoint/publication/retry/rollback actions.
+Then classify only from observed evidence:
 
-## Post-v0.34 decision gate — Maintenance Lifecycle Qualification
+- `LIFECYCLE_REUSABLE` — generic adapter produces one exact `Complete=true` lifecycle relation on the new successor without manual artifact reconciliation;
+- `LIFECYCLE_NEEDS_ADAPTER` — a required direct relation is still missing;
+- `LIFECYCLE_AMBIGUOUS` — multiple otherwise qualifying evidence candidates prevent unique binding;
+- `LIFECYCLE_NOT_REQUIRED` — aggregate evidence adds no material value over individual receipts.
 
-Do **not** assume an automatic v0.35 feature layer.
+A negative result is successful qualification evidence and blocks feature inflation.
 
-After v0.34 is accepted/published, the next useful evidence is a real successor transition using accepted v0.34:
+## Stabilization backlog after qualification
 
-1. use **Update candidate** on a new bounded successor package;
-2. complete separate Launch/Self-test/Accept/Publish;
-3. run **Lifecycle receipt**;
-4. determine whether exact lifecycle binding succeeds without manual reconciliation.
+Do not automatically create a new feature release. Review only evidence-backed residual debt:
 
-Possible outcomes:
+- whether release-specific Self-test/checkpoint/publisher successor wrappers should be generalized or remain explicit version boundaries;
+- whether hidden legacy compatibility bindings can be removed safely from `MainWindow.xaml.cs` without weakening run-state liveness;
+- whether lifecycle evidence remains useful after more than one real successor;
+- whether external/cross-machine portability has independent product demand.
 
-- `LIFECYCLE_REUSABLE` — composition works as a stable product audit capability;
-- `LIFECYCLE_NEEDS_ADAPTER` — one existing receipt lacks enough direct binding;
-- `LIFECYCLE_AMBIGUOUS` — repeated artifacts require a stronger identity key;
-- `LIFECYCLE_NOT_REQUIRED` — individual receipts are already sufficient and aggregate adds little value.
-
-A negative result is acceptable and should block feature inflation.
+These are not authorized implementation tasks merely because they exist as possible improvements.
 
 ## Later research directions
 
@@ -120,4 +137,7 @@ Maintenance automation != Authority collapse
 Accepted local state != Published remote state
 Publication capability != General network capability
 Lifecycle observability != Lifecycle authority
+Generic Evidence Discovery != Trust Discovery
+Qualification != Promotion
+Patch Release != Feature Layer
 ```

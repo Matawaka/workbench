@@ -1,69 +1,85 @@
-# Start here — Workbench v0.34 candidate
+# Start here — Matawaka Workbench
 
-Accepted/public predecessor: `workbench-v0.33-accepted` at `df211d1f4d80d0b1f238f1166460758e73ce18d2`.
+This page describes the stable operator path. Exact release-specific predecessor/target identities are shown by the update package preview, accepted tag at HEAD, and `PATCH-v*.md` history rather than hard-coded here.
 
-## Install/build the v0.34 candidate
+## Normal analysis
 
-From accepted v0.33:
+- Paste JSON or load it from a file.
+- **Проверить** validates the command envelope.
+- **Запустить** follows the bounded Runtime / AgentHost / SemanticHost path.
+- **Агент включен** is explicit and required where the bounded agent/Self-test path needs it.
+- **Разрешить git fetch** remains a separate catalog-observation permission and does not authorize accepted-source publication.
 
-1. Click **Update candidate** and choose the v0.34 source-only ZIP.
-2. Review package SHA-256, exact predecessor `workbench-v0.33-accepted`, target `workbench-v0.34-accepted`, payload file count and bytes.
+## Install/build a bounded successor
+
+1. Click **Update candidate** and choose the source-only ZIP.
+2. Review package SHA-256, exact predecessor commit/tag, target version/tag, payload count and bytes.
 3. Explicitly confirm the maintenance session.
-4. Workbench reuses its typed fresh plan → staging materialization → staged apply plan → exact apply/build gates.
+4. Workbench sequences the existing typed fresh plan → staging materialization → staged apply plan → exact apply/build gates.
 5. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
 6. Click **Запустить candidate** separately and confirm the exact built executable SHA-256.
 
 `Update candidate != Launch authority`.
 
-## Accept v0.34
+## Accept the launched candidate
 
-In the launched candidate:
-
-1. enable **Агент включен**;
-2. run **Self-test** and require `Passed=true`;
-3. Self-test must remain read-only; its lifecycle checks are offline contract/hostile checks only;
-4. click **Принять** and inspect the exact changed-file set;
-5. explicitly create local `workbench-v0.34-accepted`.
+1. In the launched candidate enable **Агент включен**.
+2. Run **Self-test** and require `Passed=true`.
+3. Self-test is read-only with respect to update/checkpoint/publication/lifecycle effects.
+4. Click **Принять** and inspect the exact changed-file set and build-source manifest binding.
+5. Explicitly create the local accepted checkpoint/tag.
 
 `Self-test PASS != Checkpoint authority`.
 
-## Publish v0.34
+## Publish accepted source
 
-After local acceptance:
+Only after local acceptance:
 
 1. click **Publish accepted**;
 2. verify fixed `github-workbench` / `https://github.com/Matawaka/workbench.git`;
-3. verify exact accepted HEAD, parent `df211d1f...` and tag `workbench-v0.34-accepted`;
+3. verify exact accepted HEAD, parent and accepted tag in the preview;
 4. explicitly confirm publication;
-5. require remote `main` and accepted tag to read back as exact local accepted HEAD;
-6. require local HEAD/working tree unchanged.
+5. require remote `main` and accepted tag to read back as exact local HEAD;
+6. require local HEAD and working tree unchanged.
 
 `Accepted checkpoint != Publish authority`.
 
-## Create Maintenance Lifecycle Receipt
+## Create a Maintenance Lifecycle Receipt
 
 Only after publication has independently completed:
 
 1. click **Lifecycle receipt**;
-2. Workbench performs a fail-closed read-only assessment of existing local artifacts;
-3. require one exact relation binding:
-   - v0.33 orchestrator receipt targeting v0.34;
-   - its candidate executable SHA-256;
-   - checkpoint-bound passing v0.34 Self-test artifact and exact digest;
-   - v0.34 checkpoint at current HEAD;
-   - v0.34 publication receipt with exact local/remote HEAD/tag;
-4. inspect SHA-256 bindings for all four artifacts and `Complete=true`;
-5. explicitly confirm writing the local lifecycle receipt.
+2. Workbench derives the current accepted version from the unique `workbench-v<version>-accepted` tag at HEAD;
+3. it requires the exact current checkpoint and exact accepted predecessor relation;
+4. it binds the checkpoint-bound Self-test artifact + SHA-256;
+5. it requires one matching orchestrator receipt with the same target/predecessor and candidate executable digest;
+6. it requires one matching publication receipt with exact local/remote main/tag;
+7. inspect every artifact SHA-256 and require `Complete=true`;
+8. explicitly confirm writing the local lifecycle evidence receipt.
 
-The lifecycle action writes evidence only. It does not call update, build, launch, Self-test, checkpoint or publisher services and does not authorize retry/rollback.
+Missing or ambiguous accepted tags/artifacts fail closed. The service does not choose the newest file and does not infer trust or authority from Git tag discovery.
 
 ```text
 Summary != Authority
 Observed Sequence != Authorized Sequence
+Accepted Tag Discovery != Trust Discovery
 Missing/Ambiguous Evidence != Inferred Success
 Lifecycle Receipt != ActionPermit
 ```
 
-## Normal analysis and recovery
+## Qualification/stabilization use
 
-Normal **Проверить / Запустить**, **Recovery check / plan / execute**, catalog scan/fetch and evidence tabs remain independent of maintenance lifecycle authority.
+When testing whether lifecycle composition is reusable, perform a real bounded successor transition and classify the outcome only after the new successor is independently accepted/published and its generic Lifecycle receipt is evaluated:
+
+- `LIFECYCLE_REUSABLE`;
+- `LIFECYCLE_NEEDS_ADAPTER`;
+- `LIFECYCLE_AMBIGUOUS`;
+- `LIFECYCLE_NOT_REQUIRED`.
+
+Do not create a new feature layer merely to obtain a positive result.
+
+## Recovery and historical evidence
+
+**Recovery check / Recovery plan / Recovery execute**, catalog controls and historical source/receipt evidence remain separate from maintenance lifecycle authority.
+
+`UI simplification != Evidence erasure`.

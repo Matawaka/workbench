@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.34.0" Height="820" Width="1380" MinHeight="680" MinWidth="940"
+        Title="Matawaka Workbench v0.34.1" Height="820" Width="1380" MinHeight="680" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -18,22 +18,22 @@
             <Button x:Name="FileButton" Content="Из файла" Width="100" Margin="0,0,8,0" Click="FileButton_Click"/>
             <Button x:Name="ValidateButton" Content="Проверить" Width="100" Margin="0,0,8,0" Click="ValidateButton_Click"/>
             <Button x:Name="RunButton" Content="Запустить" Width="100" Margin="0,0,8,0" Click="RunButton_Click"/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV034Button_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV034Button_Click"/>
+            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV0341Button_Click"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV0341Button_Click"/>
             <Button x:Name="UpdateCandidateButton" Content="Update candidate" Width="130" Margin="0,0,8,0" Click="UpdateCandidateButton_Click"
                     ToolTip="Один maintenance-сеанс: fresh plan → materialize → apply plan → exact apply/build; candidate launch остаётся отдельным решением"/>
             <Button x:Name="LaunchCandidateButton" Content="Запустить candidate" Width="145" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateButton_Click"/>
             <Button x:Name="RecoveryCheckButton" Content="Recovery check" Width="120" Margin="0,0,8,0" Click="RecoveryCheckButton_Click"/>
             <Button x:Name="RecoveryPlanButton" Content="Recovery plan" Width="120" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryPlanButton_Click"/>
             <Button x:Name="RecoveryExecuteButton" Content="Recovery execute" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryExecuteButton_Click"/>
-            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV034Button_Click"
-                    ToolTip="Только после локального workbench-v0.34-accepted; fixed Matawaka/workbench, fast-forward only, no force"/>
-            <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0" Click="LifecycleReceiptButton_Click"
-                    ToolTip="Post-publication audit only: binds exact update/Self-test/checkpoint/publication evidence; creates no action authority"/>
+            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV0341Button_Click"
+                    ToolTip="Только после локального workbench-v0.34.1-accepted; fixed Matawaka/workbench, fast-forward only, no force"/>
+            <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0" Click="LifecycleReceiptGenericButton_Click"
+                    ToolTip="Successor-generic post-publication audit: derives accepted version/predecessor from exact tag/checkpoint evidence; creates no trust or action authority"/>
             <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
             <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
             <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <TextBlock Text="v0.34: lifecycle summary != authority; missing/ambiguous evidence fails closed; update/launch/Self-test/Accept/Publish remain independent"
+            <TextBlock Text="v0.34.1 qualification/stabilization: generic lifecycle evidence routing != trust/authority; docs are accepted-state-neutral; all action gates remain separate"
                        VerticalAlignment="Center" FontStyle="Italic"/>
         </WrapPanel>
 

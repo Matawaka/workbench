@@ -6,34 +6,37 @@ using System.Text.Json;
 namespace Matawaka.Workbench.App;
 
 /// <summary>
-/// v0.34 successor of the fixed GitHub publisher. Same single-repository,
-/// fast-forward-only, non-force boundary; only version/tag/receipt identity changes.
-/// Lifecycle summary remains a later separate evidence action.
+/// Patch-level successor of the accepted fixed GitHub publisher. It preserves
+/// exactly the same one-repository, fast-forward-only, non-force authority
+/// boundary and changes only the expected accepted patch version/tag.
 /// </summary>
-public sealed class FixedGitHubPublicationV034Service
+public sealed class FixedGitHubPublicationV0341Service
 {
-    public const string Version = "0.34.0";
+    public const string Version = "0.34.1";
     public const string RemoteName = "github-workbench";
     public const string RemoteUrl = "https://github.com/Matawaka/workbench.git";
-    public const string AcceptedTag = "workbench-v0.34-accepted";
-    public const string ExpectedParent = "df211d1f4d80d0b1f238f1166460758e73ce18d2";
-    public const string ReceiptSchema = "matawaka.workbench-fixed-github-publication-receipt/v0.34";
-    public const string AuthoritySchema = "matawaka.workbench-fixed-github-publication-authority-receipt/v0.34";
+    public const string AcceptedTag = "workbench-v0.34.1-accepted";
+    public const string ExpectedParent = "224ad00bd72b0534de1081b2a20c44746ee0e7a0";
+    public const string ReceiptSchema = "matawaka.workbench-fixed-github-publication-receipt/v0.34.1";
+    public const string AuthoritySchema = "matawaka.workbench-fixed-github-publication-authority-receipt/v0.34.1";
 
     private static readonly TimeSpan GitTimeout = TimeSpan.FromSeconds(45);
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public async Task<FixedGitHubPublicationCandidate> PreviewAsync(string workspaceRoot, CancellationToken cancellationToken)
+    public async Task<FixedGitHubPublicationCandidate> PreviewAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken)
     {
         var repositoryRoot = ResolveRepositoryRoot(workspaceRoot);
         var status = await RunGitAsync(repositoryRoot, cancellationToken, "status", "--porcelain=v1", "--untracked-files=all");
         if (!string.IsNullOrWhiteSpace(status.Stdout))
-            throw new InvalidDataException("Workbench working tree must be clean before accepted-source publication.");
+            throw new InvalidDataException("Workbench working tree must be clean before v0.34.1 accepted-source publication.");
 
         var head = RequireSha((await RunGitAsync(repositoryRoot, cancellationToken, "rev-parse", "HEAD")).Stdout, "HEAD");
         var parent = RequireSha((await RunGitAsync(repositoryRoot, cancellationToken, "rev-parse", "HEAD^")).Stdout, "HEAD parent");
         if (!string.Equals(parent, ExpectedParent, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"v0.34 accepted publication parent must be exact v0.33 predecessor {ExpectedParent}; observed={parent}");
+            throw new InvalidDataException($"v0.34.1 accepted HEAD parent is not exact accepted v0.34: {parent}");
+
         var tagHead = RequireSha((await RunGitAsync(repositoryRoot, cancellationToken, "rev-list", "-n", "1", AcceptedTag)).Stdout, AcceptedTag);
         if (!string.Equals(tagHead, head, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Accepted tag {AcceptedTag} does not point at current HEAD. tag={tagHead}; head={head}");
@@ -43,12 +46,21 @@ public sealed class FixedGitHubPublicationV034Service
             throw new InvalidDataException($"Remote {RemoteName} is configured to a conflicting URL: {configured}");
 
         return new FixedGitHubPublicationCandidate(
-            Version, repositoryRoot, RemoteName, RemoteUrl, head, parent, AcceptedTag,
+            Version,
+            repositoryRoot,
+            RemoteName,
+            RemoteUrl,
+            head,
+            parent,
+            AcceptedTag,
             string.IsNullOrWhiteSpace(configured) ? null : configured,
-            string.IsNullOrWhiteSpace(configured), true);
+            string.IsNullOrWhiteSpace(configured),
+            true);
     }
 
-    public async Task<FixedGitHubPublicationReceipt> PublishAsync(FixedGitHubPublicationCandidate candidate, CancellationToken cancellationToken)
+    public async Task<FixedGitHubPublicationReceipt> PublishAsync(
+        FixedGitHubPublicationCandidate candidate,
+        CancellationToken cancellationToken)
     {
         if (candidate is null) throw new ArgumentNullException(nameof(candidate));
         if (!string.Equals(candidate.Version, Version, StringComparison.Ordinal) ||
@@ -56,7 +68,7 @@ public sealed class FixedGitHubPublicationV034Service
             !SameRemoteUrl(candidate.RemoteUrl, RemoteUrl) ||
             !string.Equals(candidate.AcceptedTag, AcceptedTag, StringComparison.Ordinal) ||
             !string.Equals(candidate.Parent, ExpectedParent, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Publication candidate does not match the fixed v0.34 publication contract.");
+            throw new InvalidDataException("Publication candidate does not match fixed v0.34.1 stabilization publication contract.");
 
         await ReverifyLocalCandidateAsync(candidate, cancellationToken);
         var repositoryRoot = candidate.RepositoryRoot;
@@ -79,7 +91,8 @@ public sealed class FixedGitHubPublicationV034Service
 
         if (mainState == "PARENT")
         {
-            await RunGitAsync(repositoryRoot, cancellationToken, "push", RemoteName, $"{candidate.Head}:refs/heads/main");
+            await RunGitAsync(repositoryRoot, cancellationToken,
+                "push", RemoteName, $"{candidate.Head}:refs/heads/main");
             mainPushPerformed = true;
         }
 
@@ -101,12 +114,12 @@ public sealed class FixedGitHubPublicationV034Service
             ?? throw new InvalidDataException("Remote accepted tag missing after publication.");
         if (!string.Equals(remoteMainAfter, candidate.Head, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(remoteTagAfter, candidate.Head, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Fixed remote main/tag readback does not equal exact accepted local HEAD.");
+            throw new InvalidDataException("Fixed remote main/tag readback does not equal exact accepted local v0.34.1 HEAD.");
 
         var headAfter = RequireSha((await RunGitAsync(repositoryRoot, cancellationToken, "rev-parse", "HEAD")).Stdout, "HEAD after publication");
         var statusAfter = await RunGitAsync(repositoryRoot, cancellationToken, "status", "--porcelain=v1", "--untracked-files=all");
         if (!string.Equals(headAfter, candidate.Head, StringComparison.OrdinalIgnoreCase) || !string.IsNullOrWhiteSpace(statusAfter.Stdout))
-            throw new InvalidDataException("Local Workbench HEAD or working tree changed during accepted-source publication.");
+            throw new InvalidDataException("Local Workbench HEAD or working tree changed during v0.34.1 publication.");
 
         var nonEffects = new[]
         {
@@ -117,7 +130,7 @@ public sealed class FixedGitHubPublicationV034Service
             "no catalog repository mutation",
             "no Agent Execute authority",
             "no ActionPermit creation",
-            "no lifecycle receipt authority created by publication",
+            "no lifecycle authority created by publication",
             "no general Workbench runtime network authority",
             "no canonical UU-AAP conformance claim",
             "no Stable Core or interface-registry promotion"
@@ -129,7 +142,7 @@ public sealed class FixedGitHubPublicationV034Service
             repositoryRoot,
             RemoteName,
             RemoteUrl,
-            "explicit Publish accepted button + separate confirmation dialog after local v0.34 acceptance",
+            "explicit Publish accepted button + separate confirmation dialog after local v0.34.1 stabilization acceptance",
             true,
             true,
             true,
@@ -143,9 +156,9 @@ public sealed class FixedGitHubPublicationV034Service
                 "git remote get-url github-workbench",
                 "git remote add github-workbench <fixed-url> only when absent",
                 "git ls-remote github-workbench refs/heads/main",
-                "git ls-remote github-workbench refs/tags/workbench-v0.34-accepted",
+                "git ls-remote github-workbench refs/tags/workbench-v0.34.1-accepted",
                 "git push github-workbench <exact-head>:refs/heads/main when remote main == exact parent",
-                "git push github-workbench refs/tags/workbench-v0.34-accepted:refs/tags/workbench-v0.34-accepted when remote tag absent"
+                "git push github-workbench refs/tags/workbench-v0.34.1-accepted:refs/tags/workbench-v0.34.1-accepted when remote tag absent"
             },
             nonEffects);
 
@@ -170,15 +183,18 @@ public sealed class FixedGitHubPublicationV034Service
             true,
             authority,
             nonEffects,
-            "Explicit human maintenance publication of one already-accepted Workbench v0.34 checkpoint. Lifecycle summary remains a separate later local evidence action and this publication does not grant lifecycle, Agent Execute, general network, catalog mutation, remote rewrite or canonical UU-AAP authority.");
+            "Explicit human maintenance publication of one already-accepted Workbench v0.34.1 qualification/stabilization checkpoint. This is not lifecycle authority, Agent Execute, general network authority, catalog mutation, remote rewrite authority or canonical UU-AAP authority.");
     }
 
-    public static async Task<string> WriteReceiptAsync(string workspaceRoot, FixedGitHubPublicationReceipt receipt, CancellationToken cancellationToken)
+    public static async Task<string> WriteReceiptAsync(
+        string workspaceRoot,
+        FixedGitHubPublicationReceipt receipt,
+        CancellationToken cancellationToken)
     {
         var repositoryRoot = ResolveRepositoryRoot(workspaceRoot);
         var directory = Path.Combine(repositoryRoot, "artifacts", "publication");
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"fixed-github-publication-v0.34-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
+        var path = Path.Combine(directory, $"fixed-github-publication-v0.34.1-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(receipt, JsonOptions), new UTF8Encoding(false), cancellationToken);
         return path;
     }
@@ -186,16 +202,16 @@ public sealed class FixedGitHubPublicationV034Service
     public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunOfflineContractChecks()
         => new[]
         {
-            ("publisher-v034-fixed-remote-name", RemoteName == "github-workbench", RemoteName, "github-workbench"),
-            ("publisher-v034-fixed-remote-url", RemoteUrl == "https://github.com/Matawaka/workbench.git", RemoteUrl, "fixed Matawaka/workbench URL"),
-            ("publisher-v034-fixed-tag", AcceptedTag == "workbench-v0.34-accepted", AcceptedTag, "workbench-v0.34-accepted"),
-            ("publisher-v034-fixed-predecessor", ExpectedParent == "df211d1f4d80d0b1f238f1166460758e73ce18d2", ExpectedParent, "accepted v0.33"),
-            ("publisher-v034-parent-fast-forward", ClassifyRemoteMain("a", "b", "a") == "PARENT", ClassifyRemoteMain("a", "b", "a"), "PARENT"),
-            ("publisher-v034-idempotent-main", ClassifyRemoteMain("a", "b", "b") == "ALREADY_HEAD", ClassifyRemoteMain("a", "b", "b"), "ALREADY_HEAD"),
-            ("publisher-v034-conflicting-main-refused", ClassifyRemoteMain("a", "b", "c") == "CONFLICT", ClassifyRemoteMain("a", "b", "c"), "CONFLICT"),
-            ("publisher-v034-absent-tag-admitted", ClassifyRemoteTag("b", null) == "ABSENT", ClassifyRemoteTag("b", null), "ABSENT"),
-            ("publisher-v034-idempotent-tag", ClassifyRemoteTag("b", "b") == "ALREADY_HEAD", ClassifyRemoteTag("b", "b"), "ALREADY_HEAD"),
-            ("publisher-v034-conflicting-tag-refused", ClassifyRemoteTag("b", "c") == "CONFLICT", ClassifyRemoteTag("b", "c"), "CONFLICT")
+            ("publisher-v0341-fixed-remote-name", RemoteName == "github-workbench", RemoteName, "github-workbench"),
+            ("publisher-v0341-fixed-remote-url", RemoteUrl == "https://github.com/Matawaka/workbench.git", RemoteUrl, "fixed Matawaka/workbench URL"),
+            ("publisher-v0341-fixed-tag", AcceptedTag == "workbench-v0.34.1-accepted", AcceptedTag, "workbench-v0.34.1-accepted"),
+            ("publisher-v0341-fixed-parent", ExpectedParent == "224ad00bd72b0534de1081b2a20c44746ee0e7a0", ExpectedParent, "accepted v0.34"),
+            ("publisher-v0341-parent-fast-forward", ClassifyRemoteMain("a", "b", "a") == "PARENT", ClassifyRemoteMain("a", "b", "a"), "PARENT"),
+            ("publisher-v0341-idempotent-main", ClassifyRemoteMain("a", "b", "b") == "ALREADY_HEAD", ClassifyRemoteMain("a", "b", "b"), "ALREADY_HEAD"),
+            ("publisher-v0341-conflicting-main-refused", ClassifyRemoteMain("a", "b", "c") == "CONFLICT", ClassifyRemoteMain("a", "b", "c"), "CONFLICT"),
+            ("publisher-v0341-absent-tag-admitted", ClassifyRemoteTag("b", null) == "ABSENT", ClassifyRemoteTag("b", null), "ABSENT"),
+            ("publisher-v0341-idempotent-tag", ClassifyRemoteTag("b", "b") == "ALREADY_HEAD", ClassifyRemoteTag("b", "b"), "ALREADY_HEAD"),
+            ("publisher-v0341-conflicting-tag-refused", ClassifyRemoteTag("b", "c") == "CONFLICT", ClassifyRemoteTag("b", "c"), "CONFLICT")
         };
 
     public static string ClassifyRemoteMain(string parent, string head, string remoteMain)
@@ -212,19 +228,21 @@ public sealed class FixedGitHubPublicationV034Service
         return "CONFLICT";
     }
 
-    private static async Task ReverifyLocalCandidateAsync(FixedGitHubPublicationCandidate candidate, CancellationToken cancellationToken)
+    private static async Task ReverifyLocalCandidateAsync(
+        FixedGitHubPublicationCandidate candidate,
+        CancellationToken cancellationToken)
     {
         var status = await RunGitAsync(candidate.RepositoryRoot, cancellationToken, "status", "--porcelain=v1", "--untracked-files=all");
         if (!string.IsNullOrWhiteSpace(status.Stdout))
-            throw new InvalidDataException("Workbench working tree changed after publication preview.");
+            throw new InvalidDataException("Workbench working tree changed after v0.34.1 publication preview.");
         var head = RequireSha((await RunGitAsync(candidate.RepositoryRoot, cancellationToken, "rev-parse", "HEAD")).Stdout, "HEAD");
         var parent = RequireSha((await RunGitAsync(candidate.RepositoryRoot, cancellationToken, "rev-parse", "HEAD^")).Stdout, "HEAD parent");
         var tagHead = RequireSha((await RunGitAsync(candidate.RepositoryRoot, cancellationToken, "rev-list", "-n", "1", AcceptedTag)).Stdout, AcceptedTag);
         if (!string.Equals(head, candidate.Head, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(parent, candidate.Parent, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(parent, ExpectedParent, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(parent, candidate.Parent, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(tagHead, candidate.Head, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Local accepted Workbench v0.34 frontier changed after publication preview.");
+            throw new InvalidDataException("Local accepted Workbench v0.34.1 frontier changed after publication preview.");
     }
 
     private static async Task<bool> EnsureFixedRemoteAsync(string repositoryRoot, CancellationToken cancellationToken)
@@ -253,7 +271,10 @@ public sealed class FixedGitHubPublicationV034Service
         return line is null ? null : ParseLsRemoteSha(line);
     }
 
-    private static async Task<string?> ReadRemoteTagCommitAsync(string repositoryRoot, CancellationToken cancellationToken, string tag)
+    private static async Task<string?> ReadRemoteTagCommitAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken,
+        string tag)
     {
         var result = await RunGitAsync(repositoryRoot, cancellationToken,
             "ls-remote", RemoteName, $"refs/tags/{tag}", $"refs/tags/{tag}^{{}}");
@@ -287,14 +308,18 @@ public sealed class FixedGitHubPublicationV034Service
 
     private static string ResolveRepositoryRoot(string workspaceRoot)
     {
-        if (string.IsNullOrWhiteSpace(workspaceRoot)) throw new InvalidDataException("Workspace root is required.");
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            throw new InvalidDataException("Workspace root is required.");
         var root = Path.GetFullPath(Path.Combine(workspaceRoot.Trim(), "Workbench"));
         if (!Directory.Exists(Path.Combine(root, ".git")))
             throw new InvalidDataException($"Workbench Git repository missing: {root}");
         return root;
     }
 
-    private static Task<GitResult> RunGitAsync(string repositoryRoot, CancellationToken cancellationToken, params string[] args)
+    private static Task<GitResult> RunGitAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken,
+        params string[] args)
         => RunGitAsync(repositoryRoot, cancellationToken, false, args);
 
     private static async Task<GitResult> RunGitAsync(
@@ -318,7 +343,8 @@ public sealed class FixedGitHubPublicationV034Service
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         foreach (var arg in args) psi.ArgumentList.Add(arg);
         using var process = new Process { StartInfo = psi };
-        if (!process.Start()) throw new InvalidDataException("Failed to start fixed v0.34 publication git process.");
+        if (!process.Start())
+            throw new InvalidDataException("Failed to start fixed v0.34.1 publication Git process.");
         var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
         var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
         try
@@ -328,12 +354,12 @@ public sealed class FixedGitHubPublicationV034Service
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             try { process.Kill(entireProcessTree: true); } catch { }
-            throw new InvalidDataException($"v0.34 publication git operation exceeded {GitTimeout.TotalSeconds:0}s timeout: {string.Join(' ', args)}");
+            throw new InvalidDataException($"v0.34.1 publication Git operation exceeded {GitTimeout.TotalSeconds:0}s timeout.");
         }
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
         if (process.ExitCode != 0 && !allowFailure)
-            throw new InvalidDataException($"v0.34 publication git operation failed ({string.Join(' ', args)}): {stderr.Trim()}");
+            throw new InvalidDataException($"v0.34.1 publication Git operation failed ({string.Join(' ', args)}): {stderr.Trim()}");
         return new GitResult(process.ExitCode, stdout, stderr);
     }
 
