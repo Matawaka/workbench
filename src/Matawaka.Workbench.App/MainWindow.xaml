@@ -1,162 +1,137 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.34.1" Height="820" Width="1380" MinHeight="680" MinWidth="940"
+        Title="Matawaka Workbench v0.35.0" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="2*"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-            <Button x:Name="PasteButton" Content="Вставить JSON" Width="120" Margin="0,0,8,0" Click="PasteButton_Click"/>
-            <Button x:Name="FileButton" Content="Из файла" Width="100" Margin="0,0,8,0" Click="FileButton_Click"/>
-            <Button x:Name="ValidateButton" Content="Проверить" Width="100" Margin="0,0,8,0" Click="ValidateButton_Click"/>
-            <Button x:Name="RunButton" Content="Запустить" Width="100" Margin="0,0,8,0" Click="RunButton_Click"/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV0341Button_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Принять" Width="90" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV0341Button_Click"/>
-            <Button x:Name="UpdateCandidateButton" Content="Update candidate" Width="130" Margin="0,0,8,0" Click="UpdateCandidateButton_Click"
-                    ToolTip="Один maintenance-сеанс: fresh plan → materialize → apply plan → exact apply/build; candidate launch остаётся отдельным решением"/>
-            <Button x:Name="LaunchCandidateButton" Content="Запустить candidate" Width="145" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateButton_Click"/>
-            <Button x:Name="RecoveryCheckButton" Content="Recovery check" Width="120" Margin="0,0,8,0" Click="RecoveryCheckButton_Click"/>
-            <Button x:Name="RecoveryPlanButton" Content="Recovery plan" Width="120" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryPlanButton_Click"/>
-            <Button x:Name="RecoveryExecuteButton" Content="Recovery execute" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="RecoveryExecuteButton_Click"/>
-            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV0341Button_Click"
-                    ToolTip="Только после локального workbench-v0.34.1-accepted; fixed Matawaka/workbench, fast-forward only, no force"/>
-            <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0" Click="LifecycleReceiptGenericButton_Click"
-                    ToolTip="Successor-generic post-publication audit: derives accepted version/predecessor from exact tag/checkpoint evidence; creates no trust or action authority"/>
-            <Button x:Name="CancelButton" Content="Стоп" Width="80" Margin="0,0,18,0" IsEnabled="False" Click="CancelButton_Click"/>
-            <CheckBox x:Name="AgentEnabledBox" Content="Агент включен" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <CheckBox x:Name="AllowGitFetchBox" Content="Разрешить git fetch" VerticalAlignment="Center" Margin="0,0,18,0"/>
-            <TextBlock Text="v0.34.1 qualification/stabilization: generic lifecycle evidence routing != trust/authority; docs are accepted-state-neutral; all action gates remain separate"
-                       VerticalAlignment="Center" FontStyle="Italic"/>
+        <!-- v0.35 active product surface: eight buttons, no persistent authority checkboxes. -->
+        <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0"
+                    Click="UpdateCandidateButton_Click"
+                    ToolTip="Один bounded maintenance-сеанс package → materialize → apply-plan → apply/build; Launch остаётся отдельным решением"/>
+            <Button x:Name="LaunchCandidateButton" Content="Launch candidate" Width="130" Margin="0,0,8,0" IsEnabled="False"
+                    Click="LaunchCandidateButton_Click"
+                    ToolTip="Запускает только exact receipt-bound Workbench candidate; acceptance остаётся отдельной"/>
+            <Button x:Name="UpdateLocalAppButton" Content="Update local app" Width="130" Margin="0,0,8,0"
+                    Click="UpdateLocalAppButton_Click"
+                    ToolTip="Только локальный ZIP и только &lt;WorkspaceRoot&gt;\Apps\&lt;ApplicationId&gt;; no network, installer or auto-launch"/>
+            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0"
+                    Click="SelfTestV035Button_Click"
+                    ToolTip="Явный bounded read-only acceptance test; отдельная постоянная Agent-enabled галочка больше не нужна"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False"
+                    Click="AcceptCheckpointV035Button_Click"/>
+            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0"
+                    Click="PublishAcceptedV035Button_Click"
+                    ToolTip="Fixed Matawaka/workbench, exact fast-forward/tag only, no force"/>
+            <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0"
+                    Click="LifecycleReceiptGenericButton_Click"
+                    ToolTip="Read-only successor-generic lifecycle evidence composition; summary != authority"/>
+            <Button x:Name="CancelButton" Content="Stop" Width="75" IsEnabled="False" Click="CancelButton_Click"/>
         </WrapPanel>
 
-        <!-- Hidden field bindings keep accepted legacy BeginRun/EndRun and historical
-             handler source-compatible. They are not visible/focusable/clickable controls. -->
-        <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
-            <Button x:Name="UpdatePlanButton"/>
-            <Button x:Name="MaterializeUpdateButton"/>
-            <Button x:Name="StagedApplyPlanButton"/>
-            <Button x:Name="ApplyBuildUpdateButton"/>
-            <Button x:Name="RecoveryAdmissionButton"/>
-            <Button x:Name="RecoveryNegativeControlsButton"/>
-            <Button x:Name="RecoveryEvidenceClosureButton"/>
-            <Button x:Name="RecoveryEvidenceReplayButton"/>
-            <Button x:Name="RecoveryEvidenceRelocationButton"/>
-            <Button x:Name="RecoveryEvidenceExportButton"/>
-            <Button x:Name="RecoveryEvidenceImportButton"/>
-            <Button x:Name="RecoveryTransportIndependenceButton"/>
-            <Button x:Name="RecoveryTransportAdversarialControlsButton"/>
-            <Button x:Name="RecoveryTransportAdversarialEvidenceClosureButton"/>
-            <Button x:Name="ProducerKeyProvenanceBoundaryButton"/>
-            <Button x:Name="ProducerKeyRotationContinuityBoundaryButton"/>
-            <Button x:Name="ProducerKeyRevocationInferenceBoundaryButton"/>
-        </StackPanel>
-
-        <Grid Grid.Row="1" Margin="0,0,0,8">
+        <Grid Grid.Row="1" Margin="0,0,0,6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Рабочее пространство:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox x:Name="WorkspaceRootBox" Grid.Column="1" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
-            <Button Grid.Column="2" Content="Сохранить" Width="100" Click="SaveWorkspaceButton_Click"/>
+            <TextBlock Grid.Column="0" Text="Workspace:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="WorkspaceRootBox" Grid.Column="1" VerticalContentAlignment="Center"/>
         </Grid>
 
         <Grid Grid.Row="2" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Каталог Matawaka:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox x:Name="CatalogRootBox" Grid.Column="1" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
-            <Button Grid.Column="2" Content="Сканировать" Width="110" Margin="0,0,8,0" Click="InspectCatalogButton_Click"/>
-            <Button Grid.Column="3" Content="Обновить refs" Width="110" Click="FetchCatalogButton_Click"/>
+            <TextBlock Grid.Column="0" Text="Matawaka catalog:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="CatalogRootBox" Grid.Column="1" VerticalContentAlignment="Center"/>
         </Grid>
 
-        <TextBox x:Name="JsonTextBox" Grid.Row="3" AcceptsReturn="True" AcceptsTab="True"
-                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                 FontFamily="Consolas" TextWrapping="NoWrap"/>
+        <Border Grid.Row="3" Padding="8" Margin="0,0,0,8" BorderThickness="1" CornerRadius="4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="2*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Managed local apps: Workspace\Apps\&lt;ApplicationId&gt;" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="No persistent git-fetch/Agent checkboxes. Settings save automatically on actions/close. Local app update != app launch."
+                           TextWrapping="Wrap" FontStyle="Italic" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
 
-        <Grid Grid.Row="4" Margin="0,8,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Прогресс" VerticalAlignment="Center" Margin="0,0,10,0"/>
-            <ProgressBar x:Name="ProgressBar" Grid.Column="1" Height="20" Minimum="0" Maximum="100"/>
-            <TextBlock x:Name="StatusText" Grid.Column="2" Text="IDLE" VerticalAlignment="Center" Margin="12,0,0,0"/>
+        <Grid Grid.Row="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Progress" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ProgressBar x:Name="ProgressBar" Grid.Column="1" Height="20" Minimum="0" Maximum="100"/>
+                <TextBlock x:Name="StatusText" Grid.Column="2" Text="IDLE" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            </Grid>
+
+            <TabControl x:Name="OutputTabs" Grid.Row="1">
+                <TabItem x:Name="EventsTab" Header="Events">
+                    <ListBox x:Name="EventList" FontFamily="Consolas"/>
+                </TabItem>
+                <TabItem x:Name="UpdatePlanTab" Header="Update Workbench">
+                    <TextBox x:Name="UpdatePlanTextBox" IsReadOnly="True" AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             FontFamily="Consolas" TextWrapping="NoWrap"/>
+                </TabItem>
+                <TabItem x:Name="LocalAppsTab" Header="Local Apps">
+                    <TextBox x:Name="LocalAppsTextBox" IsReadOnly="True" AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             FontFamily="Consolas" TextWrapping="NoWrap"/>
+                </TabItem>
+                <TabItem x:Name="AcceptanceTab" Header="Acceptance / Publication">
+                    <TextBox x:Name="AcceptanceTextBox" IsReadOnly="True" AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             FontFamily="Consolas" TextWrapping="NoWrap"/>
+                </TabItem>
+                <TabItem x:Name="LifecycleTab" Header="Lifecycle">
+                    <TextBox x:Name="LifecycleTextBox" IsReadOnly="True" AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             FontFamily="Consolas" TextWrapping="NoWrap"/>
+                </TabItem>
+
+                <!-- Historical/advanced output surfaces retained for source compatibility, not active product navigation. -->
+                <TabItem x:Name="ResultTab" Header="Result" Visibility="Collapsed"><TextBox x:Name="ResultTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="EvidenceTab" Header="Evidence" Visibility="Collapsed"><TextBox x:Name="EvidenceTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="AuthorityTab" Header="Authority" Visibility="Collapsed"><TextBox x:Name="AuthorityTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="LivenessTab" Header="Liveness" Visibility="Collapsed"><TextBox x:Name="LivenessTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="SemanticTab" Header="Semantic" Visibility="Collapsed"><TextBox x:Name="SemanticTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="ProcessBoundaryTab" Header="Process" Visibility="Collapsed"><TextBox x:Name="ProcessBoundaryTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="RecoveryTab" Header="Recovery" Visibility="Collapsed"><TextBox x:Name="RecoveryTextBox" IsReadOnly="True"/></TabItem>
+                <TabItem x:Name="AgentTab" Header="Agent" Visibility="Collapsed"><TextBox x:Name="AgentTextBox" IsReadOnly="True"/></TabItem>
+            </TabControl>
         </Grid>
 
-        <TabControl x:Name="OutputTabs" Grid.Row="5">
-            <TabItem x:Name="EventsTab" Header="События">
-                <ListBox x:Name="EventList" FontFamily="Consolas"/>
-            </TabItem>
-            <TabItem x:Name="ResultTab" Header="Результат">
-                <TextBox x:Name="ResultTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="EvidenceTab" Header="Evidence Receipt">
-                <TextBox x:Name="EvidenceTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="AuthorityTab" Header="Authority Receipt">
-                <TextBox x:Name="AuthorityTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="LivenessTab" Header="Liveness">
-                <TextBox x:Name="LivenessTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="SemanticTab" Header="Semantic Provider">
-                <TextBox x:Name="SemanticTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="ProcessBoundaryTab" Header="Process Boundary">
-                <TextBox x:Name="ProcessBoundaryTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="AcceptanceTab" Header="Acceptance / Publication">
-                <TextBox x:Name="AcceptanceTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="LifecycleTab" Header="Lifecycle">
-                <TextBox x:Name="LifecycleTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="UpdatePlanTab" Header="Update Candidate">
-                <TextBox x:Name="UpdatePlanTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="RecoveryTab" Header="Recovery">
-                <TextBox x:Name="RecoveryTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-            <TabItem x:Name="AgentTab" Header="Agent">
-                <TextBox x:Name="AgentTextBox" IsReadOnly="True" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" TextWrapping="NoWrap"/>
-            </TabItem>
-        </TabControl>
+        <!-- Hidden compatibility fields preserve accepted legacy handlers/run-state code without exposing unused controls. -->
+        <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
+            <Button x:Name="PasteButton"/><Button x:Name="FileButton"/><Button x:Name="ValidateButton"/><Button x:Name="RunButton"/>
+            <Button x:Name="UpdatePlanButton"/><Button x:Name="MaterializeUpdateButton"/><Button x:Name="StagedApplyPlanButton"/><Button x:Name="ApplyBuildUpdateButton"/>
+            <Button x:Name="RecoveryCheckButton"/><Button x:Name="RecoveryPlanButton"/><Button x:Name="RecoveryExecuteButton"/>
+            <Button x:Name="RecoveryAdmissionButton"/><Button x:Name="RecoveryNegativeControlsButton"/><Button x:Name="RecoveryEvidenceClosureButton"/>
+            <Button x:Name="RecoveryEvidenceReplayButton"/><Button x:Name="RecoveryEvidenceRelocationButton"/><Button x:Name="RecoveryEvidenceExportButton"/><Button x:Name="RecoveryEvidenceImportButton"/>
+            <Button x:Name="RecoveryTransportIndependenceButton"/><Button x:Name="RecoveryTransportAdversarialControlsButton"/><Button x:Name="RecoveryTransportAdversarialEvidenceClosureButton"/>
+            <Button x:Name="ProducerKeyProvenanceBoundaryButton"/><Button x:Name="ProducerKeyRotationContinuityBoundaryButton"/><Button x:Name="ProducerKeyRevocationInferenceBoundaryButton"/>
+            <CheckBox x:Name="AgentEnabledBox" IsChecked="False"/><CheckBox x:Name="AllowGitFetchBox" IsChecked="False"/>
+            <TextBox x:Name="JsonTextBox"/>
+        </StackPanel>
     </Grid>
 </Window>
