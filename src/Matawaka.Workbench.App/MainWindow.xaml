@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.39.0" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Title="Matawaka Workbench v0.39.1" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -12,17 +12,17 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- v0.39: exactly eight active top-level buttons, zero persistent authority checkboxes. -->
+        <!-- v0.39.1 activation probe: exactly eight active top-level buttons, zero persistent authority checkboxes. -->
         <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
             <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0" Click="UpdateCandidateButton_Click"/>
             <Button x:Name="LaunchCandidateButton" Content="Launch candidate" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateV039Button_Click"
-                    ToolTip="Exact launch → persisted launch receipt → bounded live PID + exact process-image handoff → current predecessor window closes itself. Launch != Accept."/>
+                    ToolTip="Accepted v0.39 launch/handoff handler retained unchanged: exact launch → persisted launch receipt → bounded live exact process image → current predecessor self-close. Launch != Accept."/>
             <Button x:Name="UpdateLocalAppButton" Content="Local apps" Width="110" Margin="0,0,8,0"
                     Click="LocalAppsV0381Button_Click"
                     ToolTip="Unregistered managed app → Register. Registered app → explicit Update from package / Build update package / Cancel chooser; chooser height follows content."/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV039Button_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV039Button_Click"/>
-            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV039Button_Click"/>
+            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV0391Button_Click"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV0391Button_Click"/>
+            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV0391Button_Click"/>
             <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0" Click="LifecycleReceiptV2Button_Click"/>
             <Button x:Name="CancelButton" Content="Stop" Width="75" IsEnabled="False" Click="CancelButton_Click"/>
         </WrapPanel>
@@ -43,7 +43,7 @@
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Managed apps: Workspace\Apps\&lt;ApplicationId&gt; | Candidates: Workspace\AppCandidates\&lt;ApplicationId&gt;" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="Launch candidate now uses verified handoff: launch receipt + live exact process image before the current predecessor window closes itself. Candidate launch still does not mean acceptance."
+                <TextBlock Grid.Column="1" Text="v0.39.1 is an activation-probe successor. The accepted v0.39 launch/handoff runtime is unchanged; this version exists to let v0.39 perform its first natural predecessor self-close on a real host."
                            TextWrapping="Wrap" FontStyle="Italic" VerticalAlignment="Center"/>
             </Grid>
         </Border>
