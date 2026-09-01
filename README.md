@@ -1,24 +1,43 @@
-# Matawaka Workbench v0.34 candidate
+# Matawaka Workbench
 
 Windows/.NET 10 WPF control plane for bounded local Matawaka analysis, authority/evidence inspection, self-hosted maintenance, recovery and explicit accepted-source publication.
 
-## Accepted baseline
+## Accepted-state rule
 
-The currently accepted and remotely published Workbench is:
+The repository default branch `main` is the remotely published accepted source frontier. Candidate/stabilization branches are not accepted merely because their source exists.
 
-- commit `df211d1f4d80d0b1f238f1166460758e73ce18d2`;
-- tag `workbench-v0.33-accepted`;
-- parent `24c98787817b3b37f1a7197ecb5627be130f2581`.
+The exact accepted version is identified by the single `workbench-v<version>-accepted` tag at `main` HEAD. Version-specific predecessor SHAs, candidate plans and acceptance notes belong in `PATCH-v*.md`, Git tags and issue history rather than in this permanent README.
 
-v0.34 candidate source does not change that frontier until it independently traverses `Update candidate → Launch → Self-test → local checkpoint → Publish accepted`.
+`Accepted Source Documentation != Candidate Planning Document`
 
-## Current maintenance UX
+## Architecture
 
-Accepted v0.33 already reduced the pre-launch candidate update path to:
+Workbench is a product/application implementation, not UU-AAP Stable Core:
 
-`Update candidate → Запустить candidate`
+- `Matawaka.Workbench.App` — WPF operator surface and explicit maintenance/evidence gates;
+- `Matawaka.Workbench.Runtime` — command routing/runtime composition;
+- `Matawaka.Workbench.Protocol` — Workbench-local typed contracts/progress semantics;
+- `Matawaka.Workbench.AgentHost` — bounded development-agent host and Windows process/security boundary;
+- `Matawaka.Workbench.Engine` — reusable analytic future adapter;
+- `Matawaka.Workbench.Catalog` — local Matawaka catalog inspection;
+- `Matawaka.Workbench.SemanticHost` — fixed verified semantic host.
 
-The first button sequences the existing typed intake/materialize/staged-plan/apply-build gates and preserves their individual receipts. Launch remains separate. Self-test, local acceptance and publication remain later explicit actions.
+The established semantic/runtime line remains separate from maintenance convenience: restricted Low-integrity SemanticHost, Windows Job Object, runtime attestation before semantic input, byte-bound host, read-only proposal path and denied Execute acceptance control.
+
+## Current maintenance model
+
+The normal maintenance path is intentionally human-readable while preserving typed internal gates:
+
+```text
+Update candidate
+-> separate Launch candidate
+-> separate Self-test
+-> separate local Accept
+-> separate Publish accepted
+-> optional post-publication Lifecycle receipt
+```
+
+`Update candidate` sequences the existing typed package plan → staging materialization → staged apply plan → exact apply/build services. Their receipts remain individually preserved. Successful build still does not launch the candidate automatically.
 
 ```text
 One operator session != One semantic authority
@@ -26,59 +45,54 @@ Successful Build != Candidate Launch
 Candidate Launch != Self-test
 Self-test PASS != Checkpoint Authority
 Accepted Checkpoint != Publish Authority
+Publication Success != Lifecycle Authority
 ```
 
-## v0.34 product change — Maintenance Lifecycle Receipt
+## Maintenance Lifecycle Receipt
 
-v0.34 adds **Lifecycle receipt** as a post-publication audit action.
+The lifecycle capability is evidence composition only. Starting with the qualification/stabilization adapter, it derives the current accepted version/predecessor from exact accepted Git/checkpoint evidence rather than release-specific constants.
 
-It does not perform or authorize maintenance. Instead it attempts to prove that already-existing local evidence forms one exact relation:
+A complete assessment requires one exact relation among:
 
-`Update candidate/build → Self-test → local checkpoint → Publish accepted`
+- the current accepted tag at HEAD;
+- the exact local checkpoint for that HEAD/tag;
+- the checkpoint-bound passing Self-test artifact + SHA-256;
+- the unique update orchestrator receipt targeting that accepted version/predecessor and candidate executable digest;
+- the unique fixed publication receipt whose local/remote main/tag equal the accepted commit;
+- clean current Workbench source state.
 
-The lifecycle service binds evidence by identity, not by convenient chronology:
-
-- exact v0.34 checkpoint at current accepted HEAD;
-- checkpoint-bound acceptance artifact path + SHA-256;
-- passing v0.34 Self-test and exact candidate executable SHA-256;
-- the unique v0.33 orchestrator receipt targeting v0.34 whose build executable SHA-256 equals that Self-test executable;
-- the unique v0.34 publication receipt whose local/remote main/tag equal the checkpoint accepted commit;
-- exact SHA-256 for all four consumed artifacts;
-- current local HEAD/tag and clean working tree.
-
-Missing or ambiguous evidence fails closed.
+Missing or ambiguous evidence fails closed. Artifact selection is never based on modification time.
 
 ```text
 Summary != Authority
 Observed Sequence != Authorized Sequence
-Receipt Binding != Automatic Transition
-Missing Artifact != Inferred Success
+Accepted Tag Discovery != Trust Discovery
 Artifact Path != Artifact Identity
-Latest File != Correct File Without Exact Binding
+Latest File != Correct File
 Lifecycle Receipt != ActionPermit
 ```
 
-The only effect of **Lifecycle receipt** after a successful read-only assessment is an explicitly confirmed local evidence file under ignored `artifacts/lifecycle`.
+The only lifecycle effect after a complete read-only assessment is an explicitly confirmed local evidence write under ignored `artifacts/lifecycle`.
 
-## v0.34 acceptance/publication successors
+## Fixed accepted-source publication
 
-v0.34 preserves every existing boundary:
+`Publish accepted` remains a separate human maintenance network gate with one destination only:
 
-1. accepted v0.33 **Update candidate** installs/builds the v0.34 source package;
-2. **Запустить candidate** remains separate;
-3. v0.34 **Self-test** reuses the full v0.33 read-only matrix and adds only offline lifecycle contract/hostile checks;
-4. **Принять** creates local `workbench-v0.34-accepted` over exact v0.33 predecessor only;
-5. **Publish accepted** remains a separate fixed `Matawaka/workbench` fast-forward/tag network action;
-6. **Lifecycle receipt** runs only after those independent artifacts already exist.
+- remote name `github-workbench`;
+- URL `https://github.com/Matawaka/workbench.git`;
+- `refs/heads/main` plus the exact locally accepted tag.
 
-No successful stage silently authorizes a later stage.
+Remote main must be exact local parent or already exact local HEAD. Conflicting main/tag fails closed. No force push, arbitrary remote, catalog mutation, Agent Execute, ActionPermit or general Workbench network authority is admitted.
 
-## Architecture boundary
+## Qualification discipline
 
-Workbench remains a product/application layer, not UU-AAP Stable Core. v0.34 does not modify accepted `Runtime`, `Protocol`, `AgentHost`, `Engine`, `Catalog` or `SemanticHost` layers.
+Patch-level qualification/stabilization is preferred over feature inflation when evidence reveals a recurring operational defect. A negative qualification result is valid.
 
-It does not create Agent Execute, ActionPermit, catalog mutation authority, general network authority, arbitrary Git remote/history rewrite, retry/rollback authority, canonical UU-AAP conformance or Stable Core/interface-registry promotion.
+Current lifecycle qualification outcomes are categorical:
 
-## After v0.34
+- `LIFECYCLE_REUSABLE`;
+- `LIFECYCLE_NEEDS_ADAPTER`;
+- `LIFECYCLE_AMBIGUOUS`;
+- `LIFECYCLE_NOT_REQUIRED`.
 
-No automatic v0.35 feature expansion is assumed. The next decision gate is **Maintenance Lifecycle Qualification**: use the accepted v0.34 maintenance path on a real successor and determine whether the lifecycle composition is reliably reusable, needs correction, or should remain only an audit convenience.
+Workbench utility or successful maintenance does not establish canonical UU-AAP conformance, Stable Core membership, identity/trust, legal authority or general execution authority.
