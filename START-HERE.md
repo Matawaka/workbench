@@ -1,6 +1,6 @@
 # Start here — Matawaka Workbench
 
-This page describes the stable operator path. Exact release-specific predecessor/target identities are shown by update previews, the accepted tag at HEAD and `PATCH-v*.md` history rather than hard-coded here.
+This page describes the stable operator path. Exact release-specific predecessor/target identities are shown by update previews, accepted tags and `PATCH-v*.md` history rather than hard-coded here.
 
 ## Active controls
 
@@ -19,28 +19,39 @@ There are no persistent Agent or git-fetch checkboxes.
 
 ## Workbench update lifecycle
 
-1. **Update Workbench** → choose the source-only ZIP and confirm the bounded maintenance session.
-2. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
-3. **Launch candidate** separately.
-4. Starting with v0.39, a successful launch is followed by a bounded handoff check: the persisted launch receipt, PID, exact process-image path and candidate bytes must still agree. Only then does the current predecessor Workbench close its own window automatically.
-5. In the candidate run **Self-test** and require `Passed=true`.
-6. **Accept** separately.
-7. **Publish accepted** separately.
-8. Optionally create **Lifecycle receipt** after publication and require `Complete=true`.
+Starting with v0.40, **Update Workbench** is the normal one-confirmation transition path:
 
-If candidate launch or handoff verification fails, the predecessor Workbench stays open. The handoff never kills/signals another process and does not accept the candidate.
+1. choose the source-only ZIP;
+2. inspect exact package SHA, predecessor and target;
+3. confirm the transition once;
+4. existing typed gates freshly plan → materialize → staged-plan → exact source apply/build;
+5. Workbench creates one exact, expiring, one-shot bootstrap lease;
+6. it automatically launches only the exact build-receipt-bound candidate;
+7. existing v0.39 handoff re-verifies persisted launch receipt, live PID, exact process-image path and candidate SHA;
+8. only after that evidence is persisted, the predecessor closes its own window;
+9. the exact launched successor PID may claim the lease once on its first boot;
+10. it automatically runs the normal Self-test;
+11. only when `Passed=true`, it creates the normal local accepted checkpoint/tag automatically;
+12. **Publish accepted** remains a separate explicit action;
+13. **Lifecycle receipt** remains a separate explicit action after publication.
+
+The top-level **Launch candidate** button remains a manual fallback. Manual launch does not mint a bootstrap lease and therefore does not trigger automatic first-boot Self-test/Accept.
+
+A claim is persisted before automatic Self-test begins. Any failure, crash, stale evidence, wrong PID/path/SHA, or checkpoint error terminates the automatic path as `FAILED_NO_RETRY`; a later manual Self-test/Accept remains possible, but automatic retry authority is never created.
+
+Activation boundary: a newly installed release cannot retroactively change the already-running predecessor executable. Therefore the first installation of v0.40 from v0.39.1 still follows the old v0.39.1 manual Launch/Self-test/Accept path. Once v0.40 itself is running, its next successor transition exercises the one-confirmation bootstrap.
 
 ```text
-Build != Launch
-Launch Attempt != Predecessor Close
-Candidate Started != Candidate Accepted
-Launch Receipt Persisted Before Predecessor Close
-Live PID != Exact Candidate Process Image
+One Update Confirmation != General Future Launch Authority
+Auto Launch != Candidate Acceptance
+First Boot Trigger != Reusable Acceptance Authority
+Self-test PASS Required Before Auto Accept
+Failed Self-test != Retry Authority
+Manual/Repeated Launch != Bootstrap Launch
+Bootstrap Lease Consumed Once
 Predecessor Self-Close != External Process-Kill Authority
-Launch != Self-test
-Self-test PASS != Accept
 Accept != Publish
-Publish != Lifecycle authority
+Publish != Lifecycle Authority
 ```
 
 ## Local apps
@@ -87,13 +98,7 @@ Place desired target files under:
 <WorkspaceRoot>\AppCandidates\<ApplicationId>\
 ```
 
-and add:
-
-```text
-.matawaka-target.json
-```
-
-Example:
+and add `.matawaka-target.json`, for example:
 
 ```json
 {
@@ -105,26 +110,13 @@ Example:
 
 Then choose **Local apps → registered app → Build update package**.
 
-Workbench:
-
-1. reads current SHA-256 values directly from `Workspace\Apps\<ApplicationId>`;
-2. reads target bytes from the fixed `Workspace\AppCandidates\<ApplicationId>` root;
-3. derives Add / Replace / NoOp;
-4. refuses any candidate omission that would imply Delete;
-5. generates target `.matawaka-app.json` itself;
-6. shows a read-only package plan;
-7. after explicit confirmation freshly recomputes both sides;
-8. writes one ZIP only under `Workbench\artifacts\local-app-packages`;
-9. immediately validates that generated ZIP through the existing updater Preview;
-10. only after updater Preview is READY, writes a separate typed builder receipt JSON under the same artifact directory and parses it back for exact package/manifest/current/target/no-effect binding.
-
-The Local Apps output includes `PackageBuildReceiptPath`. If package validation fails, the builder removes the generated ZIP; if receipt persistence fails, the action does not report completed evidence persistence.
+Workbench reads current SHA-256 from the registered app, target bytes from the fixed candidate root, derives Add/Replace/NoOp, refuses implicit Delete, generates target identity, freshly recomputes both sides, writes one ZIP, validates that ZIP through the existing updater Preview, then persists a typed package-build receipt JSON.
 
 Successful builder status:
 
 `LOCAL_APPLICATION_UPDATE_PACKAGE_BUILT_EXISTING_UPDATER_PREVIEW_READY`
 
-means the package is acceptable to the existing updater Preview, but no update has occurred.
+means only that the package is acceptable to the updater Preview; no update or launch occurred.
 
 ```text
 Semantic Equality != Byte Equality
@@ -135,7 +127,7 @@ Package Write != Update Authority
 Build Package != Update App != Launch App
 ```
 
-To actually apply it, use **Local apps** again → **Update from package** and select the generated ZIP.
+To apply it, use **Local apps** again → **Update from package** and select the generated ZIP.
 
 ## Historical capabilities
 
