@@ -1,0 +1,222 @@
+name: Workbench v0.41.1 visible JSON search selection qualification
+
+on:
+  push:
+    branches:
+      - stabilize/workbench-v0.41.1-json-search-visible-selection
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.41.1 Release build failed' }
+
+      - name: Verify accepted v0.41 search and maintenance bytes unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '1ae2ccd8a0d789c46b26ac29970e2a1a697d8763'
+          $mustRemain = @(
+            'src/Matawaka.Workbench.App/JsonOutputSearchV041Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V041.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/TransitionBootstrapV040Service.cs',
+            'src/Matawaka.Workbench.App/CandidateLaunchHandoffV039Service.cs',
+            'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs',
+            'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationManagedRoleGuardV0371Service.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuildReceiptStoreV038Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV038.cs',
+            'src/Matawaka.Workbench.Runtime',
+            'src/Matawaka.Workbench.Protocol',
+            'src/Matawaka.Workbench.AgentHost',
+            'src/Matawaka.Workbench.Engine',
+            'src/Matawaka.Workbench.Catalog',
+            'src/Matawaka.Workbench.SemanticHost'
+          )
+          foreach ($path in $mustRemain) {
+            git diff --quiet $base HEAD -- $path
+            if ($LASTEXITCODE -ne 0) { throw "accepted implementation changed unexpectedly: $path" }
+          }
+          Write-Host 'accepted v0.41 search/transition/local-app/non-App bytes unchanged: PASS'
+
+      - name: Verify routing and presentation contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          $ui = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0411.cs' -Raw
+          $presentation = Get-Content 'src/Matawaka.Workbench.App/JsonSearchPresentationV0411Service.cs' -Raw
+          foreach ($marker in @('ConfigureV0411Routing','ConfigureV041Routing','Window_LoadedV0411','LocalCheckpointV0411Service.Version','AcceptFromBootstrapAsync','FinalizeAcceptedAsync','AutomaticPublishPerformed = false')) {
+            if (($app + $ui) -notmatch [regex]::Escape($marker)) { throw "v0.41.1 routing marker missing: $marker" }
+          }
+          foreach ($marker in @('IsInactiveSelectionHighlightEnabled = true','target.Select(match.Start, match.Length)','target.ScrollToLine(line)')) {
+            if ($presentation -notmatch [regex]::Escape($marker)) { throw "presentation marker missing: $marker" }
+          }
+          if ($presentation -match 'CaretIndex') { throw 'presentation adapter must not move CaretIndex' }
+          if ($ui -notmatch 'JsonSearchPresentationV0411Service.PresentMatch') { throw 'v0.41.1 UI does not use presentation adapter' }
+          Write-Host 'v0.41.1 visible-selection routing contract: PASS'
+
+      - name: Execute compiled WPF presentation controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v0411-presentation-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.Windows.Controls;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              [STAThread]
+              private static void Main()
+              {
+                  var output = new TextBox { Text = "alpha JSON beta json" };
+                  var before = output.Text;
+                  JsonSearchPresentationV0411Service.EnableInactiveSelectionHighlight(output);
+                  if (!output.IsInactiveSelectionHighlightEnabled) throw new Exception("inactive selection highlighting not enabled");
+                  var match = JsonOutputSearchV041Service.Find(output.Text, "json", 0, 0, JsonOutputSearchDirection.Next)
+                      ?? throw new Exception("accepted search returned no match");
+                  JsonSearchPresentationV0411Service.PresentMatch(output, match);
+                  if (output.SelectionStart != match.Start || output.SelectionLength != match.Length) throw new Exception("selected range mismatch");
+                  if (!string.Equals(output.SelectedText, "JSON", StringComparison.Ordinal)) throw new Exception("selected text mismatch");
+                  if (!string.Equals(output.Text, before, StringComparison.Ordinal)) throw new Exception("output text mutated");
+                  Console.WriteLine($"V0411_VISIBLE_SELECTION_PASS inactive={output.IsInactiveSelectionHighlightEnabled} start={output.SelectionStart} length={output.SelectionLength} inputUnchanged=True");
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.41.1 WPF presentation probe failed' }
+
+      - name: Verify eight-button surface and release contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 8) { throw 'active top-level button count is not 8' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'active top-level checkbox count is not 0' }
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0411Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0411Service.cs' -Raw
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0411AcceptanceHarness.cs' -Raw
+          if ($checkpoint -notmatch 'ExpectedPredecessorCommit = "1ae2ccd8a0d789c46b26ac29970e2a1a697d8763"' -or $checkpoint -notmatch 'workbench-v0\.41\.1-accepted') { throw 'v0.41.1 checkpoint contract mismatch' }
+          if ($checkpoint -notmatch 'explicitUiConfirmationRequired: false') { throw 'bootstrap checkpoint authority distinction missing' }
+          if ($publisher -notmatch 'ExpectedParent = "1ae2ccd8a0d789c46b26ac29970e2a1a697d8763"' -or $publisher -notmatch 'workbench-v0\.41\.1-accepted') { throw 'v0.41.1 publisher contract mismatch' }
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.41\.1' -or $accept -notmatch '"0\.41\.1"') { throw 'v0.41.1 acceptance identity missing' }
+          Write-Host 'v0.41.1 8/0 and release contracts: PASS'
+
+      - name: Verify product diff bounded
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '1ae2ccd8a0d789c46b26ac29970e2a1a697d8763'
+          $allowed = @(
+            '.github/workflows/workbench-v0.41.1-candidate.yml',
+            'PATCH-v0.41.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0411Service.cs',
+            'src/Matawaka.Workbench.App/JsonSearchPresentationV0411Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0411Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0411.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0411AcceptanceHarness.cs'
+          ) | Sort-Object
+          $actual = @(git diff --name-only $base HEAD) | Sort-Object
+          if (($actual -join "`n") -ne ($allowed -join "`n")) { throw "unexpected v0.41.1 diff:`n$($actual -join "`n")" }
+          Write-Host 'v0.41.1 product diff bounded: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.41.1 package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.41.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0411Service.cs',
+            'src/Matawaka.Workbench.App/JsonSearchPresentationV0411Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0411Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0411.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0411AcceptanceHarness.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.41.1-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.41.1';
+            PredecessorTag='workbench-v0.41-accepted'; PredecessorCommit='1ae2ccd8a0d789c46b26ac29970e2a1a697d8763';
+            TargetTag='workbench-v0.41.1-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('source package creates no search/output/import authority by itself','accepted v0.41 search algorithm and maintenance runtime are not included in payload','Publish and Lifecycle remain separate')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.41.1-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.41.1-source-only.sha256.txt'), "$sha  workbench-v0.41.1-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.41.1 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.41.1-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.41.1-source-only.zip
+            ${{ runner.temp }}/workbench-v0.41.1-source-only.sha256.txt
+          retention-days: 30
