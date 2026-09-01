@@ -2,11 +2,14 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Matawaka.Workbench.App"
-        Title="Matawaka Workbench v0.42" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Title="Matawaka Workbench v0.43" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Loaded="Window_LoadedV040"
         Closing="Window_Closing">
     <Window.Resources>
         <local:StatusForegroundV042Converter x:Key="StatusForegroundV042"/>
+        <HierarchicalDataTemplate DataType="{x:Type local:AppTreeNodeV043}" ItemsSource="{Binding Children}">
+            <TextBlock Text="{Binding Display}" ToolTip="{Binding RelativePath}"/>
+        </HierarchicalDataTemplate>
     </Window.Resources>
 
     <Grid Margin="12">
@@ -18,7 +21,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- v0.42: exactly five visible top-level maintenance buttons, zero persistent authority checkboxes. -->
+        <!-- v0.43 preserves the v0.42 five-button operator surface. -->
         <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
             <Button x:Name="UpdateCandidateButton" Width="92" Height="46" Margin="0,0,6,0" Click="UpdateCandidateV040Button_Click"
                     ToolTip="One explicit confirmation may perform exact update/build → one-shot bootstrap → automatic exact launch/handoff. Successor first boot validates and locally accepts once if PASS. Publish remains separate.">
@@ -52,9 +55,12 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,6,0">
-                                    <TextBlock Text="{Binding}"/>
-                                </Border>
+                                <Button Padding="7,3" Margin="0,0,6,0" Cursor="Hand"
+                                        DataContext="{Binding}" Tag="{Binding ApplicationId}"
+                                        Click="InstalledAppV043Button_Click"
+                                        ToolTip="Open read-only application directory tree in its own tab">
+                                    <TextBlock Text="{Binding Display}"/>
+                                </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -96,7 +102,6 @@
             <TextBlock x:Name="JsonSearchStatusText" Grid.Column="5" Margin="10,0,0,0" VerticalAlignment="Center"/>
         </Grid>
 
-        <!-- Status is the bottom-most visible surface and is rendered over the progress bar. -->
         <Grid x:Name="StatusProgressSurface" Grid.Row="4" Height="26">
             <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="100" Opacity="0.26"/>
             <TextBlock x:Name="StatusText" Text="IDLE" Margin="8,0" VerticalAlignment="Center" FontWeight="SemiBold"
@@ -104,7 +109,6 @@
                        Foreground="{Binding Text, RelativeSource={RelativeSource Self}, Converter={StaticResource StatusForegroundV042}}"/>
         </Grid>
 
-        <!-- Historical/non-visible bindings remain only so accepted predecessor code keeps compiling/routing. -->
         <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
             <TextBox x:Name="WorkspaceRootBox"/>
             <TextBox x:Name="CatalogRootBox"/>
