@@ -47,17 +47,21 @@ Publish != Lifecycle authority
 
 If `.matawaka-app.json` is absent, Workbench offers **Register**. Registration inventories the existing bytes, derives a deterministic `baseline-*` identity, freshly rechecks the bytes, then creates only `.matawaka-app.json`.
 
+A directory carrying `.matawaka-target.json` is candidate-role content and is refused for registration under `Workspace\Apps`.
+
 Expected status:
 
 `LOCAL_APPLICATION_REGISTERED_UPDATE_AUTHORITY_NOT_CREATED`
 
 ### Registered app
 
-If `.matawaka-app.json` exists, Workbench offers three possible local-app paths through the same top-level control:
+If `.matawaka-app.json` exists, Workbench opens an explicit action chooser with three directly labelled buttons:
 
-- **Update from package**;
-- **Build update package**;
-- Cancel.
+- **Update from package**
+- **Build update package**
+- **Cancel**
+
+Opening or cancelling the chooser performs no action. There is no YES/NO semantic mapping and no default effect button.
 
 #### Update from package
 
@@ -103,12 +107,21 @@ Workbench:
 6. shows a read-only package plan;
 7. after explicit confirmation freshly recomputes both sides;
 8. writes one ZIP only under `Workbench\artifacts\local-app-packages`;
-9. immediately validates that generated ZIP through the existing updater Preview.
+9. immediately validates that generated ZIP through the existing updater Preview;
+10. only after updater Preview is READY, writes a separate typed builder receipt JSON under the same artifact directory and parses it back for exact package/manifest/current/target/no-effect binding.
 
-Successful builder status means the package is already acceptable to the existing updater Preview, but no update has occurred.
+The Local Apps output includes `PackageBuildReceiptPath`. If package validation fails, the builder removes the generated ZIP; if receipt persistence fails, the action does not report completed evidence persistence.
+
+Successful builder status:
+
+`LOCAL_APPLICATION_UPDATE_PACKAGE_BUILT_EXISTING_UPDATER_PREVIEW_READY`
+
+means the package is acceptable to the existing updater Preview, but no update has occurred.
 
 ```text
 Semantic Equality != Byte Equality
+Explicit Action Label != Generic Dialog Button Semantics
+Artifact Persistence != Receipt Persistence
 Builder Preview != Package Write Authority
 Package Write != Update Authority
 Build Package != Update App != Launch App
