@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.38.0" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Title="Matawaka Workbench v0.38.1" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -12,16 +12,16 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- v0.38: exactly eight active top-level buttons, zero persistent authority checkboxes. -->
+        <!-- v0.38.1: exactly eight active top-level buttons, zero persistent authority checkboxes. -->
         <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
             <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0" Click="UpdateCandidateButton_Click"/>
             <Button x:Name="LaunchCandidateButton" Content="Launch candidate" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateButton_Click"/>
             <Button x:Name="UpdateLocalAppButton" Content="Local apps" Width="110" Margin="0,0,8,0"
-                    Click="LocalAppsV038Button_Click"
-                    ToolTip="Unregistered managed app → Register. Registered app → explicit Update from package / Build update package / Cancel chooser."/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV038Button_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV038Button_Click"/>
-            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV038Button_Click"/>
+                    Click="LocalAppsV0381Button_Click"
+                    ToolTip="Unregistered managed app → Register. Registered app → explicit Update from package / Build update package / Cancel chooser; chooser height follows content."/>
+            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV0381Button_Click"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV0381Button_Click"/>
+            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV0381Button_Click"/>
             <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0" Click="LifecycleReceiptV2Button_Click"/>
             <Button x:Name="CancelButton" Content="Stop" Width="75" IsEnabled="False" Click="CancelButton_Click"/>
         </WrapPanel>
@@ -42,7 +42,7 @@
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Managed apps: Workspace\Apps\&lt;ApplicationId&gt; | Candidates: Workspace\AppCandidates\&lt;ApplicationId&gt;" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="Explicit action labels replace YES/NO semantics. Successful package build persists both ZIP and builder receipt JSON. Build != Update != Launch."
+                <TextBlock Grid.Column="1" Text="Explicit action labels replace YES/NO semantics. Chooser height follows content so Update / Build / Cancel remain visible. Build != Update != Launch."
                            TextWrapping="Wrap" FontStyle="Italic" VerticalAlignment="Center"/>
             </Grid>
         </Border>
