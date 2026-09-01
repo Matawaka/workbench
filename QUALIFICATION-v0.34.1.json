@@ -1,0 +1,87 @@
+{
+  "schema": "matawaka.workbench-qualification-stabilization/v0.34.1",
+  "version": "0.34.1",
+  "accepted_baseline": {
+    "commit": "224ad00bd72b0534de1081b2a20c44746ee0e7a0",
+    "tag": "workbench-v0.34-accepted",
+    "parent": "df211d1f4d80d0b1f238f1166460758e73ce18d2",
+    "tree": "7b2c47441115591860b8ee466073d391796a4a78"
+  },
+  "pre_patch_findings": [
+    {
+      "id": "accepted-frontier-integrity",
+      "outcome": "PASS",
+      "note": "Remote main/tag/parent and accepted product delta were independently coherent."
+    },
+    {
+      "id": "v0.34-self-lifecycle-completeness",
+      "outcome": "PASS_BOUNDED",
+      "note": "One exact v0.34 lifecycle relation completed with all relation checks passing and no lifecycle authority/action/retry/rollback creation."
+    },
+    {
+      "id": "successor-lifecycle-reuse",
+      "outcome": "LIFECYCLE_NEEDS_ADAPTER",
+      "note": "Accepted lifecycle service was bound to v0.34 target/predecessor constants and could not itself assess the next successor."
+    },
+    {
+      "id": "accepted-documentation-currentness",
+      "outcome": "STABILIZATION_REQUIRED",
+      "note": "Permanent public docs remained candidate-state and named the previous release as accepted baseline after v0.34 publication."
+    }
+  ],
+  "patch_scope": {
+    "feature_layer_created": false,
+    "stable_core_changed": false,
+    "canonical_uu_aap_conformance_claimed": false,
+    "runtime_changed": false,
+    "protocol_changed": false,
+    "agent_host_changed": false,
+    "engine_changed": false,
+    "catalog_changed": false,
+    "semantic_host_changed": false,
+    "generic_lifecycle_evidence_adapter": true,
+    "state_neutral_public_docs": true,
+    "patch_acceptance_successor_required": true
+  },
+  "generic_lifecycle_contract": {
+    "target_from_unique_accepted_tag_at_head": true,
+    "predecessor_from_exact_git_parent_and_checkpoint": true,
+    "unique_predecessor_accepted_tag_required": true,
+    "checkpoint_bound_acceptance_digest_required": true,
+    "unique_matching_orchestrator_required": true,
+    "unique_matching_publication_required": true,
+    "artifact_sha256_bindings_required": true,
+    "clean_local_source_required": true,
+    "modification_time_selection_allowed": false,
+    "git_mutation_allowed": false,
+    "network_operation_allowed": false,
+    "trust_discovery_claimed": false,
+    "authority_created": false
+  },
+  "qualification": {
+    "status": "REAL_SUCCESSOR_QUALIFICATION_PENDING",
+    "positive_outcome": "LIFECYCLE_REUSABLE",
+    "negative_outcomes": [
+      "LIFECYCLE_NEEDS_ADAPTER",
+      "LIFECYCLE_AMBIGUOUS",
+      "LIFECYCLE_NOT_REQUIRED"
+    ],
+    "positive_outcome_authorized_before_real_successor": false,
+    "requires_installed_successor": "0.34.1",
+    "requires_self_test_pass": true,
+    "requires_explicit_local_checkpoint": true,
+    "requires_separate_publication": true,
+    "requires_generic_lifecycle_complete": true,
+    "requires_independent_remote_verification": true
+  },
+  "non_effects": [
+    "qualification != promotion",
+    "patch release != feature layer",
+    "generic evidence discovery != authority discovery",
+    "accepted tag discovery != trust discovery",
+    "no automatic update/build/launch/self-test/checkpoint/publication/lifecycle",
+    "no Agent Execute or ActionPermit expansion",
+    "no general network or catalog authority",
+    "no Stable Core/interface-registry promotion"
+  ]
+}
