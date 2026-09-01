@@ -70,24 +70,27 @@ jobs:
           if ([regex]::Matches($surface, '<Button\b').Count -ne 5) { throw 'visible top-level maintenance button count is not 5' }
           if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'visible top-level persistent checkbox count is not 0' }
           foreach ($name in @('UpdateCandidateButton','LaunchCandidateButton','UpdateLocalAppButton','PublishAcceptedButton','LifecycleReceiptButton')) {
-            if ($surface -notmatch [regex]::Escape("x:Name=\"$name\"")) { throw "missing visible button: $name" }
+            $needle = 'x:Name="' + $name + '"'
+            if (-not $surface.Contains($needle, [StringComparison]::Ordinal)) { throw "missing visible button: $name" }
           }
           foreach ($name in @('SelfTestButton','AcceptCheckpointButton','CancelButton')) {
-            if ($surface -match [regex]::Escape("x:Name=\"$name\"")) { throw "legacy manual button still visible: $name" }
+            $needle = 'x:Name="' + $name + '"'
+            if ($surface.Contains($needle, [StringComparison]::Ordinal)) { throw "legacy manual button still visible: $name" }
           }
           if ([regex]::Matches($surface, '<LineBreak\s*/>').Count -lt 5) { throw 'two-word visible button labels are not split over two lines' }
           $hidden = [regex]::Match($xaml, '<StackPanel x:Name="HistoricalCompatibilityBindings"[\s\S]*?</StackPanel>').Value
-          if ($hidden -notmatch 'Visibility="Collapsed"') { throw 'historical compatibility bindings are not collapsed' }
+          if (-not $hidden.Contains('Visibility="Collapsed"', [StringComparison]::Ordinal)) { throw 'historical compatibility bindings are not collapsed' }
           foreach ($name in @('WorkspaceRootBox','CatalogRootBox','SelfTestButton','AcceptCheckpointButton','CancelButton')) {
-            if ($hidden -notmatch [regex]::Escape("x:Name=\"$name\"")) { throw "hidden compatibility control missing: $name" }
+            $needle = 'x:Name="' + $name + '"'
+            if (-not $hidden.Contains($needle, [StringComparison]::Ordinal)) { throw "hidden compatibility control missing: $name" }
           }
-          if ($xaml -notmatch 'x:Name="InstalledAppsList"' -or $xaml -notmatch 'x:Name="InstalledAppsSummaryText"') { throw 'installed Apps strip missing' }
+          if (-not $xaml.Contains('x:Name="InstalledAppsList"', [StringComparison]::Ordinal) -or -not $xaml.Contains('x:Name="InstalledAppsSummaryText"', [StringComparison]::Ordinal)) { throw 'installed Apps strip missing' }
           $tabsAt = $xaml.IndexOf('x:Name="OutputTabs"', [StringComparison]::Ordinal)
           $findAt = $xaml.IndexOf('x:Name="JsonSearchSurface"', [StringComparison]::Ordinal)
           $statusAt = $xaml.IndexOf('x:Name="StatusProgressSurface"', [StringComparison]::Ordinal)
           if ($tabsAt -lt 0 -or $findAt -le $tabsAt -or $statusAt -le $findAt) { throw 'required vertical order is OutputTabs -> Find -> bottom Status/Progress' }
           $statusSurface = [regex]::Match($xaml, '<Grid x:Name="StatusProgressSurface"[\s\S]*?</Grid>').Value
-          if ($statusSurface -notmatch 'x:Name="ProgressBar"' -or $statusSurface -notmatch 'x:Name="StatusText"') { throw 'status is not overlaid in same progress surface' }
+          if (-not $statusSurface.Contains('x:Name="ProgressBar"', [StringComparison]::Ordinal) -or -not $statusSurface.Contains('x:Name="StatusText"', [StringComparison]::Ordinal)) { throw 'status is not overlaid in same progress surface' }
           if ($statusSurface.IndexOf('ProgressBar', [StringComparison]::Ordinal) -gt $statusSurface.IndexOf('StatusText', [StringComparison]::Ordinal)) { throw 'status text must be layered after ProgressBar' }
           Write-Host 'v0.42 compact visible shell layout: PASS'
 
