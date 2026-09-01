@@ -27,16 +27,16 @@ public sealed class WorkbenchV038AcceptanceHarness
         var passed = predecessor.Passed && chooserChecks.All(item => item.Passed) && storeChecks.All(item => item.Passed);
         var nonEffects = predecessor.NonEffects.Concat(new[]
         {
-            "v0.38.1 Self-test opens no Local Apps chooser and performs no package-build/update effect",
-            "chooser layout sizing is presentation-only and creates no default action authority",
+            "v0.38 Self-test opens no Local Apps chooser and performs no package-build/update effect",
+            "explicit chooser creates no default action authority",
             "receipt-store checks are offline contract checks only",
             "no local-app package receipt is written by Self-test",
             "no network/Git/Agent Execute effect"
         }).Distinct(StringComparer.Ordinal).ToArray();
 
         return new WorkbenchAcceptanceReceipt(
-            "matawaka.workbench-acceptance-receipt/v0.38.1",
-            "0.38.1",
+            "matawaka.workbench-acceptance-receipt/v0.38",
+            "0.38.0",
             predecessor.RunId,
             DateTimeOffset.Now,
             passed,
@@ -47,6 +47,6 @@ public sealed class WorkbenchV038AcceptanceHarness
             predecessor.ExecuteProgressEvents,
             checks,
             nonEffects,
-            "Workbench v0.38.1 reuses the v0.38 chooser/receipt contracts and adds content-height chooser sizing after real-host Cancel clipping evidence. Self-test creates no Local Apps/package/update/launch/network/Agent Execute authority or effect.");
+            "Workbench v0.38 reuses the complete accepted v0.37.1 matrix and adds only offline explicit-chooser and package-build receipt-persistence checks. Self-test creates no Local Apps/package/update/launch/network/Agent Execute authority or effect.");
     }
 }
