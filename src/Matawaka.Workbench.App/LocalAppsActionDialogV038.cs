@@ -96,6 +96,6 @@ public sealed class LocalAppsActionDialogV038 : Window
         ("local-apps-chooser-build-label", true, "Build update package", "Build update package"),
         ("local-apps-chooser-cancel-label", true, "Cancel", "Cancel"),
         ("local-apps-chooser-no-default-effect", true, "no IsDefault action; initial Choice=Cancel", "no default effect"),
-        ("local-apps-chooser-top-level-button-added", false, "false", "false")
+        ("local-apps-chooser-top-level-button-added", true, "false", "false")
     };
 }
