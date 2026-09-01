@@ -1,0 +1,272 @@
+name: Workbench v0.39 candidate launch handoff qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.39-candidate-launch-handoff
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Windows build and exact launch-handoff qualification
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Matawaka.Workbench.sln
+
+      - name: Build Release
+        run: dotnet build Matawaka.Workbench.sln -c Release --no-restore
+
+      - name: Verify eight-button v0.39 surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          if ($xaml -notmatch 'Matawaka Workbench v0\.39\.0') { throw 'v0.39 title missing' }
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if (-not $surface) { throw 'PrimaryMaintenanceSurface missing' }
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 8) { throw 'active button count is not 8' }
+          if ([regex]::Matches($surface, '<CheckBox\b').Count -ne 0) { throw 'active checkbox count is not 0' }
+          foreach ($handler in @('LaunchCandidateV039Button_Click','SelfTestV039Button_Click','AcceptCheckpointV039Button_Click','PublishAcceptedV039Button_Click')) {
+            if ($surface -notmatch [regex]::Escape($handler)) { throw "v0.39 handler missing: $handler" }
+          }
+          Write-Host 'eight-button v0.39 surface: PASS'
+
+      - name: Verify handoff authority ceiling and self-close ordering
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $handoff = Get-Content 'src/Matawaka.Workbench.App/CandidateLaunchHandoffV039Service.cs' -Raw
+          $ui = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V039.cs' -Raw
+          foreach ($required in @(
+            'CANDIDATE_ALIVE_PREDECESSOR_SELF_CLOSE_ELIGIBLE_NOT_ACCEPTED',
+            'ProcessImageMatchedCandidate',
+            'CandidateAcceptanceCreated',
+            'ExternalProcessTerminationAuthorityCreated',
+            'process.MainModule?.FileName',
+            'File.Move(tempPath, finalPath)'
+          )) { if (-not $handoff.Contains($required)) { throw "handoff marker missing: $required" } }
+          if ($handoff -match '\.Kill\s*\(' -or $handoff -match '\.CloseMainWindow\s*\(') { throw 'external termination/control API found in handoff service' }
+          foreach ($required in @('PredecessorSelfCloseScheduled = true','Dispatcher.BeginInvoke','new Action(Close)','handoff.ArtifactPath')) {
+            if (-not $ui.Contains($required)) { throw "UI handoff marker missing: $required" }
+          }
+          $receiptIndex = $ui.IndexOf('HandoffReceiptPath = handoff.ArtifactPath')
+          $closeIndex = $ui.IndexOf('new Action(Close)')
+          if ($receiptIndex -lt 0 -or $closeIndex -lt 0 -or $receiptIndex -ge $closeIndex) { throw 'self-close is not ordered after handoff evidence output' }
+          Write-Host 'handoff authority ceiling and evidence-before-self-close ordering: PASS'
+
+      - name: Verify accepted launch and maintenance services unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '612eccf4ff440b27f37fe634205980c3e2f9e0d8'
+          $mustRemain = @(
+            'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs',
+            'src/Matawaka.Workbench.App/MaintenanceUpdateOrchestratorService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuilderService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationMaintenanceService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationRegistrationService.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationManagedRoleGuardV0371Service.cs',
+            'src/Matawaka.Workbench.App/LocalApplicationPackageBuildReceiptStoreV038Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV038.cs',
+            'src/Matawaka.Workbench.Runtime',
+            'src/Matawaka.Workbench.Protocol',
+            'src/Matawaka.Workbench.AgentHost',
+            'src/Matawaka.Workbench.Engine',
+            'src/Matawaka.Workbench.Catalog',
+            'src/Matawaka.Workbench.SemanticHost'
+          )
+          foreach ($path in $mustRemain) {
+            git diff --quiet $base HEAD -- $path
+            if ($LASTEXITCODE -ne 0) { throw "unexpected accepted implementation change: $path" }
+          }
+          Write-Host 'accepted launch/local-app/non-App implementation unchanged: PASS'
+
+      - name: Execute live exact-image and negative handoff fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v039-handoff-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escapedProject = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escapedProject" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+
+          @'
+          using System.Diagnostics;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          static void Require(bool condition, string message) { if (!condition) throw new Exception(message); }
+          static string Sha(string path) { using var s = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(s)).ToLowerInvariant(); }
+          static WorkbenchCandidateLaunchReceipt Receipt(string candidate, string sha, int pid)
+          {
+              var authority = new WorkbenchCandidateLaunchAuthorityReceipt(
+                  BoundedUpdateApplyBuildService.LaunchAuthoritySchema,
+                  "fixture", "workbench.update.launch-candidate", candidate, sha,
+                  "compiled v0.39 qualification fixture", true, true,
+                  false, false, false, false,
+                  new[] { "qualification fixture only" });
+              return new WorkbenchCandidateLaunchReceipt(
+                  BoundedUpdateApplyBuildService.LaunchReceiptSchema,
+                  BoundedUpdateApplyBuildService.Version,
+                  DateTimeOffset.Now,
+                  candidate, sha, pid, authority,
+                  "CANDIDATE_LAUNCHED_NOT_ACCEPTED",
+                  new[] { "qualification fixture only" },
+                  "fixture");
+          }
+          static string WriteLaunch(string root, WorkbenchCandidateLaunchReceipt receipt, string token)
+          {
+              var dir = Path.Combine(root, "Workbench", "artifacts", "update-applies");
+              Directory.CreateDirectory(dir);
+              var path = Path.Combine(dir, $"candidate-launch-v0.14-{token}.json");
+              File.WriteAllText(path, JsonSerializer.Serialize(receipt, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+              return path;
+          }
+
+          var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v039-handoff-" + Guid.NewGuid().ToString("N"));
+          var artifacts = Path.Combine(workspace, "Workbench", "artifacts", "handoff-fixture");
+          Directory.CreateDirectory(artifacts);
+          var candidate = Path.Combine(artifacts, "candidate.exe");
+          File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"), candidate);
+          var candidateSha = Sha(candidate);
+          var service = new CandidateLaunchHandoffV039Service();
+
+          // Positive: exact copied candidate image remains alive through bounded observation.
+          var live = Process.Start(new ProcessStartInfo(candidate, "/c timeout /t 4 /nobreak >nul") { UseShellExecute = false, CreateNoWindow = true })
+              ?? throw new Exception("failed to start exact-image fixture");
+          var liveReceipt = Receipt(candidate, candidateSha, live.Id);
+          var liveArtifact = WriteLaunch(workspace, liveReceipt, "live");
+          var passed = await service.ObserveAndPersistAsync(liveReceipt, liveArtifact, workspace, CancellationToken.None);
+          Require(passed.Receipt.PredecessorSelfCloseEligible, "live exact-image handoff not eligible");
+          Require(passed.Receipt.CandidateObservedAlive && passed.Receipt.ProcessImageMatchedCandidate, "live/image evidence missing");
+          Require(!passed.Receipt.CandidateAcceptanceCreated && !passed.Receipt.ExternalProcessTerminationAuthorityCreated, "handoff crossed authority ceiling");
+          Require(File.Exists(passed.ArtifactPath), "handoff receipt not persisted before eligibility return");
+          Require(Path.GetFullPath(passed.Receipt.ObservedProcessExecutablePath).Equals(Path.GetFullPath(candidate), StringComparison.OrdinalIgnoreCase), "observed process image mismatch");
+          live.WaitForExit(7000);
+
+          // Negative 1: exited PID cannot authorize predecessor close.
+          var dead = Process.Start(new ProcessStartInfo(candidate, "/c exit 0") { UseShellExecute = false, CreateNoWindow = true })
+              ?? throw new Exception("failed to start dead fixture");
+          dead.WaitForExit();
+          var deadReceipt = Receipt(candidate, candidateSha, dead.Id);
+          var deadArtifact = WriteLaunch(workspace, deadReceipt, "dead");
+          var deadRefused = false;
+          try { await service.ObserveAndPersistAsync(deadReceipt, deadArtifact, workspace, CancellationToken.None); }
+          catch (InvalidDataException) { deadRefused = true; }
+          Require(deadRefused, "exited PID was not refused");
+
+          // Negative 2: a different live process image cannot satisfy receipt-bound candidate identity.
+          var systemCmd = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+          var wrong = Process.Start(new ProcessStartInfo(systemCmd, "/c timeout /t 4 /nobreak >nul") { UseShellExecute = false, CreateNoWindow = true })
+              ?? throw new Exception("failed to start wrong-image fixture");
+          var wrongReceipt = Receipt(candidate, candidateSha, wrong.Id);
+          var wrongArtifact = WriteLaunch(workspace, wrongReceipt, "wrong-image");
+          var wrongRefused = false;
+          try { await service.ObserveAndPersistAsync(wrongReceipt, wrongArtifact, workspace, CancellationToken.None); }
+          catch (InvalidDataException) { wrongRefused = true; }
+          Require(wrongRefused, "live wrong process image was not refused");
+          wrong.WaitForExit(7000);
+
+          Console.WriteLine($"V039_HANDOFF_EXACT_IMAGE_PASS pid={liveReceipt.ProcessId} receipt={Path.GetFileName(passed.ArtifactPath)} deadRefused={deadRefused} wrongImageRefused={wrongRefused}");
+          Directory.Delete(workspace, true);
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.39 compiled handoff fixture failed' }
+
+      - name: Verify v0.39 successor contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $accept = Get-Content 'src/Matawaka.Workbench.App/WorkbenchV039AcceptanceHarness.cs' -Raw
+          $checkpoint = Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV039Service.cs' -Raw
+          $publisher = Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV039Service.cs' -Raw
+          if ($accept -notmatch 'matawaka\.workbench-acceptance-receipt/v0\.39' -or $accept -notmatch '"0\.39\.0"') { throw 'v0.39 acceptance successor missing' }
+          if ($checkpoint -notmatch 'workbench-v0\.39-accepted' -or $checkpoint -notmatch '612eccf4ff440b27f37fe634205980c3e2f9e0d8') { throw 'v0.39 checkpoint successor mismatch' }
+          if ($publisher -notmatch 'workbench-v0\.39-accepted' -or $publisher -notmatch 'ExpectedParent = "612eccf4ff440b27f37fe634205980c3e2f9e0d8"') { throw 'v0.39 publisher successor mismatch' }
+          Write-Host 'v0.39 successor contracts: PASS'
+
+      - name: Clean checkout before package creation
+        shell: pwsh
+        run: |
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) { throw "source drift after validation: $status" }
+
+      - name: Build source-only v0.39 package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'START-HERE.md',
+            'PATCH-v0.39.md',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.V039.cs',
+            'src/Matawaka.Workbench.App/CandidateLaunchHandoffV039Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV039AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV039Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV039Service.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.39-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "payload file missing: $file" }
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.39.0';
+            PredecessorTag='workbench-v0.38.1-accepted'; PredecessorCommit='612eccf4ff440b27f37fe634205980c3e2f9e0d8';
+            TargetTag='workbench-v0.39-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('candidate launch handoff source only; package creation performs no launch/self-close/acceptance effect','package validity does not authorize materialization/build/launch/checkpoint/publication')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.39-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.39-source-only.sha256.txt'), "$sha  workbench-v0.39-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "sha256=$sha payloadFiles=$($files.Count)"
+
+      - name: Upload v0.39 source-only package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.39-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.39-source-only.zip
+            ${{ runner.temp }}/workbench-v0.39-source-only.sha256.txt
+          retention-days: 30
