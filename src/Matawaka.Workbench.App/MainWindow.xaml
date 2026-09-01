@@ -1,7 +1,7 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.35.1" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Title="Matawaka Workbench v0.36.0" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -12,28 +12,28 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Active product surface remains eight buttons, zero persistent authority checkboxes. -->
+        <!-- v0.36: still exactly eight active buttons, zero persistent authority checkboxes. -->
         <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
             <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0"
                     Click="UpdateCandidateButton_Click"
-                    ToolTip="Один bounded maintenance-сеанс package → materialize → apply-plan → apply/build; Launch остаётся отдельным решением"/>
+                    ToolTip="Bounded package → materialize → apply-plan → apply/build; Launch remains separate"/>
             <Button x:Name="LaunchCandidateButton" Content="Launch candidate" Width="130" Margin="0,0,8,0" IsEnabled="False"
                     Click="LaunchCandidateButton_Click"
-                    ToolTip="Запускает только exact receipt-bound Workbench candidate; acceptance остаётся отдельной"/>
-            <Button x:Name="UpdateLocalAppButton" Content="Update local app" Width="130" Margin="0,0,8,0"
-                    Click="UpdateLocalAppButton_Click"
-                    ToolTip="Только локальный ZIP и только &lt;WorkspaceRoot&gt;\Apps\&lt;ApplicationId&gt;; no network, installer or auto-launch"/>
+                    ToolTip="Launch exact receipt-bound Workbench candidate; acceptance remains separate"/>
+            <Button x:Name="UpdateLocalAppButton" Content="Local apps" Width="110" Margin="0,0,8,0"
+                    Click="LocalAppsButton_Click"
+                    ToolTip="Select one direct child of Workspace\Apps: unregistered → Register; registered → choose bounded local update ZIP"/>
             <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0"
-                    Click="SelfTestV0351Button_Click"
-                    ToolTip="Read-only v0.35 matrix + lifecycle v2 version-key regression checks; no lifecycle effect"/>
+                    Click="SelfTestV036Button_Click"
+                    ToolTip="Read-only accepted matrix + offline registration contract checks; no real app registration/update"/>
             <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False"
-                    Click="AcceptCheckpointV0351Button_Click"/>
+                    Click="AcceptCheckpointV036Button_Click"/>
             <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0"
-                    Click="PublishAcceptedV0351Button_Click"
+                    Click="PublishAcceptedV036Button_Click"
                     ToolTip="Fixed Matawaka/workbench, exact fast-forward/tag only, no force"/>
             <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0"
                     Click="LifecycleReceiptV2Button_Click"
-                    ToolTip="Lifecycle v2: accepted tag/schema token and semantic runtime Version are bound separately; summary != authority"/>
+                    ToolTip="Lifecycle v2 evidence composition; summary != authority"/>
             <Button x:Name="CancelButton" Content="Stop" Width="75" IsEnabled="False" Click="CancelButton_Click"/>
         </WrapPanel>
 
@@ -62,7 +62,7 @@
                     <ColumnDefinition Width="2*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Managed local apps: Workspace\Apps\&lt;ApplicationId&gt;" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="Lifecycle v2: tag/schema token != semantic runtime Version. No persistent git-fetch/Agent checkboxes. Local app update != app launch."
+                <TextBlock Grid.Column="1" Text="Local apps: existing folder → identity-only Register; registered app → bounded update. Register != Import != Update != Launch."
                            TextWrapping="Wrap" FontStyle="Italic" VerticalAlignment="Center"/>
             </Grid>
         </Border>
