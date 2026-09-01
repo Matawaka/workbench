@@ -1,54 +1,95 @@
 # Local Application Maintenance
 
-This document defines the stable Workbench contract for bounded updates of other local applications.
+This document defines the stable Workbench contract for registering and updating managed local applications. It is deliberately **not** a general installer, importer, launcher or filesystem manager.
 
-## Scope
+## Managed root
 
-The updater is deliberately **not** a general installer.
-
-Managed application root:
+Only direct children of:
 
 ```text
 <WorkspaceRoot>\Apps\<ApplicationId>\
 ```
 
-The update package never supplies a target root. Workbench derives it from the current Workspace root plus the manifest ApplicationId.
+are eligible.
 
-`Managed Root != Arbitrary Target Root`
-
-## Existing application identity
-
-A managed application must already exist and contain:
-
-`.matawaka-app.json`
-
-Example:
-
-```json
-{
-  "Schema": "matawaka.local-app-identity/v1",
-  "ApplicationId": "kontur.desktop",
-  "Version": "1.2.0"
-}
-```
-
-ApplicationId must match:
+`ApplicationId` must match:
 
 ```text
 [A-Za-z0-9][A-Za-z0-9._-]{0,63}
 ```
 
-The identity file is evidence about the managed app/version for this local maintenance protocol. It is not proof of real-world producer identity, trust or authority.
+Workbench does not register an arbitrary outside directory in place and does not copy/import a selected external app into the managed root.
 
-Initial adoption/registration of an arbitrary existing folder is intentionally outside the v0.35 updater. A future registration capability must receive its own boundary because choosing a root is materially broader authority than updating an already-identified managed root.
+```text
+Managed Root != Arbitrary Target Root
+Register Local App != Import App
+```
+
+## Registration
+
+Registration exists only for an application directory that is already an immediate child of `Workspace\Apps` and does not yet contain `.matawaka-app.json`.
+
+### Read-only preview
+
+Workbench:
+
+- derives ApplicationId from the exact folder name;
+- rejects reparse points at the Apps root, app root, subdirectories or files;
+- inventories regular app files recursively;
+- bounds the inventory to 4096 files and 2 GiB total bytes;
+- records normalized relative path, SHA-256 and file size for every file;
+- computes a deterministic tree SHA-256 over ordered `(path,sha256,size)` tuples;
+- proposes an identity:
+
+```json
+{
+  "Schema": "matawaka.local-app-identity/v1",
+  "ApplicationId": "<folder-name>",
+  "Version": "baseline-<first16-of-tree-sha256>"
+}
+```
+
+The `baseline-*` value is a deterministic Workbench evidence marker for the currently observed bytes. It is **not** a vendor/upstream version claim.
+
+### Registration effect
+
+Only after explicit confirmation:
+
+1. Workbench repeats the full inventory and requires it to equal the preview;
+2. `.matawaka-app.json` must still be absent;
+3. Workbench atomically creates exactly that identity sidecar;
+4. Workbench re-reads/verifies identity bytes and SHA-256;
+5. Workbench re-inventories all pre-existing app files and requires the original tree digest unchanged;
+6. Workbench writes one local registration receipt under ignored Workbench artifacts.
+
+If registration fails after identity creation, Workbench removes the identity and verifies the original application byte baseline again.
+
+Success status:
+
+`LOCAL_APPLICATION_REGISTERED_UPDATE_AUTHORITY_NOT_CREATED`
+
+Registration does not authorize update or launch.
+
+```text
+Preview PASS != Registration Authority
+Registration != Update Authority
+Registration != Launch Authority
+Identity Creation != Vendor Identity Assertion
+```
+
+## Existing application identity
+
+A registered managed app contains `.matawaka-app.json` with schema `matawaka.local-app-identity/v1`, exact ApplicationId and current maintenance version/baseline.
+
+That file is local maintenance evidence. It is not proof of real-world producer identity, trust or legal authority.
 
 ## Update ZIP
 
-Schema:
+Registered apps may be updated from a local ZIP with schema:
 
 `matawaka.local-app-update-package/v1`
 
-Exact ZIP shape:
+Exact shape:
 
 ```text
 local-app-update-manifest.json
@@ -58,154 +99,47 @@ payload/<other manifest-declared files>
 
 No undeclared ZIP entry is accepted.
 
-Example manifest:
+The manifest includes ApplicationId, ExpectedCurrentVersion, TargetVersion, exact file list, predecessor `CurrentSha256` for every Replace, target `Sha256` for every payload file, and all requested network/process/installer/registry/service/environment/AgentExecute flags set to false.
 
-```json
-{
-  "Schema": "matawaka.local-app-update-package/v1",
-  "PackageVersion": "1",
-  "ApplicationId": "kontur.desktop",
-  "ExpectedCurrentVersion": "1.2.0",
-  "TargetVersion": "1.3.0",
-  "PayloadRoot": "payload/",
-  "Files": [
-    {
-      "Path": "app/Kontur.exe",
-      "CurrentSha256": "<64-hex-current-file-digest>",
-      "Sha256": "<64-hex-target-file-digest>"
-    },
-    {
-      "Path": "assets/new-policy.json",
-      "CurrentSha256": null,
-      "Sha256": "<64-hex-target-file-digest>"
-    },
-    {
-      "Path": ".matawaka-app.json",
-      "CurrentSha256": "<64-hex-current-identity-digest>",
-      "Sha256": "<64-hex-target-identity-digest>"
-    }
-  ],
-  "NetworkAccessRequested": false,
-  "ProcessLaunchRequested": false,
-  "InstallerScriptExecutionRequested": false,
-  "RegistryMutationRequested": false,
-  "ServiceMutationRequested": false,
-  "EnvironmentMutationRequested": false,
-  "AgentExecuteRequested": false,
-  "NonEffects": [
-    "no network",
-    "no installer execution",
-    "no automatic app launch"
-  ]
-}
-```
+The target identity payload must use the same ApplicationId and TargetVersion.
 
-The target `payload/.matawaka-app.json` must use the identity schema, same ApplicationId and TargetVersion.
+## Update path/file rules
 
-## Path rules
+Every manifest path is relative to the fixed application root. Rejected:
 
-Every manifest path is relative to the fixed application root.
+- absolute/rooted paths or drive prefixes;
+- `.` / `..` segments or traversal;
+- duplicate/Windows case-colliding paths;
+- existing directory where a file is expected;
+- reparse-point escape.
 
-Rejected:
+Existing destination files require exact `CurrentSha256` and become `Replace`; missing destinations require no predecessor digest and become `Add`. Delete is unsupported.
 
-- absolute/rooted paths;
-- drive prefixes / `:`;
-- `.` or `..` path segments;
-- NUL characters;
-- duplicate or Windows case-colliding paths;
-- existing directory where a manifest file is expected;
-- application root or existing parent path segments that are reparse points.
+## Update effect boundary
 
-These checks prevent a package from converting app-update authority into arbitrary filesystem authority.
+The bounded updater first performs a read-only Preview. Only after explicit confirmation it reruns Preview and requires an equivalent plan.
 
-## File-state rules
+Before mutation it backs up exact Replace bytes. Files are written through temporary paths and SHA-256 verified; `.matawaka-app.json` is applied last. Target digests/identity are reverified afterward.
 
-For an existing destination file:
-
-- `CurrentSha256` is required;
-- actual current digest must equal it;
-- update action is `Replace`.
-
-For a missing destination file:
-
-- `CurrentSha256` must be null/empty;
-- update action is `Add`.
-
-`Delete` is not supported.
-
-Every target payload SHA-256 must match before the preview is READY.
-
-## Human/effect boundary
-
-`Update local app` first performs a read-only Preview.
-
-Preview validates:
-
-- ZIP/package structure;
-- exact entry set;
-- current app identity/version;
-- current replacement digests;
-- target payload digests;
-- target identity;
-- managed-root/reparse boundary;
-- requested-effect flags.
-
-Only after the user sees and confirms the exact app/version/package/files does Workbench obtain one bounded Add/Replace authority.
-
-Immediately before mutation it reruns Preview and requires an equivalent plan.
-
-```text
-Preview PASS != Mutation Authority
-Old Preview != Fresh Apply Evidence
-Explicit Confirmation != General Filesystem Authority
-```
-
-## Apply / rollback
-
-Before mutation, exact predecessor bytes for every Replace path are copied to Workbench-local ignored backup storage.
-
-Each target file is written to a temporary file, SHA-256 verified, then moved into the destination.
-
-The identity file is applied after ordinary payload files so a partially completed update does not advertise the target version early.
-
-After apply Workbench re-verifies all target file digests and target identity/version.
-
-If apply fails after backup:
+On failure:
 
 - new Add files are removed;
 - Replace files are restored from exact backups;
-- predecessor file digests and predecessor identity bytes/version are re-verified;
-- failure is reported only after bounded rollback verification.
-
-## Receipt
+- predecessor digests/identity are reverified.
 
 Success status:
 
 `LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED`
 
-The receipt binds at minimum:
-
-- ApplicationId/root;
-- previous/target version;
-- package SHA-256;
-- manifest SHA-256;
-- previous/current identity SHA-256;
-- exact Add/Replace path/digests;
-- backup root;
-- fresh-preview verification;
-- target identity verification;
-- `AppLaunchPerformed=false`;
-- authority and non-effects.
-
 ## Authority ceiling
 
-The local-app updater does not authorize or perform:
+Neither registration nor update authorizes or performs:
 
+- app import/copy/move from an arbitrary outside root;
 - package download/network access;
 - Git operations;
 - app/process launch;
 - MSI/EXE/script installer execution;
-- deletion of existing paths;
 - Windows registry/service/environment mutation;
 - arbitrary target roots;
 - Workbench source mutation;
@@ -213,4 +147,9 @@ The local-app updater does not authorize or perform:
 - Agent Execute / ActionPermit;
 - canonical UU-AAP conformance or Stable Core promotion.
 
-`Local App Update != App Launch`
+```text
+Register Local App != Import App
+Local App Update != App Launch
+Package Validity != Mutation Authority
+Explicit Confirmation != General Filesystem Authority
+```

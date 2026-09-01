@@ -8,14 +8,14 @@ The normal window intentionally exposes only:
 
 - **Update Workbench**
 - **Launch candidate**
-- **Update local app**
+- **Local apps**
 - **Self-test**
 - **Accept**
 - **Publish accepted**
 - **Lifecycle receipt**
 - **Stop**
 
-There are no persistent Agent or git-fetch checkboxes. Historical JSON/analysis/catalog/recovery controls remain in source/evidence history but are not active top-level product controls.
+There are no persistent Agent or git-fetch checkboxes. Historical JSON/analysis/catalog/recovery controls remain source/evidence history but are not active top-level product controls.
 
 Workspace/Catalog path edits are saved on normal actions and window close; there is no separate Save button.
 
@@ -24,82 +24,75 @@ Workspace/Catalog path edits are saved on normal actions and window close; there
 1. Click **Update Workbench** and choose the source-only ZIP.
 2. Review package SHA-256, exact predecessor commit/tag, target version/tag, payload count and bytes.
 3. Explicitly confirm the maintenance session.
-4. Workbench sequences the existing typed fresh plan → staging materialization → staged apply plan → exact apply/build gates.
+4. Workbench sequences fresh plan → staging materialization → staged apply plan → exact apply/build.
 5. Require `CANDIDATE_BUILT_SEPARATE_LAUNCH_AUTHORITY_REQUIRED`.
 6. Click **Launch candidate** separately and confirm the exact built executable SHA-256.
 
 `Update Workbench != Launch authority`.
 
-## Accept the launched Workbench
+## Accept / publish / lifecycle
 
-1. In the launched candidate click **Self-test**.
-2. The Self-test click itself is the explicit human authority for the bounded read-only test matrix; a persistent Agent-enabled checkbox is not required.
-3. Require `Passed=true`.
-4. Click **Accept** and inspect exact changed files/build-source binding.
-5. Explicitly create the local accepted checkpoint/tag.
+1. In the launched candidate click **Self-test** and require `Passed=true`.
+2. Click **Accept** and explicitly create the local accepted checkpoint/tag.
+3. Click **Publish accepted** separately; require fixed remote main/tag exact readback and unchanged local state.
+4. Click **Lifecycle receipt** separately; require exact checkpoint/Self-test/orchestrator/publication bindings and `Complete=true`.
 
 ```text
 Self-test Click != Agent Execute
 Self-test PASS != Checkpoint Authority
+Accepted Checkpoint != Publish Authority
+Publication Success != Lifecycle Authority
+Summary != Authority
 ```
 
-## Publish accepted source
+## Local apps — register or update
 
-Only after local acceptance:
-
-1. click **Publish accepted**;
-2. verify fixed `github-workbench` / `https://github.com/Matawaka/workbench.git`;
-3. verify exact accepted HEAD, parent and accepted tag;
-4. explicitly confirm publication;
-5. require remote `main` and accepted tag to read back as exact local HEAD;
-6. require local HEAD and working tree unchanged.
-
-`Accepted checkpoint != Publish authority`.
-
-## Create a Maintenance Lifecycle Receipt
-
-Only after publication has independently completed:
-
-1. click **Lifecycle receipt**;
-2. Workbench derives the current accepted version from the unique accepted tag at HEAD;
-3. it binds the exact checkpoint, checkpoint-bound Self-test, orchestrator and publication evidence;
-4. require all exact relations and artifact SHA-256s to pass;
-5. explicitly confirm the local lifecycle evidence write.
-
-Missing/ambiguous evidence fails closed.
-
-`Summary != Authority`.
-
-## Update another local application
-
-A managed local app must already exist at:
+`Local apps` is contextual. First choose one **direct child** of:
 
 ```text
 <WorkspaceRoot>\Apps\<ApplicationId>\
 ```
 
-and contain `.matawaka-app.json` with schema `matawaka.local-app-identity/v1`, matching app id and current version.
+Workbench does not import/copy a folder from elsewhere. Put the application directory under `Workspace\Apps` intentionally first.
 
-To update it:
+### If `.matawaka-app.json` is absent
 
-1. click **Update local app**;
-2. choose a local ZIP using `matawaka.local-app-update-package/v1`;
-3. review ApplicationId, fixed derived root, current → target version, package/manifest SHA-256 and exact Add/Replace paths;
-4. confirm the update;
-5. Workbench freshly revalidates the package/app state, backs up replacement bytes and applies only exact manifest payload bytes;
-6. require status `LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED`;
-7. inspect the Local Apps receipt tab;
-8. launch the updated application manually only if you want to.
+Workbench offers **Register local app**:
 
-The updater does not download anything and cannot run MSI/EXE/scripts, delete files, mutate registry/services, use Git, launch the app automatically or target a path outside `Workspace\Apps\<ApplicationId>`.
+1. it derives ApplicationId from the selected folder name;
+2. performs a read-only SHA-256 inventory of the existing app bytes;
+3. shows file count/bytes/tree SHA-256 and proposed `baseline-<digest>` identity;
+4. after explicit confirmation it freshly repeats the inventory;
+5. it creates only `.matawaka-app.json`;
+6. it re-verifies all pre-existing app files stayed unchanged;
+7. it writes a registration receipt.
+
+Expected status:
+
+`LOCAL_APPLICATION_REGISTERED_UPDATE_AUTHORITY_NOT_CREATED`
+
+The baseline is an observed-byte marker, not a vendor version claim.
 
 ```text
-Package Validity != Mutation Authority
-Local App Update != App Launch
-Managed Root != Arbitrary Target Root
+Register != Import
+Register != Update
+Register != Launch
+Identity Creation != Vendor Identity Assertion
 ```
 
-Initial registration/adoption of an existing application is intentionally separate from v0.35 update authority.
+### If `.matawaka-app.json` already exists
+
+Workbench asks for a local `matawaka.local-app-update-package/v1` ZIP and performs the existing bounded update flow:
+
+1. preview exact ApplicationId/root/current→target version/package SHA-256/Add/Replace paths;
+2. explicit confirmation;
+3. fresh preview revalidation;
+4. predecessor backup for Replace files;
+5. exact Add/Replace apply, target identity last;
+6. exact digest verification or rollback;
+7. status `LOCAL_APPLICATION_UPDATED_SEPARATE_LAUNCH_REQUIRED`.
+
+No app is launched automatically.
 
 ## Historical capabilities
 
