@@ -1,7 +1,8 @@
 <Window x:Class="Matawaka.Workbench.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Matawaka Workbench v0.39.1" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Title="Matawaka Workbench v0.40.0" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Loaded="Window_LoadedV040"
         Closing="Window_Closing">
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -12,17 +13,18 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- v0.39.1 activation probe: exactly eight active top-level buttons, zero persistent authority checkboxes. -->
+        <!-- v0.40: exactly eight active top-level buttons, zero persistent authority checkboxes. -->
         <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-            <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0" Click="UpdateCandidateButton_Click"/>
+            <Button x:Name="UpdateCandidateButton" Content="Update Workbench" Width="130" Margin="0,0,8,0" Click="UpdateCandidateV040Button_Click"
+                    ToolTip="One explicit confirmation may perform exact update/build → one-shot bootstrap → automatic exact launch/handoff. Successor first boot may Self-test and locally Accept once if PASS. Publish remains separate."/>
             <Button x:Name="LaunchCandidateButton" Content="Launch candidate" Width="130" Margin="0,0,8,0" IsEnabled="False" Click="LaunchCandidateV039Button_Click"
-                    ToolTip="Accepted v0.39 launch/handoff handler retained unchanged: exact launch → persisted launch receipt → bounded live exact process image → current predecessor self-close. Launch != Accept."/>
+                    ToolTip="Manual fallback only. Uses accepted v0.39 exact launch/handoff and does not mint a transition-bootstrap lease or automatic acceptance authority."/>
             <Button x:Name="UpdateLocalAppButton" Content="Local apps" Width="110" Margin="0,0,8,0"
                     Click="LocalAppsV0381Button_Click"
                     ToolTip="Unregistered managed app → Register. Registered app → explicit Update from package / Build update package / Cancel chooser; chooser height follows content."/>
-            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV0391Button_Click"/>
-            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV0391Button_Click"/>
-            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV0391Button_Click"/>
+            <Button x:Name="SelfTestButton" Content="Self-test" Width="90" Margin="0,0,8,0" Click="SelfTestV040Button_Click"/>
+            <Button x:Name="AcceptCheckpointButton" Content="Accept" Width="85" Margin="0,0,8,0" IsEnabled="False" Click="AcceptCheckpointV040Button_Click"/>
+            <Button x:Name="PublishAcceptedButton" Content="Publish accepted" Width="130" Margin="0,0,8,0" Click="PublishAcceptedV040Button_Click"/>
             <Button x:Name="LifecycleReceiptButton" Content="Lifecycle receipt" Width="125" Margin="0,0,8,0" Click="LifecycleReceiptV2Button_Click"/>
             <Button x:Name="CancelButton" Content="Stop" Width="75" IsEnabled="False" Click="CancelButton_Click"/>
         </WrapPanel>
@@ -43,7 +45,7 @@
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Managed apps: Workspace\Apps\&lt;ApplicationId&gt; | Candidates: Workspace\AppCandidates\&lt;ApplicationId&gt;" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="v0.39.1 is an activation-probe successor. The accepted v0.39 launch/handoff runtime is unchanged; this version exists to let v0.39 perform its first natural predecessor self-close on a real host."
+                <TextBlock Grid.Column="1" Text="One-confirmation Workbench transition: Update → build → one-shot lease → auto Launch + verified handoff → predecessor self-close. Exact first successor boot only: auto Self-test → PASS-gated local Accept. Publish/Lifecycle remain explicit."
                            TextWrapping="Wrap" FontStyle="Italic" VerticalAlignment="Center"/>
             </Grid>
         </Border>
