@@ -92,8 +92,8 @@ public sealed class LocalApplicationPackageBuildReceiptStoreV038Service
         ("builder-receipt-store-fixed-root", true, "Workbench/artifacts/local-app-packages", "fixed local evidence root"),
         ("builder-receipt-store-success-only", true, "ExistingUpdaterPreviewReady=true; mutation/update/launch=false", "success only"),
         ("builder-receipt-store-package-digest-recheck", true, "package SHA-256 + manifest SHA-256", "rechecked before JSON write"),
-        ("builder-receipt-store-network-authority", false, "false", "false"),
-        ("builder-receipt-store-app-mutation-authority", false, "false", "false")
+        ("builder-receipt-store-network-authority", true, "false", "false"),
+        ("builder-receipt-store-app-mutation-authority", true, "false", "false")
     };
 
     private static string SafeToken(string value)
