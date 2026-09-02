@@ -66,9 +66,22 @@ MCP Adapter Authority <= Active Read Lease Authority
 Bearer Possession != Authority Beyond Lease Bounds
 ```
 
-## Loopback security boundary
+## Runtime protocol and official-client qualification
 
-The local server uses the official `ModelContextProtocol.AspNetCore` package pinned by the Workbench App project.
+The accepted Workbench updater builds the successor with `--no-restore` and creates no package-download authority. A new runtime NuGet dependency would therefore make successful update depend on unproven local NuGet cache state or would require broadening the updater's network boundary.
+
+v0.49 deliberately avoids that authority expansion. The product runtime implements a small allowlisted MCP JSON-RPC / Streamable HTTP subset using the installed `Microsoft.AspNetCore.App` shared framework. It accepts only the protocol methods needed for discovery/legacy initialization, ping, `tools/list`, and `tools/call`, and it exposes only the single read tool above.
+
+The runtime product remains compatible with the accepted offline `--no-restore` Workbench update path.
+
+Interoperability is a separate qualification boundary: Windows CI must connect with the official C# `ModelContextProtocol 2.2.0` client, list the tool and successfully perform/refuse lease-gated calls. That qualification proves client interoperability for the tested protocol surface; it does not claim that Workbench embeds the official MCP server SDK.
+
+```text
+Official Client Interop != Embedded Official Server SDK
+Offline Successor Build != Package Download Authority
+```
+
+## Loopback security boundary
 
 v0.49 binds Kestrel only to IPv4 loopback. Startup refuses a runtime that reports any additional listener address. A random 256-bit endpoint path token makes the URL unguessable by ordinary local callers, and host-header middleware accepts only `127.0.0.1`/`localhost`.
 
@@ -111,7 +124,8 @@ MCP read returns no file contents when the underlying lease service observes:
 - traversal or reparse boundary;
 - per-read/total byte limit breach;
 - expected SHA mismatch;
-- file drift during the bounded read.
+- file drift during the bounded read;
+- a caller tries to inject authority-like fields not present in the allowlisted tool arguments.
 
 ## Non-effects
 
@@ -123,6 +137,7 @@ v0.49 does not create:
 - LAN/public listener;
 - automatic Secure MCP Tunnel;
 - automatic upload to ChatGPT;
+- runtime MCP package-download authority;
 - Git/catalog/Agent Execute authority.
 
 The v0.47 manual clipboard relay remains available whenever the direct adapter/tunnel path is unavailable or undesirable.
