@@ -102,7 +102,7 @@ Local app updates use a local exact-manifest ZIP and permit only fresh-preview-b
 
 Installed apps are observable from the main Workbench surface. An app entry opens a closable read-only tree tab. Explicit double-click on a represented file may open a closable read-only text tab under bounded path/reparse/size/encoding checks.
 
-No network/package download, installer execution, app auto-launch, Git, registry/service/environment mutation or arbitrary root selection is admitted by local-app maintenance or inspection.
+The existing update package is already sparse: only actual Add/Replace payload files plus target `.matawaka-app.json` need to be present. `Export update context` is the planned/implemented bridge that lets another conversation build such a sparse package without receiving unchanged private application bytes merely to reconstruct predecessor SHA-256 bindings.
 
 ```text
 Package Validity != Mutation Authority
@@ -111,22 +111,88 @@ Managed Root != Arbitrary Target Root
 Initial Registration != Update Authority
 Tree Observation != File Mutation
 Text Inspection != Execution Authority
+Sparse Update != Full Application Copy
+```
+
+## v0.46 — Local App Operational Handoff
+
+The next admitted Workbench layer is **Local App Operational Handoff**. It remains inside the existing top-level `Local apps` surface and does not add a fifth primary Workbench button.
+
+### Explicit app launch
+
+A registered application may be launched only after the operator selects one exact `.exe` already under its fixed managed root and confirms a preview bound to relative path, SHA-256, size and installed identity/version. v0.46 supplies zero arguments and writes a local launch receipt.
+
+Workbench does not claim the launched program is sandboxed merely because its launch was bounded.
+
+```text
+Registration != Update != Launch
+Exact Launch Authority != Authority Over App Behavior
+```
+
+### Content-free update context
+
+`Export update context` writes a local JSON containing installed identity/version, file paths, SHA-256, sizes and coarse roles. It contains no application file contents and performs no upload.
+
+Its main consumer is another development chat building `matawaka.local-app-update-package/v1` with only changed/added files.
+
+```text
+Update Context != Application Copy
+Predecessor Evidence != Disclosure Of Contents
+```
+
+### Development source role
+
+Reproducible development source lives separately at:
+
+`<WorkspaceRoot>/AppSources/<ApplicationId>`
+
+A manually extracted source seed may be explicitly bound to a registered app. Binding creates only `.matawaka-source.json` after a fresh bounded inventory; it does not import, copy, move, overwrite or freeze source bytes.
+
+```text
+Installed Bytes != Development Sources
+Source Binding != Source Mutation Authority
+Source Edit != Installed App Mutation
+```
+
+### PRIVATE development context
+
+After source binding, the operator may explicitly create one PRIVATE local context capsule containing installed/runtime/evidence bytes, bound development sources, the content-free update context, a handoff manifest and the local read-tool contract.
+
+This is deliberately a disclosure-preparation operation and may duplicate confidential banking/evidence bytes into one ignored local artifact. Workbench never uploads that artifact automatically.
+
+```text
+Export Context != Upload Context != Authority to Disclose
+Private Context Export != Public Repository Publication
+```
+
+For large private applications, the intended later optimization is an immutable private base capsule plus smaller context deltas bound to the base digest. That is a portability/handoff optimization, not cloud synchronization authority.
+
+### Future local content-read primitive
+
+v0.46 establishes a reusable local read service with request/response contracts for roles `installed` and `source`, fixed ApplicationId + relative-path confinement, reparse refusal, bounded chunk reads, full-file SHA-256/size evidence, Base64 response bytes and strict UTF-8 text when possible.
+
+No external connector/network transport is part of v0.46. A later ChatGPT/Workbench tool adapter must invoke this bounded primitive rather than receiving general filesystem authority.
+
+```text
+Content Read != File Mutation != Execution
+Tool Contract != Transport Authority
+Local Read Primitive != Automatic Disclosure
 ```
 
 ## Qualification after local-app feature
 
-Do not treat one successful Workbench build as proof that the local-app updater is operationally useful.
+Do not treat one successful Workbench build as proof that the local-app updater or operational handoff is useful.
 
-Useful successor evidence for mutation should still come from a real registered application update package. Possible outcomes:
+Useful successor evidence should include real registered applications. Possible outcomes:
 
 - `LOCAL_APP_UPDATE_REUSABLE` — exact managed-app update succeeds and receipt/rollback boundaries are adequate;
 - `LOCAL_APP_UPDATE_NEEDS_ADAPTER` — app-specific layout/process constraints require a bounded adapter;
-- `LOCAL_APP_REGISTRATION_REQUIRED` — useful existing apps cannot enter the managed root without a separately reviewed adoption boundary;
+- `LOCAL_APP_SOURCE_HANDOFF_REUSABLE` — source seed -> AppSources binding -> private development context gives another conversation enough reproducible development state;
+- `LOCAL_APP_READ_TOOL_NEEDS_TRANSPORT_ADAPTER` — local read primitive is correct but a separate connector/transport is still required;
+- `LOCAL_APP_PRIVATE_CONTEXT_TOO_HEAVY` — base+delta context should be implemented before routine handoff;
 - `LOCAL_APP_UPDATE_NOT_REQUIRED` — existing app update mechanisms are already sufficient.
 
-Read-only app tree/text inspection is a separate accepted product capability and does not itself prove mutation/update reuse.
-
-Negative outcomes are valid and should prevent building a general installer without evidence.
+Negative outcomes are valid and should prevent broad filesystem/import/network authority from being inferred.
 
 ## Residual stabilization backlog
 
@@ -134,11 +200,12 @@ Review only evidence-backed debt:
 
 - whether release-specific validation/checkpoint/publisher successor wrappers should be generalized or remain explicit version boundaries;
 - whether quarantined hidden compatibility fields can eventually be physically removed without weakening historical run-state behavior;
-- whether a separately bounded **Register local app** function is actually needed;
 - whether a read-only update-feed discovery layer is useful after local packages are proven;
+- whether base+delta PRIVATE context materially reduces repeated transfer of large confidential evidence;
+- what connector/tool transport can expose the v0.46 local read primitive without general filesystem authority;
 - whether external/cross-machine portability has independent product demand.
 
-The current v0.45 direction is quarantine and contract enforcement, not physical erasure of historical code. None of the remaining items are automatically authorized implementation tasks.
+None of the remaining items are automatically authorized implementation tasks.
 
 ## Later research directions
 
@@ -161,5 +228,8 @@ Accepted Local State != Published Remote State
 Publication Capability != General Network Capability
 Lifecycle Observability != Lifecycle Authority
 Local App Maintenance != General Installer Authority
+Export Context != Upload Context
+Installed Bytes != Development Sources
+Content Read != Mutation Authority
 Qualification != Promotion
 ```
