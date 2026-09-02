@@ -1,0 +1,276 @@
+name: Workbench v0.47 bounded chat read relay qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.47-bounded-chat-read-relay
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore and build zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if ($LASTEXITCODE -ne 0) { throw 'v0.47 restore failed' }
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.47 Release build failed' }
+
+      - name: Verify v0.47 static contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if (-not $app.Contains('ConfigureV047Routing()', [StringComparison]::Ordinal)) { throw 'v0.47 startup routing missing' }
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 4) { throw 'top-level surface is not exactly four buttons' }
+          $relay = Get-Content 'src/Matawaka.Workbench.App/LocalAppChatReadRelayV047Service.cs' -Raw
+          foreach ($marker in @('matawaka.local-app-chat-read-request/v0.47','ExpectedFileSha256 mismatch','UNKNOWN_UNTIL_CONFIRMED_READ','PrepareConfirmedRead','ClipboardWritePerformed')) {
+            if (-not $relay.Contains($marker, [StringComparison]::Ordinal)) { throw "relay contract marker missing: $marker" }
+          }
+          foreach ($forbidden in @('HttpListener','HttpClient','TcpListener','Socket','NamedPipeServer','McpServer')) {
+            if ($relay.Contains($forbidden, [StringComparison]::Ordinal)) { throw "forbidden direct transport in relay: $forbidden" }
+          }
+          $main = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V047.cs' -Raw
+          if (-not $main.Contains('Clipboard.SetText(responseJson)', [StringComparison]::Ordinal)) { throw 'clipboard response path missing' }
+          if (-not $main.Contains('MessageBox.Show(this, message.ToString(), "Chat read relay — explicit disclosure"', [StringComparison]::Ordinal)) { throw 'explicit disclosure confirmation missing' }
+          $docs = (Get-Content 'DEVELOPMENT-AUDIT-ROADMAP.md' -Raw) + (Get-Content 'PATCH-v0.47.md' -Raw) + (Get-Content 'LOCAL-APP-CHAT-READ-RELAY.md' -Raw)
+          foreach ($marker in @('Chat Request != Local Read Authority','Local Read != Clipboard Disclosure','Clipboard Response != Automatic Upload','Expected Hash Mismatch => Refuse, Not Guess')) {
+            if (-not $docs.Contains($marker, [StringComparison]::Ordinal)) { throw "v0.47 invariant missing: $marker" }
+          }
+          Write-Host 'V047_STATIC_PASS buttons=4 humanGate=True clipboard=True directNetwork=False docs=True'
+
+      - name: Execute bounded relay probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v047-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using System.Threading;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              private static string Hash(string path)
+              {
+                  using var stream = File.OpenRead(path);
+                  return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+              }
+
+              private static async System.Threading.Tasks.Task Main()
+              {
+                  var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v047-" + Guid.NewGuid().ToString("N"));
+                  Directory.CreateDirectory(Path.Combine(workspace, "Workbench", "artifacts"));
+                  var appRoot = Path.Combine(workspace, "Apps", "alpha");
+                  Directory.CreateDirectory(Path.Combine(appRoot, "data"));
+                  var identity = new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "1.0.0");
+                  File.WriteAllText(Path.Combine(appRoot, ".matawaka-app.json"), JsonSerializer.Serialize(identity), new UTF8Encoding(false));
+                  var state = Path.Combine(appRoot, "data", "state.json");
+                  File.WriteAllText(state, "{\"private\":\"BANK-SECRET-NEW\"}", new UTF8Encoding(false));
+                  var other = Path.Combine(appRoot, "other.txt");
+                  File.WriteAllText(other, "first", new UTF8Encoding(false));
+
+                  var sourceRoot = Path.Combine(workspace, "AppSources", "alpha");
+                  Directory.CreateDirectory(sourceRoot);
+                  File.WriteAllText(Path.Combine(sourceRoot, ".matawaka-source.json"), "{}", new UTF8Encoding(false));
+                  var sourceFile = Path.Combine(sourceRoot, "source.txt");
+                  File.WriteAllText(sourceFile, "source-current", new UTF8Encoding(false));
+
+                  var service = new LocalAppChatReadRelayV047Service();
+                  var req = new LocalAppChatReadRequestV047(
+                      LocalAppChatReadRelayV047Service.RequestSchema,
+                      "read:001", "alpha", "installed", "data/state.json", 0, 4096, Hash(state));
+                  var json = JsonSerializer.Serialize(req);
+                  var preview = service.PreviewFromJson(workspace, "alpha", json, default);
+                  var previewJson = JsonSerializer.Serialize(preview);
+                  if (previewJson.Contains("BANK-SECRET-NEW", StringComparison.Ordinal)) throw new Exception("preview leaked contents");
+                  if (!preview.ExpectedHashVerified || preview.PlannedReadBytes <= 0 || preview.Utf8Availability != "UNKNOWN_UNTIL_CONFIRMED_READ") throw new Exception("preview contract failed");
+                  var read = service.PrepareConfirmedRead(workspace, "alpha", preview, default);
+                  if (read.Utf8Text is null || !read.Utf8Text.Contains("BANK-SECRET-NEW", StringComparison.Ordinal)) throw new Exception("confirmed read failed");
+                  var response = service.BuildClipboardResponse(preview, read);
+                  if (!response.ClipboardWritePerformed || response.NetworkAccessPerformed || response.UploadPerformed || response.FileMutationPerformed || response.ProcessLaunchPerformed) throw new Exception("response authority flags failed");
+
+                  var mismatch = false;
+                  try
+                  {
+                      var bad = req with { RequestId = "read:bad", ExpectedFileSha256 = new string('0', 64) };
+                      _ = service.PreviewFromJson(workspace, "alpha", JsonSerializer.Serialize(bad), default);
+                  }
+                  catch (InvalidDataException) { mismatch = true; }
+                  if (!mismatch) throw new Exception("expected hash mismatch not refused");
+
+                  var wrongApp = false;
+                  try
+                  {
+                      var bad = req with { RequestId = "read:wrong-app", ApplicationId = "beta" };
+                      _ = service.PreviewFromJson(workspace, "alpha", JsonSerializer.Serialize(bad), default);
+                  }
+                  catch (InvalidDataException) { wrongApp = true; }
+                  if (!wrongApp) throw new Exception("selected app mismatch not refused");
+
+                  var traversal = false;
+                  try
+                  {
+                      var bad = req with { RequestId = "read:traversal", RelativePath = "../outside.txt", ExpectedFileSha256 = null };
+                      _ = service.PreviewFromJson(workspace, "alpha", JsonSerializer.Serialize(bad), default);
+                  }
+                  catch (InvalidDataException) { traversal = true; }
+                  if (!traversal) throw new Exception("traversal not refused");
+
+                  var staleReq = new LocalAppChatReadRequestV047(LocalAppChatReadRelayV047Service.RequestSchema, "read:stale", "alpha", "installed", "other.txt", 0, 100, Hash(other));
+                  var stalePreview = service.Preview(workspace, "alpha", staleReq, default);
+                  File.WriteAllText(other, "second", new UTF8Encoding(false));
+                  var stale = false;
+                  try { _ = service.PrepareConfirmedRead(workspace, "alpha", stalePreview, default); }
+                  catch (InvalidDataException) { stale = true; }
+                  if (!stale) throw new Exception("stale preview not refused");
+
+                  var sourceReq = new LocalAppChatReadRequestV047(LocalAppChatReadRelayV047Service.RequestSchema, "read:source", "alpha", "source", "source.txt", 0, 100, Hash(sourceFile));
+                  var sourcePreview = service.Preview(workspace, "alpha", sourceReq, default);
+                  var sourceRead = service.PrepareConfirmedRead(workspace, "alpha", sourcePreview, default);
+                  if (sourceRead.Utf8Text != "source-current") throw new Exception("source role read failed");
+
+                  Exception? wpfFailure = null;
+                  var thread = new Thread(() =>
+                  {
+                      try
+                      {
+                          var window = new MainWindow();
+                          var method = typeof(MainWindow).GetMethod("ConfigureV047Routing", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
+                              ?? throw new Exception("ConfigureV047Routing missing");
+                          method.Invoke(window, Array.Empty<object>());
+                          if (window.Title != "Matawaka Workbench v0.47") throw new Exception("v0.47 title missing");
+                          if (OperatorSurfaceV045Contract.Observe(window).Any(x => !x.Passed)) throw new Exception("four-button surface regressed");
+                          window.Close();
+                      }
+                      catch (Exception ex) { wpfFailure = ex; }
+                  });
+                  thread.SetApartmentState(ApartmentState.STA);
+                  thread.Start();
+                  thread.Join();
+                  if (wpfFailure is not null) throw new Exception("WPF relay routing probe failed", wpfFailure);
+
+                  Directory.Delete(workspace, true);
+                  Console.WriteLine("V047_RELAY_PASS previewContentFree=True expectedHashRefused=True selectedAppRefused=True traversalRefused=True staleRefused=True installedRead=True sourceRead=True clipboardEnvelope=True network=False surface=4");
+                  await System.Threading.Tasks.Task.CompletedTask;
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.47 relay probe failed' }
+
+      - name: Verify remote accepted frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = @(git ls-remote $remote refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLine.Count -ne 1) { throw 'unable to read remote main' }
+          $main = ($mainLine[0] -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '8ca8a66f0892050e02024880a8d4bf4a6a8ec4d2') { throw "remote main moved from accepted v0.46: $main" }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.47-accepted refs/tags/workbench-v0.47-accepted^'{}').Count -ne 0) { throw 'v0.47 target tag already exists remotely' }
+          Write-Host 'V047_REMOTE_PASS main=v0.46 targetAbsent=True'
+
+      - name: Build and audit v0.47 source-only package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.47.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'LOCAL-APP-CHAT-READ-RELAY.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV047Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV047Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V047.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV047AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalAppChatReadRelayV047Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppChatReadRequestDialogV047.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV047.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.47-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.47.0';
+            PredecessorTag='workbench-v0.46-accepted'; PredecessorCommit='8ca8a66f0892050e02024880a8d4bf4a6a8ec4d2';
+            TargetTag='workbench-v0.47-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('Workbench source update only','no Apps/AppSources/private data in package','no automatic chat read/clipboard disclosure','no direct network/listener/tunnel/MCP')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.47-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $audit = Join-Path $env:RUNNER_TEMP 'workbench-v0.47-audit'
+          if (Test-Path $audit) { Remove-Item $audit -Recurse -Force }
+          [IO.Compression.ZipFile]::ExtractToDirectory($zip, $audit)
+          $m = Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if ($m.TargetVersion -ne '0.47.0' -or $m.PredecessorCommit -ne '8ca8a66f0892050e02024880a8d4bf4a6a8ec4d2' -or $m.PredecessorTag -ne 'workbench-v0.46-accepted' -or $m.TargetTag -ne 'workbench-v0.47-accepted') { throw 'package identity audit failed' }
+          if ($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested) { throw 'package requested forbidden Workbench update capability' }
+          if ((@($m.Files.Path | Sort-Object) -join "`n") -ne (($files | Sort-Object) -join "`n")) { throw 'package file set mismatch' }
+          foreach ($item in $m.Files) {
+            $full = Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "missing payload: $($item.Path)" }
+            if ((Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.Sha256.ToLowerInvariant()) { throw "hash mismatch: $($item.Path)" }
+          }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.47-source-only.sha256.txt'), "$sha  workbench-v0.47-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "V047_PACKAGE_PASS sha256=$sha payloadFiles=$($files.Count) forbiddenFlags=False"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.47-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.47-source-only.zip
+            ${{ runner.temp }}/workbench-v0.47-source-only.sha256.txt
+          retention-days: 30
