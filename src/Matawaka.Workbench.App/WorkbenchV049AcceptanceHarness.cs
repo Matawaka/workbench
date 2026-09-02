@@ -38,7 +38,7 @@ public sealed class WorkbenchV049AcceptanceHarness
             "every MCP content read delegates to LocalAppReadLeaseV048Service and remains bounded by scope, TTL, bytes, calls, revocation and expected SHA",
             "adapter listener is IPv4 loopback only with a random in-memory endpoint path token",
             "endpoint token hash only is persisted in adapter receipt; plaintext lease bearer is not persisted by adapter receipt",
-            "Workbench runtime adds no MCP NuGet dependency; interoperability with pinned official ModelContextProtocol 2.2.0 client is external qualification evidence",
+            "Workbench runtime uses base .NET TcpListener and adds no MCP or Microsoft.AspNetCore runtime dependency; official ModelContextProtocol 2.2.0 client interoperability is external qualification evidence",
             "v0.49 starts no Secure MCP Tunnel and performs no automatic account login/linking or public endpoint publication",
             "v0.47 manual Chat read relay and v0.48 lease create/revoke remain available",
             "no application/source mutation, arbitrary filesystem authority, app process execution, catalog mutation, Agent Execute, ActionPermit or Stable Core promotion"
@@ -57,7 +57,7 @@ public sealed class WorkbenchV049AcceptanceHarness
             predecessor.ExecuteProgressEvents,
             checks,
             nonEffects,
-            "Workbench v0.49 adds an offline-update-compatible, lease-gated read-only MCP Streamable HTTP subset on IPv4 loopback. Official C# ModelContextProtocol 2.2.0 client interoperability is required qualification evidence; it is not a runtime package or transport authority. Secure tunnel/public activation remains separate.");
+            "Workbench v0.49 MCP transport is stabilized to an offline-update-compatible base-.NET TcpListener Streamable HTTP subset on IPv4 loopback. Official C# ModelContextProtocol 2.2.0 client interoperability remains required qualification evidence; it is not a product runtime package or transport authority. Secure tunnel/public activation remains separate.");
     }
 
     private static void Add(List<WorkbenchAcceptanceCheck> destination, IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> checks)
