@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Matawaka.Workbench.App"
-        Title="Matawaka Workbench v0.43" Height="760" Width="1280" MinHeight="620" MinWidth="940"
+        Title="Matawaka Workbench v0.44" Height="760" Width="1280" MinHeight="620" MinWidth="940"
         Loaded="Window_LoadedV040"
         Closing="Window_Closing">
     <Window.Resources>
@@ -21,7 +21,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- v0.43 preserves the v0.42 five-button operator surface. -->
+        <!-- v0.44 preserves the accepted five-button operator surface. -->
         <WrapPanel x:Name="PrimaryMaintenanceSurface" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
             <Button x:Name="UpdateCandidateButton" Width="92" Height="46" Margin="0,0,6,0" Click="UpdateCandidateV040Button_Click"
                     ToolTip="One explicit confirmation may perform exact update/build → one-shot bootstrap → automatic exact launch/handoff. Successor first boot validates and locally accepts once if PASS. Publish remains separate.">
@@ -57,8 +57,8 @@
                             <DataTemplate>
                                 <Button Padding="7,3" Margin="0,0,6,0" Cursor="Hand"
                                         DataContext="{Binding}" Tag="{Binding ApplicationId}"
-                                        Click="InstalledAppV043Button_Click"
-                                        ToolTip="Open read-only application directory tree in its own tab">
+                                        Click="InstalledAppV044Button_Click"
+                                        ToolTip="Open a closable read-only application tree; double-click a text file in the tree to inspect contents">
                                     <TextBlock Text="{Binding Display}"/>
                                 </Button>
                             </DataTemplate>
@@ -95,7 +95,7 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="Find in output:" VerticalAlignment="Center" Margin="0,0,8,0"/>
             <TextBox x:Name="JsonSearchBox" Grid.Column="1" VerticalContentAlignment="Center" KeyDown="JsonSearchBox_KeyDown"
-                     ToolTip="Searches the currently selected text output. Ctrl+F focuses here; Enter/F3 finds next; Shift+Enter/Shift+F3 finds previous."/>
+                     ToolTip="Searches the currently selected text output, including read-only app text tabs. Ctrl+F focuses here; Enter/F3 finds next; Shift+Enter/Shift+F3 finds previous."/>
             <Button x:Name="JsonSearchPreviousButton" Grid.Column="2" Content="Previous" Margin="8,0,0,0" Padding="10,2" Click="JsonSearchPreviousButton_Click"/>
             <Button x:Name="JsonSearchNextButton" Grid.Column="3" Content="Next" Margin="6,0,0,0" Padding="10,2" Click="JsonSearchNextButton_Click"/>
             <Button x:Name="JsonSearchClearButton" Grid.Column="4" Content="Clear" Margin="6,0,0,0" Padding="10,2" Click="JsonSearchClearButton_Click"/>
