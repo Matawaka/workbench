@@ -1,0 +1,202 @@
+name: Workbench v0.44.1 nested TreeView routing probe
+
+on:
+  push:
+    branches:
+      - stabilize/workbench-v0.44.1-tree-doubleclick-routing
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore and build zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if ($LASTEXITCODE -ne 0) { throw 'v0.44.1 restore failed' }
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.44.1 Release build failed' }
+
+      - name: Verify stabilization diff is narrow
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '343a452a8136e8b4f7af6374108e1b4d6e851428'
+          $allowed = @(
+            '.github/workflows/workbench-v0.44.1-routing-probe.yml',
+            'src/Matawaka.Workbench.App/MainWindow.V0441RoutingFix.cs',
+            'src/Matawaka.Workbench.App/TreeViewItemRoutingV0441Service.cs'
+          ) | Sort-Object
+          $actual = @(git diff --name-only $base HEAD) | Sort-Object
+          if (($actual -join "`n") -ne ($allowed -join "`n")) { throw "unexpected v0.44.1 stabilization diff:`n$($actual -join "`n")" }
+          git diff --quiet $base HEAD -- src/Matawaka.Workbench.App/MainWindow.V044.cs
+          if ($LASTEXITCODE -ne 0) { throw 'qualified v0.44 implementation was rewritten instead of stabilized additively' }
+          Write-Host 'V0441_NARROW_DIFF_PASS'
+
+      - name: Verify exact failed lookup is replaced additively
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $old = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V044.cs' -Raw
+          $fix = Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0441RoutingFix.cs' -Raw
+          $resolver = Get-Content 'src/Matawaka.Workbench.App/TreeViewItemRoutingV0441Service.cs' -Raw
+          if ($old -notmatch 'ItemsControl\.ContainerFromElement\(tree, source\)') { throw 'expected v0.44 failed root-only lookup evidence disappeared' }
+          foreach ($marker in @('tree.MouseDoubleClick -= AppTreeV044_MouseDoubleClick','tree.MouseDoubleClick += AppTreeV0441_MouseDoubleClick','TreeViewItemRoutingV0441Service.TryResolveFileNode','OpenOrRefreshAppTextTabV044')) {
+            if ($fix -notmatch [regex]::Escape($marker)) { throw "v0.44.1 routing marker missing: $marker" }
+          }
+          foreach ($marker in @('FindNearestTreeViewItem','VisualTreeHelper.GetParent','ContentOperations.GetParent','current is TreeViewItem')) {
+            if ($resolver -notmatch [regex]::Escape($marker)) { throw "v0.44.1 resolver marker missing: $marker" }
+          }
+          Write-Host 'V0441_STATIC_ROUTING_PASS'
+
+      - name: Execute nested rendered-item resolver and handler probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v0441-routing-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Reflection;
+          using System.Text;
+          using System.Text.Json;
+          using System.Windows;
+          using System.Windows.Controls;
+          using System.Windows.Input;
+          using System.Windows.Media;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              [STAThread]
+              private static void Main()
+              {
+                  var root = Path.Combine(Path.GetTempPath(), "matawaka-v0441-routing-" + Guid.NewGuid().ToString("N"));
+                  var appRoot = Path.Combine(root, "Apps", "alpha");
+                  Directory.CreateDirectory(Path.Combine(appRoot, "nested"));
+                  File.WriteAllText(Path.Combine(appRoot, ".matawaka-app.json"), JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "1.0")), new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(appRoot, "nested", "file.txt"), "real nested text", new UTF8Encoding(false));
+
+                  var window = new MainWindow();
+                  var workspace = (TextBox?)window.FindName("WorkspaceRootBox") ?? throw new Exception("workspace binding missing");
+                  workspace.Text = root;
+                  Invoke(window, "ConfigureV044Routing");
+                  workspace.Text = root;
+                  Invoke(window, "InstallV0441TreeDoubleClickRouting");
+                  Invoke(window, "OpenOrRefreshAppTreeTabV044", new InstalledAppV042("alpha", "1.0"));
+                  window.Show();
+                  window.UpdateLayout();
+
+                  var tabs = (TabControl?)window.FindName("OutputTabs") ?? throw new Exception("tabs missing");
+                  var treeTab = tabs.SelectedItem as TabItem ?? throw new Exception("tree tab not selected");
+                  if (treeTab.Content is not Grid grid) throw new Exception("tree grid missing");
+                  var tree = grid.Children.OfType<TreeView>().Single();
+                  var rootItem = Realize(tree, 0);
+                  rootItem.IsExpanded = true;
+                  window.UpdateLayout();
+                  var nestedItem = Realize(rootItem, 0);
+                  nestedItem.IsExpanded = true;
+                  window.UpdateLayout();
+                  var fileItem = Realize(nestedItem, 0);
+                  window.UpdateLayout();
+                  var source = FindVisualDescendant<TextBlock>(fileItem) ?? throw new Exception("nested file visual missing");
+
+                  var oldRootOnly = ItemsControl.ContainerFromElement(tree, source) as TreeViewItem;
+                  if (oldRootOnly is not null && ReferenceEquals(oldRootOnly, fileItem))
+                      throw new Exception("probe did not reproduce nested root-only distinction");
+                  var resolved = TreeViewItemRoutingV0441Service.FindNearestTreeViewItem(tree, source);
+                  if (!ReferenceEquals(resolved, fileItem)) throw new Exception("nearest nested TreeViewItem not resolved");
+                  if (!TreeViewItemRoutingV0441Service.TryResolveFileNode(tree, source, out var node) || node?.RelativePath != "nested/file.txt")
+                      throw new Exception("nested file node resolution mismatch");
+
+                  var handler = typeof(MainWindow).GetMethod("AppTreeV0441_MouseDoubleClick", BindingFlags.Instance | BindingFlags.NonPublic) ?? throw new Exception("v0.44.1 handler missing");
+                  var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                  {
+                      RoutedEvent = Control.MouseDoubleClickEvent,
+                      Source = source
+                  };
+                  handler.Invoke(window, new object[] { tree, args });
+                  if (!args.Handled) throw new Exception("valid file double-click was not handled");
+                  var textTabs = tabs.Items.OfType<TabItem>().Where(t => t.Content is TextBox tb && tb.Text == "real nested text").ToArray();
+                  if (textTabs.Length != 1) throw new Exception($"handler did not open exactly one nested text tab: {textTabs.Length}");
+
+                  window.Close();
+                  Directory.Delete(root, true);
+                  Console.WriteLine("V0441_NESTED_DOUBLECLICK_PASS rootOnlyFailed=True nearestResolved=True handlerOpenedText=True");
+              }
+
+              private static TreeViewItem Realize(ItemsControl parent, int index)
+              {
+                  parent.ApplyTemplate();
+                  parent.UpdateLayout();
+                  return parent.ItemContainerGenerator.ContainerFromIndex(index) as TreeViewItem
+                      ?? throw new Exception($"TreeViewItem container {index} not realized under {parent.GetType().Name}");
+              }
+
+              private static T? FindVisualDescendant<T>(DependencyObject root) where T : DependencyObject
+              {
+                  for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+                  {
+                      var child = VisualTreeHelper.GetChild(root, i);
+                      if (child is T found) return found;
+                      var nested = FindVisualDescendant<T>(child);
+                      if (nested is not null) return nested;
+                  }
+                  return null;
+              }
+
+              private static object? Invoke(MainWindow window, string name, params object[] args)
+              {
+                  var method = typeof(MainWindow).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public) ?? throw new Exception($"method missing: {name}");
+                  try { return method.Invoke(window, args); }
+                  catch (TargetInvocationException ex) when (ex.InnerException is not null) { throw ex.InnerException; }
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.44.1 nested routing probe failed' }
+
+      - name: Verify remote accepted frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = @(git ls-remote $remote refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLine.Count -ne 1) { throw 'unable to read remote main' }
+          $main = ($mainLine[0] -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '77f1a7027b0f2bf2a95dbdd415c06efa231b2e22') { throw "remote main moved from accepted v0.43: $main" }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.44-accepted refs/tags/workbench-v0.44-accepted^'{}').Count -ne 0) { throw 'failed real-host v0.44 was published remotely' }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.44.1-accepted refs/tags/workbench-v0.44.1-accepted^'{}').Count -ne 0) { throw 'v0.44.1 tag already exists remotely' }
+          Write-Host 'V0441_REMOTE_FRONTIER_PASS'
