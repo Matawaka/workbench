@@ -38,13 +38,18 @@ Adapter Startup != Lease Creation
 Lease Bearer != MCP Tool Argument
 ```
 
-## Official MCP SDK
+## MCP interoperability and offline update boundary
 
-The Workbench App pins the official C# MCP HTTP package:
+The accepted Workbench updater deliberately builds successors with fixed `dotnet ... --no-restore` and no package-download authority. Therefore adding a new runtime NuGet dependency to the Workbench App would make a v0.48 -> v0.49 source-only update depend on package cache state or silently require new network/restore authority.
 
-`ModelContextProtocol.AspNetCore 2.2.0`
+v0.49 does **not** weaken that invariant. Its product runtime uses only the .NET/ASP.NET shared framework already supplied by the local SDK and a small allowlisted MCP JSON-RPC/Streamable HTTP surface. Interoperability is independently qualified against the official C# MCP client package `ModelContextProtocol 2.2.0` in GitHub Actions; that qualification-only package is not a Workbench runtime dependency or update payload.
 
-The adapter uses Streamable HTTP and exposes one content tool:
+```text
+Official Client Interop Proof != Runtime Package Dependency
+Source Update != Package Download Authority
+```
+
+The adapter exposes one content tool:
 
 `read_local_app_chunk(role, relativePath, offset, maxBytes, expectedFileSha256?)`
 
