@@ -1,0 +1,401 @@
+name: Workbench v0.49 lease-gated read-only MCP qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.49-lease-gated-read-only-mcp
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore and build candidate zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if ($LASTEXITCODE -ne 0) { throw 'v0.49 restore failed' }
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.49 Release build failed' }
+
+      - name: Verify v0.49 static authority and transport contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if (-not $app.Contains('ConfigureV049Routing()', [StringComparison]::Ordinal)) { throw 'v0.49 startup routing missing' }
+
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 4) { throw 'top-level surface is not exactly four buttons' }
+
+          $csproj = Get-Content 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj' -Raw
+          if (-not $csproj.Contains('<FrameworkReference Include="Microsoft.AspNetCore.App" />', [StringComparison]::Ordinal)) { throw 'ASP.NET Core shared framework reference missing' }
+          if ($csproj.Contains('PackageReference Include="ModelContextProtocol', [StringComparison]::Ordinal)) { throw 'product runtime must not add MCP NuGet dependency under no-restore updater' }
+
+          $adapter = Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs' -Raw
+          foreach ($marker in @(
+            'allowlisted-mcp-jsonrpc-streamable-http-subset',
+            'QualificationClientPackage = "ModelContextProtocol"',
+            'QualificationClientVersion = "2.2.0"',
+            'IPAddress.Loopback',
+            'RandomNumberGenerator.GetBytes(32)',
+            'read_local_app_chunk',
+            'LocalAppReadLeaseV048Service.ReadRequestSchema',
+            'REFUSED_BY_ACTIVE_READ_LEASE',
+            'MCP_READ_ADAPTER_LOOPBACK_READY_NO_TUNNEL',
+            'MCP_READ_ADAPTER_STOPPED_LOCAL_ONLY'
+          )) {
+            if (-not $adapter.Contains($marker, [StringComparison]::Ordinal)) { throw "adapter marker missing: $marker" }
+          }
+          foreach ($forbidden in @('IPAddress.Any','IPAddress.IPv6Any','ListenAnyIP','UseUrls("http://0.0.0.0','SecureMcpTunnelStarted = true')) {
+            if ($adapter.Contains($forbidden, [StringComparison]::Ordinal)) { throw "forbidden adapter authority marker: $forbidden" }
+          }
+
+          $toolBlock = [regex]::Match($adapter, 'private static Dictionary<string, object\?> BuildToolsListResult\(\)[\s\S]*?return new Dictionary<string, object\?> \{ \["tools"\]').Value
+          if ([string]::IsNullOrWhiteSpace($toolBlock)) { throw 'tool schema block not found' }
+          foreach ($forbiddenArg in @('ApplicationId','LeaseId','Bearer','WorkspaceRoot','AbsolutePath')) {
+            if ($toolBlock.Contains('[' + '"' + $forbiddenArg + '"' + ']', [StringComparison]::Ordinal)) { throw "forbidden caller-selectable MCP authority argument: $forbiddenArg" }
+          }
+          foreach ($requiredArg in @('"role"','"relativePath"','"offset"','"maxBytes"','"expectedFileSha256"')) {
+            if (-not $toolBlock.Contains($requiredArg, [StringComparison]::Ordinal)) { throw "required MCP tool argument missing: $requiredArg" }
+          }
+
+          $docs = (Get-Content 'PATCH-v0.49.md' -Raw) + (Get-Content 'LOCAL-APP-MCP-ADAPTER.md' -Raw)
+          foreach ($marker in @(
+            'MCP Request != Filesystem Authority',
+            'MCP Adapter Authority <= Active Read Lease Authority',
+            'Local MCP Endpoint != Automatic Secure Tunnel',
+            'runtime product remains compatible with the accepted offline `--no-restore` Workbench update path',
+            'ModelContextProtocol 2.2.0'
+          )) {
+            if (-not $docs.Contains($marker, [StringComparison]::Ordinal)) { throw "v0.49 documentation marker missing: $marker" }
+          }
+          Write-Host 'V049_STATIC_PASS buttons=4 loopback=True leaseGate=True callerAuthorityArgs=False runtimeMcpNuget=False docs=True'
+
+      - name: Prove v0.48 restored tree can build v0.49 overlay with no restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidate = (Get-Location).Path
+          $overlay = Join-Path $env:RUNNER_TEMP 'workbench-v049-no-restore-overlay'
+          if (Test-Path $overlay) { Remove-Item $overlay -Recurse -Force }
+          git worktree add --detach $overlay workbench-v0.48-accepted
+          if ($LASTEXITCODE -ne 0) { throw 'unable to materialize accepted v0.48 worktree' }
+          try {
+            Push-Location $overlay
+            dotnet restore Matawaka.Workbench.sln
+            if ($LASTEXITCODE -ne 0) { throw 'accepted v0.48 predecessor restore failed' }
+            Pop-Location
+
+            $files = @(
+              'PATCH-v0.49.md',
+              'LOCAL-APP-MCP-ADAPTER.md',
+              'DEVELOPMENT-AUDIT-ROADMAP.md',
+              'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj',
+              'src/Matawaka.Workbench.App/App.xaml.cs',
+              'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs',
+              'src/Matawaka.Workbench.App/LocalAppMcpAdapterGrantDialogV049.cs',
+              'src/Matawaka.Workbench.App/LocalAppsActionDialogV049.cs',
+              'src/Matawaka.Workbench.App/MainWindow.V049.cs',
+              'src/Matawaka.Workbench.App/WorkbenchV049AcceptanceHarness.cs',
+              'src/Matawaka.Workbench.App/LocalCheckpointV049Service.cs',
+              'src/Matawaka.Workbench.App/FixedGitHubPublicationV049Service.cs'
+            )
+            foreach ($file in $files) {
+              $src = Join-Path $candidate ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+              $dst = Join-Path $overlay ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+              New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force | Out-Null
+              Copy-Item -LiteralPath $src -Destination $dst -Force
+            }
+
+            Push-Location $overlay
+            dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+            if ($LASTEXITCODE -ne 0) { throw 'v0.49 overlay failed accepted updater no-restore build contract' }
+            Pop-Location
+            Write-Host 'V049_NO_RESTORE_PASS predecessor=v0.48 overlay=v0.49 runtimeNugetDelta=False'
+          }
+          finally {
+            if ((Get-Location).Path -eq $overlay) { Pop-Location }
+            git worktree remove --force $overlay 2>$null
+          }
+
+      - name: Execute official MCP 2.2.0 client interoperability and lease negative controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v049-official-mcp-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="$escaped" />
+              <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+            </ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+
+          @'
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+          using ModelContextProtocol.Client;
+          using ModelContextProtocol.Protocol;
+
+          internal static class Program
+          {
+              private static string Hash(string path)
+              {
+                  using var stream = File.OpenRead(path);
+                  return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+              }
+
+              private static async Task Main()
+              {
+                  var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v049-" + Guid.NewGuid().ToString("N"));
+                  Directory.CreateDirectory(Path.Combine(workspace, "Workbench", "artifacts"));
+                  var appRoot = Path.Combine(workspace, "Apps", "alpha");
+                  Directory.CreateDirectory(Path.Combine(appRoot, "data"));
+                  File.WriteAllText(Path.Combine(appRoot, ".matawaka-app.json"), JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "1.0.0")), new UTF8Encoding(false));
+                  var statePath = Path.Combine(appRoot, "data", "state.json");
+                  File.WriteAllText(statePath, "{\"private\":\"MCP-LEASE-SECRET\"}", new UTF8Encoding(false));
+                  var outsidePath = Path.Combine(appRoot, "data", "outside.txt");
+                  File.WriteAllText(outsidePath, "outside", new UTF8Encoding(false));
+
+                  var sourceRoot = Path.Combine(workspace, "AppSources", "alpha");
+                  Directory.CreateDirectory(Path.Combine(sourceRoot, "web"));
+                  File.WriteAllText(Path.Combine(sourceRoot, ".matawaka-source.json"), "{}", new UTF8Encoding(false));
+                  var sourcePath = Path.Combine(sourceRoot, "web", "app.js");
+                  File.WriteAllText(sourcePath, "source-v049", new UTF8Encoding(false));
+
+                  var leases = new LocalAppReadLeaseV048Service();
+                  var leaseRequest = new LocalAppReadLeaseRequestV048(
+                      LocalAppReadLeaseV048Service.RequestSchema,
+                      "lease:v049:official",
+                      "alpha",
+                      new[]
+                      {
+                          new LocalAppReadLeaseScopeV048("installed", "data/state.json"),
+                          new LocalAppReadLeaseScopeV048("source", "web/")
+                      },
+                      1024,
+                      8192,
+                      8,
+                      300);
+                  var leasePreview = leases.Preview(workspace, "alpha", leaseRequest, default);
+                  var created = await leases.CreateAsync(workspace, "alpha", leasePreview, false, default);
+                  var grantJson = LocalAppReadLeaseV048Service.SerializeGrant(created.Grant);
+
+                  var adapter = new LocalAppMcpReadAdapterV049Service();
+                  var adapterPreview = adapter.PreviewFromGrantJson(workspace, "alpha", grantJson, default);
+                  if (adapterPreview.ContainsFileContents || !adapterPreview.BearerVerified || !adapterPreview.ReadyForExplicitLoopbackAuthority)
+                      throw new Exception("adapter preview boundary failed");
+                  var adapterGrant = await adapter.StartAsync(workspace, "alpha", adapterPreview, grantJson, default);
+                  var endpoint = new Uri(adapterGrant.EndpointUrl);
+                  if (endpoint.Host != "127.0.0.1" || !endpoint.AbsolutePath.StartsWith("/mcp/", StringComparison.Ordinal) || endpoint.AbsolutePath[5..].Length != 64)
+                      throw new Exception("adapter endpoint boundary failed");
+                  var startReceipt = await adapter.WriteStartReceiptAsync(workspace, adapterGrant, false, default);
+                  var startJson = File.ReadAllText(startReceipt.ReceiptPath);
+                  if (startJson.Contains(created.Grant.Bearer, StringComparison.Ordinal) || startJson.Contains(endpoint.AbsolutePath[5..], StringComparison.Ordinal))
+                      throw new Exception("plaintext bearer/endpoint token persisted in adapter receipt");
+
+                  var transport = new HttpClientTransport(new HttpClientTransportOptions
+                  {
+                      Endpoint = endpoint,
+                      TransportMode = HttpTransportMode.StreamableHttp,
+                      EnableStandaloneGetStream = false
+                  });
+                  await using var client = await McpClient.CreateAsync(transport, new McpClientOptions
+                  {
+                      ClientInfo = new Implementation { Name = "Matawaka-v0.49-qualification", Version = "1.0" }
+                  });
+
+                  var tools = await client.ListToolsAsync();
+                  if (tools.Count != 1 || tools[0].Name != "read_local_app_chunk") throw new Exception("official client tools/list mismatch");
+
+                  var installed = await client.CallToolAsync("read_local_app_chunk", new Dictionary<string, object?>
+                  {
+                      ["role"] = "installed",
+                      ["relativePath"] = "data/state.json",
+                      ["offset"] = 0L,
+                      ["maxBytes"] = 1024,
+                      ["expectedFileSha256"] = Hash(statePath)
+                  });
+                  if (installed.IsError is true) throw new Exception("official client installed read unexpectedly refused");
+                  var installedText = installed.Content.OfType<TextContentBlock>().Single().Text;
+                  using (var doc = JsonDocument.Parse(installedText))
+                  {
+                      if (doc.RootElement.GetProperty("Schema").GetString() != LocalAppMcpReadAdapterV049Service.ReadResponseSchema) throw new Exception("MCP response schema mismatch");
+                      if (!doc.RootElement.GetProperty("Utf8Text").GetString()!.Contains("MCP-LEASE-SECRET", StringComparison.Ordinal)) throw new Exception("installed MCP content mismatch");
+                  }
+
+                  var source = await client.CallToolAsync("read_local_app_chunk", new Dictionary<string, object?>
+                  {
+                      ["role"] = "source",
+                      ["relativePath"] = "web/app.js",
+                      ["offset"] = 0L,
+                      ["maxBytes"] = 1024,
+                      ["expectedFileSha256"] = Hash(sourcePath)
+                  });
+                  if (source.IsError is true || !source.Content.OfType<TextContentBlock>().Single().Text.Contains("source-v049", StringComparison.Ordinal))
+                      throw new Exception("official client source prefix read failed");
+
+                  var outside = await client.CallToolAsync("read_local_app_chunk", new Dictionary<string, object?>
+                  {
+                      ["role"] = "installed",
+                      ["relativePath"] = "data/outside.txt",
+                      ["offset"] = 0L,
+                      ["maxBytes"] = 32,
+                      ["expectedFileSha256"] = Hash(outsidePath)
+                  });
+                  if (outside.IsError is not true) throw new Exception("out-of-scope MCP read not refused");
+
+                  var stale = await client.CallToolAsync("read_local_app_chunk", new Dictionary<string, object?>
+                  {
+                      ["role"] = "installed",
+                      ["relativePath"] = "data/state.json",
+                      ["offset"] = 0L,
+                      ["maxBytes"] = 32,
+                      ["expectedFileSha256"] = new string('0', 64)
+                  });
+                  if (stale.IsError is not true) throw new Exception("stale hash MCP read not refused");
+
+                  var authorityArg = await client.CallToolAsync("read_local_app_chunk", new Dictionary<string, object?>
+                  {
+                      ["role"] = "installed",
+                      ["relativePath"] = "data/state.json",
+                      ["offset"] = 0L,
+                      ["maxBytes"] = 32,
+                      ["ApplicationId"] = "other"
+                  });
+                  if (authorityArg.IsError is not true) throw new Exception("caller authority expansion argument not refused");
+
+                  var revoked = await leases.RevokeAllActiveAsync(workspace, "alpha", default);
+                  if (revoked.Receipt.RevokedLeases != 1) throw new Exception("lease revoke failed");
+                  var afterRevoke = await client.CallToolAsync("read_local_app_chunk", new Dictionary<string, object?>
+                  {
+                      ["role"] = "installed",
+                      ["relativePath"] = "data/state.json",
+                      ["offset"] = 0L,
+                      ["maxBytes"] = 32
+                  });
+                  if (afterRevoke.IsError is not true) throw new Exception("revoked lease MCP read not refused");
+
+                  await client.DisposeAsync();
+                  var stopped = await adapter.StopAsync(workspace, default);
+                  if (!stopped.Receipt.ListenerStopped || !stopped.Receipt.InMemoryBearerReferenceCleared || adapter.IsActiveFor("alpha"))
+                      throw new Exception("adapter stop boundary failed");
+
+                  Directory.Delete(workspace, true);
+                  Console.WriteLine("V049_MCP_INTEROP_PASS officialClient=ModelContextProtocol-2.2.0 loopback=True installedRead=True sourceRead=True scopeRefused=True staleRefused=True authorityArgRefused=True revokeRefused=True stop=True tunnel=False");
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.49 official MCP client interoperability probe failed' }
+
+      - name: Verify remote accepted frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = @(git ls-remote $remote refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLine.Count -ne 1) { throw 'unable to read remote main' }
+          $main = ($mainLine[0] -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '2b0e3127e3c0284ff569720d85889cec3374f053') { throw "remote main moved from accepted v0.48: $main" }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.49-accepted refs/tags/workbench-v0.49-accepted^'{}').Count -ne 0) { throw 'v0.49 target tag already exists remotely' }
+          Write-Host 'V049_REMOTE_PASS main=v0.48 targetAbsent=True'
+
+      - name: Build and audit v0.49 source-only package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.49.md',
+            'LOCAL-APP-MCP-ADAPTER.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpAdapterGrantDialogV049.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV049.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V049.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV049AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV049Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV049Service.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.49-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.49.0';
+            PredecessorTag='workbench-v0.48-accepted'; PredecessorCommit='2b0e3127e3c0284ff569720d85889cec3374f053';
+            TargetTag='workbench-v0.49-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('Workbench source update only','no Apps/AppSources/private data/bearer/lease/endpoint state in package','no automatic MCP listener start','no Secure MCP Tunnel/account/public endpoint activation','no new MCP NuGet dependency required by successor no-restore build')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.49-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+
+          $audit = Join-Path $env:RUNNER_TEMP 'workbench-v0.49-audit'
+          if (Test-Path $audit) { Remove-Item $audit -Recurse -Force }
+          [IO.Compression.ZipFile]::ExtractToDirectory($zip, $audit)
+          $m = Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if ($m.TargetVersion -ne '0.49.0' -or $m.PredecessorCommit -ne '2b0e3127e3c0284ff569720d85889cec3374f053' -or $m.PredecessorTag -ne 'workbench-v0.48-accepted' -or $m.TargetTag -ne 'workbench-v0.49-accepted') { throw 'package identity audit failed' }
+          if ($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested) { throw 'package requested forbidden Workbench update capability' }
+          if ((@($m.Files.Path | Sort-Object) -join "`n") -ne (($files | Sort-Object) -join "`n")) { throw 'package file set mismatch' }
+          foreach ($item in $m.Files) {
+            $full = Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "missing payload: $($item.Path)" }
+            if ((Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.Sha256.ToLowerInvariant()) { throw "hash mismatch: $($item.Path)" }
+          }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.49-source-only.sha256.txt'), "$sha  workbench-v0.49-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "V049_PACKAGE_PASS sha256=$sha payloadFiles=$($files.Count) forbiddenFlags=False"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.49-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.49-source-only.zip
+            ${{ runner.temp }}/workbench-v0.49-source-only.sha256.txt
+          retention-days: 30
