@@ -13,6 +13,7 @@ public partial class MainWindow
     private readonly FixedGitHubPublicationV049Service _fixedGitHubPublicationV049Service = new();
     private readonly LocalAppMcpReadAdapterV049Service _localAppMcpReadAdapterV049Service = new();
     private bool _v049LoadedBootstrapChecked;
+    private string? _v049ActiveAdapterApplicationId;
 
     internal void ConfigureV049Routing()
     {
@@ -46,6 +47,7 @@ public partial class MainWindow
         try
         {
             Task.Run(() => _localAppMcpReadAdapterV049Service.StopBestEffortAsync()).GetAwaiter().GetResult();
+            _v049ActiveAdapterApplicationId = null;
         }
         catch
         {
@@ -171,6 +173,7 @@ public partial class MainWindow
             BeginRun($"mcp-read-adapter-v0.49-{DateTime.Now:yyyyMMddHHmmss}");
             var grant = await _localAppMcpReadAdapterV049Service.StartAsync(WorkspaceRootBox.Text, appId, preview, grantJson, _cts!.Token);
             started = true;
+            _v049ActiveAdapterApplicationId = appId;
             Clipboard.SetText(grant.EndpointUrl);
             var written = await _localAppMcpReadAdapterV049Service.WriteStartReceiptAsync(WorkspaceRootBox.Text, grant, true, _cts.Token);
             LocalAppsTextBox.Text = CommandCodec.Serialize(new
@@ -190,9 +193,9 @@ public partial class MainWindow
             StatusText.Text = $"COMPLETED: read-only MCP adapter on loopback for {appId}; endpoint copied; tunnel=false";
             EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  mcp-adapter.v049.started app={appId}; lease={preview.LeaseId}; loopback=true; public=false; tunnel=false");
         }
-        catch (OperationCanceledException) { if (started) await _localAppMcpReadAdapterV049Service.StopBestEffortAsync(); ShowCancelled(); }
-        catch (InvalidDataException ex) { if (started) await _localAppMcpReadAdapterV049Service.StopBestEffortAsync(); ShowInvalid(ex); }
-        catch (Exception ex) { if (started) await _localAppMcpReadAdapterV049Service.StopBestEffortAsync(); ShowFailure(ex); }
+        catch (OperationCanceledException) { if (started) { await _localAppMcpReadAdapterV049Service.StopBestEffortAsync(); _v049ActiveAdapterApplicationId = null; } ShowCancelled(); }
+        catch (InvalidDataException ex) { if (started) { await _localAppMcpReadAdapterV049Service.StopBestEffortAsync(); _v049ActiveAdapterApplicationId = null; } ShowInvalid(ex); }
+        catch (Exception ex) { if (started) { await _localAppMcpReadAdapterV049Service.StopBestEffortAsync(); _v049ActiveAdapterApplicationId = null; } ShowFailure(ex); }
         finally
         {
             EndRun();
@@ -214,6 +217,7 @@ public partial class MainWindow
             SetV035PrimaryControlsEnabled(false);
             BeginRun($"stop-mcp-read-adapter-v0.49-{DateTime.Now:yyyyMMddHHmmss}");
             var result = await _localAppMcpReadAdapterV049Service.StopAsync(WorkspaceRootBox.Text, _cts!.Token);
+            _v049ActiveAdapterApplicationId = null;
             LocalAppsTextBox.Text = CommandCodec.Serialize(new { Stop = result.Receipt, StopReceiptPath = result.ReceiptPath });
             OutputTabs.SelectedItem = LocalAppsTab;
             ProgressBar.Value = 100;
@@ -325,8 +329,8 @@ public partial class MainWindow
         {
             OperatorSurfaceV045Contract.Apply(this);
             SaveSettings();
-            if (_localAppMcpReadAdapterV049Service.IsActiveFor("life-situation-resolver"))
-                throw new InvalidDataException("Stop the active v0.49 MCP adapter before publishing accepted Workbench source.");
+            if (_v049ActiveAdapterApplicationId is not null)
+                throw new InvalidDataException($"Stop the active v0.49 MCP adapter for {_v049ActiveAdapterApplicationId} before publishing accepted Workbench source.");
             var candidate = await _fixedGitHubPublicationV049Service.PreviewAsync(WorkspaceRootBox.Text, CancellationToken.None);
             var preview = $"Опубликовать принятый Workbench v0.49?\n\nRemote: {candidate.RemoteName}\nAccepted HEAD: {candidate.Head}\nParent: {candidate.Parent} / {FixedGitHubPublicationV049Service.ExpectedParentTag}\nTag: {candidate.AcceptedTag}\n\nYes только после real-host проверки local loopback MCP adapter. Lease/bearer/private app data/endpoint tokens не входят в Workbench publication. Secure MCP Tunnel не запускается этой кнопкой.";
             if (MessageBox.Show(this, preview, "Publish accepted v0.49", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
