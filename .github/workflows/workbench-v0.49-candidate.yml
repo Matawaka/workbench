@@ -161,6 +161,7 @@ jobs:
           "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
 
           @'
+          using System.IO;
           using System.Security.Cryptography;
           using System.Text;
           using System.Text.Json;
