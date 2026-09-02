@@ -8,8 +8,14 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var window = new MainWindow();
-        window.ConfigureV047Routing();
+        window.ConfigureV048Routing();
         MainWindow = window;
         window.Show();
     }
+}
+
+internal static class V048StringCompatibilityExtensions
+{
+    public static bool EndsWith(this string value, char suffix, StringComparison comparisonType)
+        => value.EndsWith(suffix.ToString(), comparisonType);
 }
