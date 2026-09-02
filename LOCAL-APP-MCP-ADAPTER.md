@@ -18,29 +18,11 @@ Workbench v0.49 introduced the local MCP transport concept above the accepted v0
 
 ## MCP tool
 
-The content surface intentionally contains one tool:
+The content surface intentionally contains one tool: `read_local_app_chunk`.
 
-`read_local_app_chunk`
+Arguments exposed to the MCP caller are only `role`, `relativePath`, `offset`, `maxBytes`, and optional `expectedFileSha256`. The caller does **not** supply `ApplicationId`, `LeaseId`, lease bearer or filesystem root; those remain fixed in the human-approved v0.48 adapter session.
 
-Arguments exposed to the MCP caller:
-
-```json
-{
-  "role": "installed|source",
-  "relativePath": "data/state.json",
-  "offset": 0,
-  "maxBytes": 65536,
-  "expectedFileSha256": "optional exact SHA-256"
-}
-```
-
-The MCP caller does **not** supply `ApplicationId`, `LeaseId`, lease bearer or filesystem root. Those values are fixed in the in-process adapter session created from the human-approved v0.48 grant.
-
-## Read authority
-
-Each MCP tool invocation is translated to `matawaka.local-app-lease-read-request/v0.48` and sent to `LocalAppReadLeaseV048Service.AuthorizeAndReadAsync`.
-
-Therefore MCP cannot bypass selected registered `ApplicationId`, `installed|source` role, exact-file/directory-prefix lease scopes, path/reparse boundaries, per-read/total byte ceilings, call budget, expiry, revocation or optional expected SHA-256.
+Every tool invocation delegates to `LocalAppReadLeaseV048Service.AuthorizeAndReadAsync`, so MCP cannot bypass selected app, role/path scopes, reparse/path boundaries, TTL, call/byte ceilings, revocation or expected SHA.
 
 ```text
 MCP Request != Filesystem Authority
@@ -52,44 +34,35 @@ Bearer Possession != Authority Beyond Lease Bounds
 
 The accepted Workbench updater builds the successor with `--no-restore` and creates no package-download or shared-framework-install authority. CI availability of an assembly is not evidence that the accepted user host has that runtime.
 
-The initial v0.49 Kestrel implementation therefore failed real-host admission with missing `Microsoft.AspNetCore`. v0.49.1 removes that product runtime dependency entirely.
-
-The stabilized adapter uses only base .NET networking:
+The initial v0.49 Kestrel implementation therefore failed real-host admission with missing `Microsoft.AspNetCore`. v0.49.1 removes that product runtime dependency entirely and uses base .NET networking only:
 
 - `TcpListener(IPAddress.Loopback, 0)`;
 - exact IPv4 loopback only;
 - OS-selected ephemeral port;
-- one random 256-bit endpoint path token;
-- bounded HTTP/1.1 header parser (`<= 16 KiB`);
-- exact `Content-Length`, body `<= 64 KiB`;
-- no chunked/transfer-encoding input;
-- exact POST/path/Host/content-type checks;
+- random 256-bit endpoint path token;
+- HTTP headers <= 16 KiB;
+- decoded JSON-RPC body <= 64 KiB;
+- either exact `Content-Length` or exact `Transfer-Encoding: chunked`, never both;
+- bounded chunk-size lines and <= 4 KiB trailers;
+- exact POST/path/local Host/application-json checks;
 - one response then connection close.
 
-The protocol surface remains a small allowlisted MCP JSON-RPC / Streamable HTTP subset for initialization, ping, `tools/list`, and `tools/call` with the single read tool.
+Official `ModelContextProtocol 2.2.0` interoperability proved that Streamable HTTP initialization may use chunked transfer. v0.49.1 therefore admits **only a bounded chunked decoder under the same 64 KiB decoded-body ceiling**, rather than treating chunked transport itself as authority expansion.
 
-The runtime product remains compatible with the accepted offline `--no-restore` Workbench update path and no longer requires `Microsoft.AspNetCore.App`.
-
-Interoperability remains a separate qualification boundary: Windows CI connects with the official C# `ModelContextProtocol 2.2.0` client, lists the tool and performs/refuses lease-gated calls. The official client package is qualification-only and is not a Workbench runtime dependency.
+The runtime product remains compatible with the accepted offline `--no-restore` Workbench update path and no longer requires `Microsoft.AspNetCore.App`. The official MCP client package remains qualification-only and is not a Workbench runtime dependency.
 
 ```text
 Official Client Interop != Embedded Official Server SDK
 CI Runtime Availability != Accepted Host Runtime Guarantee
+Chunked Transport != Unbounded Body Authority
 Offline Successor Build != Package/Framework Installation Authority
 ```
 
-## Loopback security boundary
+## Loopback and secret boundary
 
-The adapter binds only `127.0.0.1`, validates the exact local Host header and endpoint path, and never binds `0.0.0.0`, IPv6-any or LAN/public interfaces. The random endpoint token is not a replacement for the lease: every content read still passes the v0.48 lease gate.
+The adapter binds only `127.0.0.1`, validates the local Host and secret endpoint path, and never binds `0.0.0.0`, IPv6-any or LAN/public interfaces. The endpoint token is not a replacement for the lease: every content read still passes v0.48 authorization.
 
-```text
-Loopback Listener != Public Listener
-Endpoint Token != Lease Authority
-```
-
-## Secret persistence
-
-v0.48 persists only SHA-256 of the lease bearer. Adapter start/stop receipts persist only SHA-256 of the random endpoint token and never bearer plaintext or private read content. While active, the bearer remains only in the Workbench process because delegated v0.48 reads require it. Stop clears the Workbench-held string reference; this is reference clearing, not a managed-memory zeroization claim.
+v0.48 persists only SHA-256 of the lease bearer. Adapter receipts persist only SHA-256 of the random endpoint token and never bearer plaintext or private read content. Stop clears the Workbench-held bearer reference; this is not a managed-memory zeroization claim.
 
 ## Tunnel boundary
 
@@ -104,10 +77,6 @@ Local MCP Endpoint
 
 ## Fail-closed behavior
 
-No file content is returned for inactive/missing/expired/revoked/exhausted lease, wrong bearer state, out-of-scope role/path, traversal/reparse, byte-budget breach, stale expected SHA, file drift, malformed/oversized HTTP, wrong Host/path/method/content type, chunked transfer, or caller-injected authority-like tool fields.
-
-## Non-effects
-
-The stabilized adapter creates no application/source write authority, arbitrary filesystem authority, app process execution authority, LAN/public listener, automatic Secure MCP Tunnel, automatic upload to ChatGPT, runtime MCP/AspNetCore package dependency, Git/catalog/Agent Execute authority, or update restore/network authority.
+No file content is returned for inactive/missing/expired/revoked/exhausted lease, wrong bearer, out-of-scope role/path, traversal/reparse, byte/call breach, stale SHA, file drift, malformed/oversized HTTP, wrong Host/path/method/content type, unsupported/ambiguous transfer coding, over-limit chunked body/trailers, or caller-injected authority-like tool fields.
 
 The v0.47 manual clipboard relay remains available whenever the direct adapter/tunnel path is unavailable or undesirable.
