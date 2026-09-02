@@ -8,7 +8,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var window = new MainWindow();
-        window.ConfigureV047Routing();
+        window.ConfigureV048Routing();
         MainWindow = window;
         window.Show();
     }
