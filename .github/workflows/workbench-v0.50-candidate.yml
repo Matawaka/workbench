@@ -1,0 +1,197 @@
+name: Workbench v0.50 Secure MCP Tunnel candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.50-secure-mcp-tunnel-handoff]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Release build zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'build failed'}
+
+      - name: Verify v0.50 authority and secret surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV050Routing()', [StringComparison]::Ordinal)){throw 'v0.50 startup routing missing'}
+          $service=Get-Content 'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelV050Service.cs' -Raw
+          foreach($m in @(
+            'Tools/OpenAI/tunnel-client/tunnel-client-runtime.exe',
+            'ExpectedTunnelClientVersion = "0.0.14"',
+            'CONTROL_PLANE_API_KEY',
+            'CONTROL_PLANE_TUNNEL_ID',
+            'MCP_SERVER_URL',
+            '--control-plane.api-key',
+            'env:' ,
+            '--health.listen-addr',
+            '127.0.0.1:0',
+            '/readyz',
+            'Process.Kill(entireProcessTree: true)'
+          )){if(-not $service.Contains($m,[StringComparison]::Ordinal)){throw "missing tunnel boundary marker: $m"}}
+          foreach($forbidden in @('admin tunnels create','admin tunnels delete','runtimes connect','UseShellExecute = true','IPAddress.Any')){if($service.Contains($forbidden,[StringComparison]::Ordinal)){throw "forbidden tunnel authority marker: $forbidden"}}
+          $main=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V050.cs' -Raw
+          foreach($m in @('EndpointClipboardWritePerformed = false','RuntimeApiKeyPersisted = false','LocalMcpEndpointPersisted = false','ChatGptConnectionConfigured = false')){if(-not $main.Contains($m,[StringComparison]::Ordinal)){throw "secret/product boundary marker missing: $m"}}
+          $dialog=Get-Content 'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelDialogV050.cs' -Raw
+          if(-not $dialog.Contains('PasswordBox',[StringComparison]::Ordinal)){throw 'runtime key is not PasswordBox-gated'}
+          Write-Host 'V050_STATIC_PASS fixedTool=True keyPersistence=False endpointPersistence=False admin=False chatgptConfig=False'
+
+      - name: Execute bounded fake tunnel-client runtime integration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fixture=Join-Path $env:RUNNER_TEMP 'v050-tunnel-fixture'
+          $fixtureOut=Join-Path $fixture 'out'
+          New-Item -ItemType Directory -Path $fixture -Force | Out-Null
+          @'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+              <AssemblyName>tunnel-client-runtime</AssemblyName><UseAppHost>true</UseAppHost>
+            </PropertyGroup>
+          </Project>
+          '@ | Set-Content (Join-Path $fixture 'Fixture.csproj') -Encoding UTF8
+          @'
+          using System.Net;
+          using System.Net.Sockets;
+          using System.Text;
+
+          if (args.Length == 1 && args[0] == "--version") { Console.WriteLine("0.0.14 flavor=runtime"); return; }
+          if (args.Length == 0 || args[0] != "run") { Environment.ExitCode=2; return; }
+          var key=Environment.GetEnvironmentVariable("CONTROL_PLANE_API_KEY");
+          var tunnel=Environment.GetEnvironmentVariable("CONTROL_PLANE_TUNNEL_ID");
+          var mcp=Environment.GetEnvironmentVariable("MCP_SERVER_URL");
+          if(string.IsNullOrWhiteSpace(key)||tunnel is null||mcp is null){Environment.ExitCode=3;return;}
+          var healthIndex=Array.IndexOf(args,"--health.url-file");
+          if(healthIndex<0||healthIndex+1>=args.Length){Environment.ExitCode=4;return;}
+          if(args.Any(x=>x.Contains(key,StringComparison.Ordinal)||x.Contains(mcp,StringComparison.Ordinal))){Environment.ExitCode=5;return;}
+          File.WriteAllText(Path.Combine(AppContext.BaseDirectory,"fake-observed.txt"),"keySeen=true;mcpSeen=true;tunnelSeen=true",new UTF8Encoding(false));
+          var listener=new TcpListener(IPAddress.Loopback,0); listener.Start();
+          var ep=(IPEndPoint)listener.LocalEndpoint;
+          File.WriteAllText(args[healthIndex+1],$"http://127.0.0.1:{ep.Port}",new UTF8Encoding(false));
+          while(true){
+            using var c=await listener.AcceptTcpClientAsync(); using var s=c.GetStream();
+            var buf=new byte[4096]; var n=await s.ReadAsync(buf); if(n<=0)continue;
+            var text=Encoding.ASCII.GetString(buf,0,n); var ok=text.StartsWith("GET /readyz ",StringComparison.Ordinal);
+            var body=ok?"ready":"no"; var status=ok?"200 OK":"404 Not Found";
+            var resp=$"HTTP/1.1 {status}\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}";
+            await s.WriteAsync(Encoding.ASCII.GetBytes(resp));
+          }
+          '@ | Set-Content (Join-Path $fixture 'Program.cs') -Encoding UTF8
+          dotnet publish (Join-Path $fixture 'Fixture.csproj') -c Release -o $fixtureOut
+          if($LASTEXITCODE -ne 0){throw 'fixture publish failed'}
+
+          $probe=Join-Path $env:RUNNER_TEMP 'v050-tunnel-probe'
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          $appProject=(Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped=[Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using Matawaka.Workbench.App;
+          using System.Text.Json;
+
+          var workspace=Path.Combine(Path.GetTempPath(),"matawaka-v050-"+Guid.NewGuid().ToString("N"));
+          var tools=Path.Combine(workspace,"Tools","OpenAI","tunnel-client"); Directory.CreateDirectory(tools);
+          var fixture=Environment.GetEnvironmentVariable("V050_FIXTURE_OUT")!;
+          foreach(var f in Directory.GetFiles(fixture)){File.Copy(f,Path.Combine(tools,Path.GetFileName(f)),true);}
+          var exe=Path.Combine(tools,"tunnel-client-runtime.exe"); if(!File.Exists(exe))throw new Exception("fixture exe missing");
+          var svc=new OpenAiSecureMcpTunnelV050Service();
+          var obs=await svc.ObserveTunnelClientAsync(workspace,default); if(!obs.VersionMatched||obs.ReportedVersion is null||!obs.ReportedVersion.StartsWith("0.0.14"))throw new Exception("version observation failed");
+          var tunnel="tunnel_0123456789abcdef0123456789abcdef"; var key="sk-test-v050-never-persist-0123456789"; var token=new string('a',64); var local=$"http://127.0.0.1:31337/mcp/{token}";
+          var preview=await svc.PreviewAsync(workspace,"alpha","lease-alpha",DateTimeOffset.Now.AddMinutes(3),tunnel,key,true,default);
+          var pj=JsonSerializer.Serialize(preview); if(pj.Contains(key)||pj.Contains(token)||preview.ContainsRuntimeApiKey||preview.ContainsLocalMcpEndpoint)throw new Exception("preview leaked secret");
+          var grant=await svc.StartAsync(workspace,preview,key,local,default); if(!grant.Ready||!svc.IsActiveFor("alpha"))throw new Exception("tunnel readiness failed");
+          var written=await svc.WriteStartReceiptAsync(workspace,grant,default); var rj=File.ReadAllText(written.ReceiptPath); if(rj.Contains(key)||rj.Contains(token)||written.Receipt.RuntimeApiKeyPlaintextPersisted||written.Receipt.LocalMcpEndpointPlaintextPersisted)throw new Exception("start receipt leaked secret");
+          var observed=File.ReadAllText(Path.Combine(tools,"fake-observed.txt")); if(observed!="keySeen=true;mcpSeen=true;tunnelSeen=true")throw new Exception("child env binding failed");
+          var stop=await svc.StopAsync(workspace,default); if(!stop.Receipt.ProcessStopped||svc.IsActiveFor("alpha")||stop.Receipt.ReadLeaseRevokedByTunnelStop||stop.Receipt.McpAdapterStoppedByTunnelStop)throw new Exception("bounded stop failed");
+          var shortPreview=await svc.PreviewAsync(workspace,"alpha","lease-expiry",DateTimeOffset.Now.AddSeconds(2),tunnel,key,true,default);
+          await svc.StartAsync(workspace,shortPreview,key,local,default); await Task.Delay(3000); if(svc.IsActiveFor("alpha"))throw new Exception("lease expiry did not stop child");
+          Directory.Delete(workspace,true);
+          Console.WriteLine("V050_TUNNEL_FIXTURE_PASS ready=True envSecrets=True receiptsSecretFree=True stop=True expiry=True");
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          $env:V050_FIXTURE_OUT=$fixtureOut
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.50 tunnel fixture integration failed'}
+
+      - name: Preserve v0.49.1 MCP and four-button contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $xaml=Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          foreach($name in @('UpdateCandidateButton','UpdateLocalAppButton','PublishAcceptedButton','LifecycleReceiptButton')){if(-not $xaml.Contains('x:Name="'+$name+'"',[StringComparison]::Ordinal)){throw "missing top action $name"}}
+          $adapter=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs' -Raw
+          foreach($m in @('read_local_app_chunk','["readOnlyHint"] = true','TcpListener(IPAddress.Loopback, 0)','REFUSED_BY_ACTIVE_READ_LEASE')){if(-not $adapter.Contains($m,[StringComparison]::Ordinal)){throw "v0.49.1 boundary missing $m"}}
+          Write-Host 'V050_PREDECESSOR_PASS fourButtons=True leaseGatedMcp=True'
+
+      - name: Verify accepted remote frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote='https://github.com/Matawaka/workbench.git'
+          $main=((git ls-remote $remote refs/heads/main) -split '\s+')[0].ToLowerInvariant()
+          if($main -ne '1e0453ccf047bd948e76b577c2395a7d0009ff7a'){throw "remote main moved: $main"}
+          if(@(git ls-remote $remote refs/tags/workbench-v0.50-accepted refs/tags/workbench-v0.50-accepted^'{}').Count -ne 0){throw 'v0.50 target tag already exists'}
+          Write-Host 'V050_REMOTE_PASS main=v0.49.1 targetAbsent=True'
+
+      - name: Build and audit v0.50 source-only package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files=@(
+            'PATCH-v0.50.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelV050Service.cs',
+            'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V050.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV050AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV050Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV050Service.cs'
+          )
+          $root=Join-Path $env:RUNNER_TEMP 'workbench-v0.50-package'; $payload=Join-Path $root 'payload'
+          if(Test-Path $root){Remove-Item $root -Recurse -Force}; New-Item -ItemType Directory -Path $payload -Force|Out-Null
+          $manifestFiles=@(); foreach($file in $files){$dest=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar);New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force|Out-Null;Copy-Item $file $dest -Force;$manifestFiles += [ordered]@{Path=$file;Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()}}
+          $manifest=[ordered]@{Schema='matawaka.workbench-update-package/v0.10';PackageVersion='0.10';TargetVersion='0.50.0';PredecessorTag='workbench-v0.49.1-accepted';PredecessorCommit='1e0453ccf047bd948e76b577c2395a7d0009ff7a';TargetTag='workbench-v0.50-accepted';PayloadRoot='payload/';Files=$manifestFiles;NetworkAccessRequested=$false;CatalogMutationRequested=$false;AgentExecuteRequested=$false;ArbitraryProcessExecutionRequested=$false;InstallerScriptExecutionRequested=$false;NonEffects=@('Workbench source only','external tunnel-client binary not included','no runtime API key/tunnel id/private app bytes','no automatic tunnel or ChatGPT connection')}
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.50-source-only.zip';if(Test-Path $zip){Remove-Item $zip -Force};[IO.Compression.ZipFile]::CreateFromDirectory($root,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+          $audit=Join-Path $env:RUNNER_TEMP 'audit-v050';if(Test-Path $audit){Remove-Item $audit -Recurse -Force};[IO.Compression.ZipFile]::ExtractToDirectory($zip,$audit)
+          $m=Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw|ConvertFrom-Json
+          if($m.TargetVersion -ne '0.50.0' -or $m.PredecessorCommit -ne '1e0453ccf047bd948e76b577c2395a7d0009ff7a' -or $m.PredecessorTag -ne 'workbench-v0.49.1-accepted' -or $m.TargetTag -ne 'workbench-v0.50-accepted'){throw 'package identity mismatch'}
+          if($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested){throw 'forbidden Workbench update capability'}
+          foreach($item in $m.Files){$full=Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/',[IO.Path]::DirectorySeparatorChar);if((Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.Sha256){throw "payload hash mismatch $($item.Path)"}}
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();[IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.50-source-only.sha256.txt'),"$sha  workbench-v0.50-source-only.zip`n",[Text.UTF8Encoding]::new($false));Write-Host "V050_PACKAGE_PASS sha256=$sha payloadFiles=$($files.Count)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.50-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.50-source-only.zip
+            ${{ runner.temp }}/workbench-v0.50-source-only.sha256.txt
+          retention-days: 30
