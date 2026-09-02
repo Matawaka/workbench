@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -126,6 +127,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
     public const string QualificationClientVersion = "2.2.0";
     public const int MaxProtocolRequestBytes = 64 * 1024;
     public const int MaxHttpHeaderBytes = 16 * 1024;
+    public const int MaxHttpTrailerBytes = 4 * 1024;
     private const string LegacyProtocolVersion = "2025-11-25";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -138,11 +140,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
     private readonly LocalAppReadLeaseV048Service _leases = new();
     private ActiveAdapter? _active;
 
-    public LocalAppMcpAdapterPreviewV049 PreviewFromGrantJson(
-        string workspaceRoot,
-        string selectedApplicationId,
-        string grantJson,
-        CancellationToken cancellationToken)
+    public LocalAppMcpAdapterPreviewV049 PreviewFromGrantJson(string workspaceRoot, string selectedApplicationId, string grantJson, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(grantJson)) throw new InvalidDataException("v0.48 read lease grant JSON is empty.");
         LocalAppReadLeaseGrantV048 grant;
@@ -158,11 +156,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
         return Preview(workspaceRoot, selectedApplicationId, grant, cancellationToken);
     }
 
-    public LocalAppMcpAdapterPreviewV049 Preview(
-        string workspaceRoot,
-        string selectedApplicationId,
-        LocalAppReadLeaseGrantV048 grant,
-        CancellationToken cancellationToken)
+    public LocalAppMcpAdapterPreviewV049 Preview(string workspaceRoot, string selectedApplicationId, LocalAppReadLeaseGrantV048 grant, CancellationToken cancellationToken)
     {
         if (grant.Schema != LocalAppReadLeaseV048Service.GrantSchema || grant.Version != LocalAppReadLeaseV048Service.Version)
             throw new InvalidDataException("Exact v0.48 read lease grant is required.");
@@ -185,30 +179,13 @@ public sealed class LocalAppMcpReadAdapterV049Service
             throw new InvalidDataException("Read lease is not active for MCP adapter startup.");
 
         return new LocalAppMcpAdapterPreviewV049(
-            PreviewSchema,
-            Version,
-            DateTimeOffset.Now,
-            selectedApplicationId,
-            state.LeaseId,
-            state.Scopes,
-            state.ExpiresAt,
-            state.RemainingCalls,
-            state.RemainingBytes,
-            state.MaxBytesPerRead,
-            state.BearerSha256,
-            true,
-            false,
-            true,
-            DefaultNonEffects(),
+            PreviewSchema, Version, DateTimeOffset.Now, selectedApplicationId, state.LeaseId, state.Scopes,
+            state.ExpiresAt, state.RemainingCalls, state.RemainingBytes, state.MaxBytesPerRead,
+            state.BearerSha256, true, false, true, DefaultNonEffects(),
             "Preview validates the selected app, active v0.48 lease and bearer hash only. It creates no listener, tunnel or file read. Explicit loopback-listener confirmation is still required.");
     }
 
-    public async Task<LocalAppMcpAdapterGrantV049> StartAsync(
-        string workspaceRoot,
-        string selectedApplicationId,
-        LocalAppMcpAdapterPreviewV049 confirmedPreview,
-        string grantJson,
-        CancellationToken cancellationToken)
+    public async Task<LocalAppMcpAdapterGrantV049> StartAsync(string workspaceRoot, string selectedApplicationId, LocalAppMcpAdapterPreviewV049 confirmedPreview, string grantJson, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -231,24 +208,13 @@ public sealed class LocalAppMcpReadAdapterV049Service
                 listener.Start(8);
                 var local = listener.LocalEndpoint as IPEndPoint
                     ?? throw new InvalidDataException("MCP adapter did not expose an IPv4 loopback endpoint.");
-                if (!IPAddress.Loopback.Equals(local.Address))
-                    throw new InvalidDataException("MCP adapter listener is not exact IPv4 loopback.");
+                if (!IPAddress.Loopback.Equals(local.Address)) throw new InvalidDataException("MCP adapter listener is not exact IPv4 loopback.");
                 var endpoint = $"http://127.0.0.1:{local.Port}{endpointPath}";
                 var acceptLoop = RunAcceptLoopAsync(listener, endpointPath, local.Port, session, stop.Token);
                 _active = new ActiveAdapter(listener, stop, acceptLoop, session, selectedApplicationId, fresh.LeaseId, endpoint, endpointTokenSha, fresh.ExpiresAt, DateTimeOffset.Now);
                 return new LocalAppMcpAdapterGrantV049(
-                    GrantSchema,
-                    Version,
-                    DateTimeOffset.Now,
-                    selectedApplicationId,
-                    fresh.LeaseId,
-                    endpoint,
-                    endpointTokenSha,
-                    fresh.ExpiresAt,
-                    new[] { "read_local_app_chunk" },
-                    true,
-                    false,
-                    false,
+                    GrantSchema, Version, DateTimeOffset.Now, selectedApplicationId, fresh.LeaseId, endpoint,
+                    endpointTokenSha, fresh.ExpiresAt, new[] { "read_local_app_chunk" }, true, false, false,
                     "This is a local loopback MCP Streamable HTTP endpoint implemented over base .NET TcpListener only. It is not reachable by ChatGPT directly and no Secure MCP Tunnel was started. Official MCP client interoperability is qualification evidence, not a product runtime package dependency.");
             }
             catch
@@ -260,48 +226,26 @@ public sealed class LocalAppMcpReadAdapterV049Service
                 throw;
             }
         }
-        finally
-        {
-            _gate.Release();
-        }
+        finally { _gate.Release(); }
     }
 
-    public async Task<(LocalAppMcpAdapterStartReceiptV049 Receipt, string ReceiptPath)> WriteStartReceiptAsync(
-        string workspaceRoot,
-        LocalAppMcpAdapterGrantV049 grant,
-        bool endpointClipboardWritePerformed,
-        CancellationToken cancellationToken)
+    public async Task<(LocalAppMcpAdapterStartReceiptV049 Receipt, string ReceiptPath)> WriteStartReceiptAsync(string workspaceRoot, LocalAppMcpAdapterGrantV049 grant, bool endpointClipboardWritePerformed, CancellationToken cancellationToken)
     {
         var active = _active ?? throw new InvalidDataException("No active v0.49 MCP adapter exists for a start receipt.");
         if (active.ApplicationId != grant.ApplicationId || active.LeaseId != grant.LeaseId || active.EndpointTokenSha256 != grant.EndpointTokenSha256)
             throw new InvalidDataException("MCP adapter grant does not match active runtime.");
         var uri = new Uri(grant.EndpointUrl);
         var receipt = new LocalAppMcpAdapterStartReceiptV049(
-            StartReceiptSchema,
-            Version,
-            DateTimeOffset.Now,
-            grant.ApplicationId,
-            grant.LeaseId,
-            grant.EndpointTokenSha256,
-            $"{uri.Scheme}://{uri.Host}:{uri.Port}",
-            grant.LeaseExpiresAt,
-            grant.Tools,
-            endpointClipboardWritePerformed,
-            false,
-            true,
-            false,
-            false,
-            false,
-            DefaultNonEffects(),
-            "MCP_READ_ADAPTER_LOOPBACK_READY_NO_TUNNEL",
+            StartReceiptSchema, Version, DateTimeOffset.Now, grant.ApplicationId, grant.LeaseId,
+            grant.EndpointTokenSha256, $"{uri.Scheme}://{uri.Host}:{uri.Port}", grant.LeaseExpiresAt,
+            grant.Tools, endpointClipboardWritePerformed, false, true, false, false, false,
+            DefaultNonEffects(), "MCP_READ_ADAPTER_LOOPBACK_READY_NO_TUNNEL",
             "The adapter is listening only on IPv4 loopback through base .NET TcpListener and delegates every content read to the active v0.48 lease. Endpoint token plaintext and bearer plaintext are not persisted in this receipt.");
         var path = await WriteArtifactAsync(workspaceRoot, "start", grant.ApplicationId, grant.LeaseId, receipt, cancellationToken);
         return (receipt, path);
     }
 
-    public async Task<(LocalAppMcpAdapterStopReceiptV049 Receipt, string ReceiptPath)> StopAsync(
-        string workspaceRoot,
-        CancellationToken cancellationToken)
+    public async Task<(LocalAppMcpAdapterStopReceiptV049 Receipt, string ReceiptPath)> StopAsync(string workspaceRoot, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -310,27 +254,14 @@ public sealed class LocalAppMcpReadAdapterV049Service
             _active = null;
             var stopped = await StopRuntimeAsync(active, cancellationToken);
             var receipt = new LocalAppMcpAdapterStopReceiptV049(
-                StopReceiptSchema,
-                Version,
-                DateTimeOffset.Now,
-                active.ApplicationId,
-                active.LeaseId,
-                active.EndpointTokenSha256,
-                stopped,
-                true,
-                false,
-                false,
-                false,
-                DefaultNonEffects(),
+                StopReceiptSchema, Version, DateTimeOffset.Now, active.ApplicationId, active.LeaseId,
+                active.EndpointTokenSha256, stopped, true, false, false, false, DefaultNonEffects(),
                 "MCP_READ_ADAPTER_STOPPED_LOCAL_ONLY",
                 "The local loopback listener stopped and the Workbench-held plaintext bearer reference was cleared. This is reference clearing, not a claim of managed-memory zeroization.");
             var path = await WriteArtifactAsync(workspaceRoot, "stop", active.ApplicationId, active.LeaseId, receipt, cancellationToken);
             return (receipt, path);
         }
-        finally
-        {
-            _gate.Release();
-        }
+        finally { _gate.Release(); }
     }
 
     public async Task StopBestEffortAsync()
@@ -343,10 +274,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
             if (active is null) return;
             try { await StopRuntimeAsync(active, CancellationToken.None); } catch { }
         }
-        finally
-        {
-            _gate.Release();
-        }
+        finally { _gate.Release(); }
     }
 
     public bool IsActiveFor(string applicationId)
@@ -360,7 +288,8 @@ public sealed class LocalAppMcpReadAdapterV049Service
         ("mcp-v049-tool-count", true, "read_local_app_chunk only", "1 read-only content tool"),
         ("mcp-v049-bound-authority", true, "ApplicationId/LeaseId/bearer fixed in runtime session", "not MCP arguments"),
         ("mcp-v049-loopback", true, "TcpListener(IPAddress.Loopback, 0) + random path token", "127.0.0.1 only"),
-        ("mcp-v049-http-bounds", MaxHttpHeaderBytes == 16384 && MaxProtocolRequestBytes == 65536, $"header={MaxHttpHeaderBytes}; body={MaxProtocolRequestBytes}", "bounded"),
+        ("mcp-v049-http-bounds", MaxHttpHeaderBytes == 16384 && MaxProtocolRequestBytes == 65536 && MaxHttpTrailerBytes == 4096, $"header={MaxHttpHeaderBytes}; body={MaxProtocolRequestBytes}; trailers={MaxHttpTrailerBytes}", "bounded"),
+        ("mcp-v049-chunked", true, "bounded decoder required for official Streamable HTTP client", "admitted within same body ceiling"),
         ("mcp-v049-public-exposure", true, "false", "false"),
         ("mcp-v049-tunnel", true, "not started by Workbench", "separate authority")
     };
@@ -406,8 +335,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
                 await WriteHttpTextAsync(stream, 404, "Not Found", "Not Found", cancellationToken);
                 return;
             }
-            if (!request.Host.Equals($"127.0.0.1:{port}", StringComparison.OrdinalIgnoreCase) &&
-                !request.Host.Equals($"localhost:{port}", StringComparison.OrdinalIgnoreCase))
+            if (!request.Host.Equals($"127.0.0.1:{port}", StringComparison.OrdinalIgnoreCase) && !request.Host.Equals($"localhost:{port}", StringComparison.OrdinalIgnoreCase))
             {
                 await WriteHttpTextAsync(stream, 400, "Bad Request", "Host boundary refused", cancellationToken);
                 return;
@@ -431,23 +359,14 @@ public sealed class LocalAppMcpReadAdapterV049Service
     private async Task<McpProcessResult> ProcessMcpBodyAsync(byte[] body, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
     {
         JsonDocument doc;
-        try
-        {
-            doc = JsonDocument.Parse(body, new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow, MaxDepth = 32 });
-        }
-        catch (JsonException)
-        {
-            return new McpProcessResult(false, ErrorEnvelope(null, -32700, "Parse error"));
-        }
+        try { doc = JsonDocument.Parse(body, new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow, MaxDepth = 32 }); }
+        catch (JsonException) { return new McpProcessResult(false, ErrorEnvelope(null, -32700, "Parse error")); }
 
         using (doc)
         {
             var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object ||
-                !root.TryGetProperty("jsonrpc", out var jsonrpc) || jsonrpc.GetString() != "2.0" ||
-                !root.TryGetProperty("method", out var methodElement) || methodElement.ValueKind != JsonValueKind.String)
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("jsonrpc", out var jsonrpc) || jsonrpc.GetString() != "2.0" || !root.TryGetProperty("method", out var methodElement) || methodElement.ValueKind != JsonValueKind.String)
                 return new McpProcessResult(false, ErrorEnvelope(TryCloneId(root), -32600, "Invalid Request"));
-
             var id = TryCloneId(root);
             if (id is null) return new McpProcessResult(true, null);
             var method = methodElement.GetString()!;
@@ -465,11 +384,9 @@ public sealed class LocalAppMcpReadAdapterV049Service
     private static object InitializeEnvelope(JsonElement? id, JsonElement root)
     {
         var requested = LegacyProtocolVersion;
-        if (root.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Object &&
-            parameters.TryGetProperty("protocolVersion", out var protocol) && protocol.ValueKind == JsonValueKind.String)
+        if (root.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Object && parameters.TryGetProperty("protocolVersion", out var protocol) && protocol.ValueKind == JsonValueKind.String)
             requested = protocol.GetString() ?? LegacyProtocolVersion;
-        if (requested is not ("2025-11-25" or "2025-06-18" or "2024-11-05"))
-            return ErrorEnvelope(id, -32602, "Unsupported initialize protocol version");
+        if (requested is not ("2025-11-25" or "2025-06-18" or "2024-11-05")) return ErrorEnvelope(id, -32602, "Unsupported initialize protocol version");
         return ResultEnvelope(id, new Dictionary<string, object?>
         {
             ["protocolVersion"] = requested,
@@ -480,16 +397,13 @@ public sealed class LocalAppMcpReadAdapterV049Service
 
     private async Task<object> ToolCallEnvelopeAsync(JsonElement? id, JsonElement root, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
     {
-        if (!root.TryGetProperty("params", out var parameters) || parameters.ValueKind != JsonValueKind.Object ||
-            !parameters.TryGetProperty("name", out var nameElement) || nameElement.GetString() != "read_local_app_chunk")
+        if (!root.TryGetProperty("params", out var parameters) || parameters.ValueKind != JsonValueKind.Object || !parameters.TryGetProperty("name", out var nameElement) || nameElement.GetString() != "read_local_app_chunk")
             return ErrorEnvelope(id, -32602, "Invalid tool call");
-
         var arguments = parameters.TryGetProperty("arguments", out var args) && args.ValueKind == JsonValueKind.Object ? args : default;
         if (arguments.ValueKind != JsonValueKind.Object) return ToolResultEnvelope(id, true, "REFUSED: arguments object is required");
 
         var allowed = new HashSet<string>(StringComparer.Ordinal) { "role", "relativePath", "offset", "maxBytes", "expectedFileSha256" };
-        foreach (var property in arguments.EnumerateObject())
-            if (!allowed.Contains(property.Name)) return ToolResultEnvelope(id, true, $"REFUSED: unknown tool argument {property.Name}");
+        foreach (var property in arguments.EnumerateObject()) if (!allowed.Contains(property.Name)) return ToolResultEnvelope(id, true, $"REFUSED: unknown tool argument {property.Name}");
 
         try
         {
@@ -504,25 +418,13 @@ public sealed class LocalAppMcpReadAdapterV049Service
                 expectedSha = expectedElement.GetString();
             }
 
-            var request = new LocalAppLeaseReadRequestV048(
-                LocalAppReadLeaseV048Service.ReadRequestSchema,
-                "mcp-read-" + Guid.NewGuid().ToString("N"),
-                session.LeaseId,
-                session.Bearer,
-                session.ApplicationId,
-                role,
-                relativePath,
-                offset,
-                maxBytes,
-                expectedSha);
+            var request = new LocalAppLeaseReadRequestV048(LocalAppReadLeaseV048Service.ReadRequestSchema, "mcp-read-" + Guid.NewGuid().ToString("N"), session.LeaseId, session.Bearer, session.ApplicationId, role, relativePath, offset, maxBytes, expectedSha);
             var result = await _leases.AuthorizeAndReadAsync(session.WorkspaceRoot, request, cancellationToken);
             var response = new LocalAppMcpReadResponseV049(
-                ReadResponseSchema, Version, DateTimeOffset.Now,
-                result.Response.ApplicationId, result.Response.Role, result.Response.RelativePath,
-                result.Response.FileBytes, result.Response.FileSha256, result.Response.Offset,
-                result.Response.ReturnedBytes, result.Response.EndOfFile, result.Response.ContentBase64,
-                result.Response.Utf8Text, result.Response.RemainingCalls, result.Response.RemainingBytes,
-                result.Response.ExpiresAt,
+                ReadResponseSchema, Version, DateTimeOffset.Now, result.Response.ApplicationId, result.Response.Role,
+                result.Response.RelativePath, result.Response.FileBytes, result.Response.FileSha256, result.Response.Offset,
+                result.Response.ReturnedBytes, result.Response.EndOfFile, result.Response.ContentBase64, result.Response.Utf8Text,
+                result.Response.RemainingCalls, result.Response.RemainingBytes, result.Response.ExpiresAt,
                 "Result came only through the accepted v0.48 lease gate. No mutation or process execution authority is present in this MCP tool.");
             return ToolResultEnvelope(id, false, JsonSerializer.Serialize(response, JsonOptions));
         }
@@ -531,10 +433,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
             var safe = ex.Message.Replace(session.WorkspaceRoot, "<workspace>", StringComparison.OrdinalIgnoreCase);
             return ToolResultEnvelope(id, true, "REFUSED_BY_ACTIVE_READ_LEASE: " + safe);
         }
-        catch (Exception)
-        {
-            return ToolResultEnvelope(id, true, "MCP_ADAPTER_INTERNAL_ERROR");
-        }
+        catch (Exception) { return ToolResultEnvelope(id, true, "MCP_ADAPTER_INTERNAL_ERROR"); }
     }
 
     private static Dictionary<string, object?> BuildToolsListResult()
@@ -551,36 +450,29 @@ public sealed class LocalAppMcpReadAdapterV049Service
         {
             ["name"] = "read_local_app_chunk",
             ["description"] = "Reads one bounded chunk through the already-active v0.48 Matawaka local-app read lease. ApplicationId, LeaseId, bearer and filesystem root are not caller-selectable.",
-            ["inputSchema"] = new Dictionary<string, object?>
-            {
-                ["type"] = "object", ["properties"] = properties,
-                ["required"] = new[] { "role", "relativePath", "offset", "maxBytes" }, ["additionalProperties"] = false
-            },
-            ["annotations"] = new Dictionary<string, object?>
-            {
-                ["readOnlyHint"] = true, ["destructiveHint"] = false, ["idempotentHint"] = false, ["openWorldHint"] = false
-            }
+            ["inputSchema"] = new Dictionary<string, object?> { ["type"] = "object", ["properties"] = properties, ["required"] = new[] { "role", "relativePath", "offset", "maxBytes" }, ["additionalProperties"] = false },
+            ["annotations"] = new Dictionary<string, object?> { ["readOnlyHint"] = true, ["destructiveHint"] = false, ["idempotentHint"] = false, ["openWorldHint"] = false }
         };
         return new Dictionary<string, object?> { ["tools"] = new[] { tool } };
     }
 
     private static async Task<HttpRequest> ReadHttpRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
     {
-        using var buffer = new MemoryStream();
+        using var headerBuffer = new MemoryStream();
         var temp = new byte[4096];
         var headerEnd = -1;
         while (headerEnd < 0)
         {
             var read = await stream.ReadAsync(temp, cancellationToken);
             if (read <= 0) throw new InvalidDataException("Connection closed before HTTP headers completed.");
-            buffer.Write(temp, 0, read);
-            if (buffer.Length > MaxHttpHeaderBytes) throw new InvalidDataException("HTTP headers exceed bounded limit.");
-            headerEnd = FindHeaderEnd(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length)));
+            headerBuffer.Write(temp, 0, read);
+            headerEnd = FindHeaderEnd(headerBuffer.GetBuffer().AsSpan(0, checked((int)headerBuffer.Length)));
+            if (headerEnd < 0 && headerBuffer.Length > MaxHttpHeaderBytes) throw new InvalidDataException("HTTP headers exceed bounded limit.");
+            if (headerEnd > MaxHttpHeaderBytes) throw new InvalidDataException("HTTP headers exceed bounded limit.");
         }
 
-        var all = buffer.ToArray();
-        var headerBytes = all.AsSpan(0, headerEnd);
-        var headerText = Encoding.ASCII.GetString(headerBytes);
+        var all = headerBuffer.ToArray();
+        var headerText = Encoding.ASCII.GetString(all.AsSpan(0, headerEnd));
         var lines = headerText.Split("\r\n", StringSplitOptions.None);
         if (lines.Length < 2) throw new InvalidDataException("Malformed HTTP request.");
         var requestLine = lines[0].Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -596,48 +488,80 @@ public sealed class LocalAppMcpReadAdapterV049Service
             var value = line[(colon + 1)..].Trim();
             if (!headers.TryAdd(name, value)) throw new InvalidDataException("Duplicate HTTP header refused.");
         }
-        if (headers.ContainsKey("Transfer-Encoding")) throw new InvalidDataException("Transfer-Encoding/chunked requests are not admitted.");
-        if (!headers.TryGetValue("Content-Length", out var lengthText) || !int.TryParse(lengthText, out var contentLength) || contentLength < 0 || contentLength > MaxProtocolRequestBytes)
-            throw new InvalidDataException("Exact bounded Content-Length is required.");
         if (!headers.TryGetValue("Host", out var host) || string.IsNullOrWhiteSpace(host)) throw new InvalidDataException("Host header is required.");
         headers.TryGetValue("Content-Type", out var contentType);
         contentType ??= string.Empty;
 
         var bodyStart = headerEnd + 4;
-        var body = new byte[contentLength];
-        var already = Math.Min(contentLength, all.Length - bodyStart);
-        if (already > 0) Array.Copy(all, bodyStart, body, 0, already);
-        var offset = already;
-        while (offset < contentLength)
+        var prefix = all.AsMemory(bodyStart);
+        var reader = new PrefixedNetworkReader(prefix, stream);
+        byte[] body;
+        if (headers.TryGetValue("Transfer-Encoding", out var transferEncoding))
         {
-            var read = await stream.ReadAsync(body.AsMemory(offset, contentLength - offset), cancellationToken);
-            if (read <= 0) throw new InvalidDataException("Connection closed before HTTP body completed.");
-            offset += read;
+            if (!transferEncoding.Equals("chunked", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Only exact chunked Transfer-Encoding is admitted.");
+            if (headers.ContainsKey("Content-Length")) throw new InvalidDataException("Ambiguous Content-Length plus Transfer-Encoding is refused.");
+            body = await ReadChunkedBodyAsync(reader, cancellationToken);
+        }
+        else
+        {
+            if (!headers.TryGetValue("Content-Length", out var lengthText) || !int.TryParse(lengthText, NumberStyles.None, CultureInfo.InvariantCulture, out var contentLength) || contentLength < 0 || contentLength > MaxProtocolRequestBytes)
+                throw new InvalidDataException("Exact bounded Content-Length is required when Transfer-Encoding is absent.");
+            if (prefix.Length > contentLength) throw new InvalidDataException("Extra bytes after fixed-length request body are refused.");
+            body = new byte[contentLength];
+            await reader.ReadExactAsync(body, cancellationToken);
         }
         return new HttpRequest(requestLine[0], requestLine[1], host, contentType, body);
     }
 
+    private static async Task<byte[]> ReadChunkedBodyAsync(PrefixedNetworkReader reader, CancellationToken cancellationToken)
+    {
+        using var output = new MemoryStream();
+        while (true)
+        {
+            var line = await reader.ReadAsciiLineAsync(128, cancellationToken);
+            var semicolon = line.IndexOf(';');
+            var token = (semicolon >= 0 ? line[..semicolon] : line).Trim();
+            if (token.Length == 0 || !int.TryParse(token, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var size) || size < 0)
+                throw new InvalidDataException("Invalid chunk-size line.");
+            if (size == 0)
+            {
+                var trailerBytes = 0;
+                while (true)
+                {
+                    var trailer = await reader.ReadAsciiLineAsync(1024, cancellationToken);
+                    trailerBytes += trailer.Length + 2;
+                    if (trailerBytes > MaxHttpTrailerBytes) throw new InvalidDataException("HTTP chunk trailers exceed bounded limit.");
+                    if (trailer.Length == 0) break;
+                    if (!trailer.Contains(':')) throw new InvalidDataException("Malformed HTTP chunk trailer.");
+                }
+                break;
+            }
+            if (output.Length + size > MaxProtocolRequestBytes) throw new InvalidDataException("Chunked request body exceeds bounded limit.");
+            var chunk = new byte[size];
+            await reader.ReadExactAsync(chunk, cancellationToken);
+            output.Write(chunk, 0, chunk.Length);
+            await reader.RequireCrlfAsync(cancellationToken);
+        }
+        return output.ToArray();
+    }
+
     private static int FindHeaderEnd(ReadOnlySpan<byte> bytes)
     {
-        for (var i = 0; i <= bytes.Length - 4; i++)
-            if (bytes[i] == 13 && bytes[i + 1] == 10 && bytes[i + 2] == 13 && bytes[i + 3] == 10) return i;
+        for (var i = 0; i <= bytes.Length - 4; i++) if (bytes[i] == 13 && bytes[i + 1] == 10 && bytes[i + 2] == 13 && bytes[i + 3] == 10) return i;
         return -1;
     }
 
     private static Task WriteHttpJsonAsync(NetworkStream stream, object envelope, CancellationToken cancellationToken)
         => WriteHttpAsync(stream, 200, "OK", "application/json", JsonSerializer.SerializeToUtf8Bytes(envelope, JsonOptions), cancellationToken);
-
     private static Task WriteHttpEmptyAsync(NetworkStream stream, int status, string reason, CancellationToken cancellationToken)
         => WriteHttpAsync(stream, status, reason, "application/json", Array.Empty<byte>(), cancellationToken);
-
     private static Task WriteHttpTextAsync(NetworkStream stream, int status, string reason, string text, CancellationToken cancellationToken, string extraHeaders = "")
         => WriteHttpAsync(stream, status, reason, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(text), cancellationToken, extraHeaders);
 
     private static async Task WriteHttpAsync(NetworkStream stream, int status, string reason, string contentType, byte[] body, CancellationToken cancellationToken, string extraHeaders = "")
     {
         var header = $"HTTP/1.1 {status} {reason}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nConnection: close\r\nCache-Control: no-store\r\n{extraHeaders}\r\n";
-        var headerBytes = Encoding.ASCII.GetBytes(header);
-        await stream.WriteAsync(headerBytes, cancellationToken);
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(header), cancellationToken);
         if (body.Length > 0) await stream.WriteAsync(body, cancellationToken);
         await stream.FlushAsync(cancellationToken);
     }
@@ -656,57 +580,36 @@ public sealed class LocalAppMcpReadAdapterV049Service
 
     private static object ResultEnvelope(JsonElement? id, object result)
         => new Dictionary<string, object?> { ["jsonrpc"] = "2.0", ["id"] = id, ["result"] = result };
-
     private static object ErrorEnvelope(JsonElement? id, int code, string message)
-        => new Dictionary<string, object?>
-        {
-            ["jsonrpc"] = "2.0", ["id"] = id,
-            ["error"] = new Dictionary<string, object?> { ["code"] = code, ["message"] = message }
-        };
-
+        => new Dictionary<string, object?> { ["jsonrpc"] = "2.0", ["id"] = id, ["error"] = new Dictionary<string, object?> { ["code"] = code, ["message"] = message } };
     private static object ToolResultEnvelope(JsonElement? id, bool isError, string text)
-        => ResultEnvelope(id, new Dictionary<string, object?>
-        {
-            ["content"] = new[] { new Dictionary<string, object?> { ["type"] = "text", ["text"] = text } }, ["isError"] = isError
-        });
+        => ResultEnvelope(id, new Dictionary<string, object?> { ["content"] = new[] { new Dictionary<string, object?> { ["type"] = "text", ["text"] = text } }, ["isError"] = isError });
 
     private static string RequireString(JsonElement arguments, string name)
     {
-        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
-            throw new InvalidDataException($"{name} is required and must be a non-empty string.");
+        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString())) throw new InvalidDataException($"{name} is required and must be a non-empty string.");
         return value.GetString()!;
     }
-
     private static long RequireInt64(JsonElement arguments, string name)
     {
-        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var number))
-            throw new InvalidDataException($"{name} is required and must be an integer.");
+        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var number)) throw new InvalidDataException($"{name} is required and must be an integer.");
         return number;
     }
-
     private static int RequireInt32(JsonElement arguments, string name)
     {
-        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var number))
-            throw new InvalidDataException($"{name} is required and must be an integer.");
+        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var number)) throw new InvalidDataException($"{name} is required and must be an integer.");
         return number;
     }
-
-    private static JsonElement? TryCloneId(JsonElement root)
-        => root.ValueKind == JsonValueKind.Object && root.TryGetProperty("id", out var id) ? id.Clone() : null;
+    private static JsonElement? TryCloneId(JsonElement root) => root.ValueKind == JsonValueKind.Object && root.TryGetProperty("id", out var id) ? id.Clone() : null;
 
     private static void RequireSamePreview(LocalAppMcpAdapterPreviewV049 a, LocalAppMcpAdapterPreviewV049 b)
     {
-        if (a.ApplicationId != b.ApplicationId || a.LeaseId != b.LeaseId || a.ExpiresAt != b.ExpiresAt ||
-            a.RemainingCalls != b.RemainingCalls || a.RemainingBytes != b.RemainingBytes || a.MaxBytesPerRead != b.MaxBytesPerRead ||
-            !a.BearerSha256.Equals(b.BearerSha256, StringComparison.OrdinalIgnoreCase) || !a.Scopes.SequenceEqual(b.Scopes))
+        if (a.ApplicationId != b.ApplicationId || a.LeaseId != b.LeaseId || a.ExpiresAt != b.ExpiresAt || a.RemainingCalls != b.RemainingCalls || a.RemainingBytes != b.RemainingBytes || a.MaxBytesPerRead != b.MaxBytesPerRead || !a.BearerSha256.Equals(b.BearerSha256, StringComparison.OrdinalIgnoreCase) || !a.Scopes.SequenceEqual(b.Scopes))
             throw new InvalidDataException("MCP adapter preview is stale; active lease state changed. Create a new preview.");
     }
 
-    private static bool SafeLeaseId(string value)
-        => value.StartsWith("lease-", StringComparison.Ordinal) && value.Length == 38 && value[6..].All(Uri.IsHexDigit);
-
-    private static string HashText(string value)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    private static bool SafeLeaseId(string value) => value.StartsWith("lease-", StringComparison.Ordinal) && value.Length == 38 && value[6..].All(Uri.IsHexDigit);
+    private static string HashText(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
     private static async Task<string> WriteArtifactAsync<T>(string workspaceRoot, string kind, string appId, string leaseId, T value, CancellationToken cancellationToken)
     {
@@ -729,17 +632,64 @@ public sealed class LocalAppMcpReadAdapterV049Service
         "v0.47 manual clipboard relay remains available"
     };
 
+    private sealed class PrefixedNetworkReader
+    {
+        private readonly ReadOnlyMemory<byte> _prefix;
+        private int _position;
+        private readonly NetworkStream _stream;
+        public PrefixedNetworkReader(ReadOnlyMemory<byte> prefix, NetworkStream stream) { _prefix = prefix; _stream = stream; }
+
+        public async Task ReadExactAsync(Memory<byte> destination, CancellationToken cancellationToken)
+        {
+            var written = 0;
+            if (_position < _prefix.Length && destination.Length > 0)
+            {
+                var take = Math.Min(destination.Length, _prefix.Length - _position);
+                _prefix.Slice(_position, take).CopyTo(destination);
+                _position += take;
+                written += take;
+            }
+            while (written < destination.Length)
+            {
+                var read = await _stream.ReadAsync(destination[written..], cancellationToken);
+                if (read <= 0) throw new InvalidDataException("Connection closed before HTTP body completed.");
+                written += read;
+            }
+        }
+
+        public async Task<byte> ReadByteAsync(CancellationToken cancellationToken)
+        {
+            if (_position < _prefix.Length) return _prefix.Span[_position++];
+            var one = new byte[1];
+            var read = await _stream.ReadAsync(one, cancellationToken);
+            if (read != 1) throw new InvalidDataException("Connection closed during chunked body.");
+            return one[0];
+        }
+
+        public async Task<string> ReadAsciiLineAsync(int maxBytes, CancellationToken cancellationToken)
+        {
+            using var line = new MemoryStream();
+            while (line.Length <= maxBytes)
+            {
+                var b = await ReadByteAsync(cancellationToken);
+                if (b == 13)
+                {
+                    if (await ReadByteAsync(cancellationToken) != 10) throw new InvalidDataException("Malformed CRLF in chunked body.");
+                    return Encoding.ASCII.GetString(line.ToArray());
+                }
+                if (b == 10) throw new InvalidDataException("Bare LF in chunked body is refused.");
+                line.WriteByte(b);
+            }
+            throw new InvalidDataException("Chunk metadata line exceeds bounded limit.");
+        }
+
+        public async Task RequireCrlfAsync(CancellationToken cancellationToken)
+        {
+            if (await ReadByteAsync(cancellationToken) != 13 || await ReadByteAsync(cancellationToken) != 10) throw new InvalidDataException("Chunk data is not followed by CRLF.");
+        }
+    }
+
     private sealed record HttpRequest(string Method, string Path, string Host, string ContentType, byte[] Body);
     private sealed record McpProcessResult(bool IsNotification, object? Envelope);
-    private sealed record ActiveAdapter(
-        TcpListener Listener,
-        CancellationTokenSource Stop,
-        Task AcceptLoop,
-        LocalAppMcpAdapterSessionV049 Session,
-        string ApplicationId,
-        string LeaseId,
-        string EndpointUrl,
-        string EndpointTokenSha256,
-        DateTimeOffset LeaseExpiresAt,
-        DateTimeOffset StartedAt);
+    private sealed record ActiveAdapter(TcpListener Listener, CancellationTokenSource Stop, Task AcceptLoop, LocalAppMcpAdapterSessionV049 Session, string ApplicationId, string LeaseId, string EndpointUrl, string EndpointTokenSha256, DateTimeOffset LeaseExpiresAt, DateTimeOffset StartedAt);
 }
