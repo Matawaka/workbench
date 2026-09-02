@@ -12,22 +12,36 @@ Historical work established:
 
 - bounded local analysis and semantic/runtime separation;
 - visible liveness and evidence/authority receipts;
-- self-hosted Workbench update/build/launch with fail-closed rollback;
+- self-hosted Workbench update/build/handoff with fail-closed rollback;
 - explicit local acceptance and fixed fast-forward-only source publication;
 - active-surface consolidation without evidence erasure;
-- one-session Workbench update sequencing over typed maintenance sub-gates;
+- one-confirmation Workbench update sequencing over typed maintenance sub-gates;
+- successor first-boot validation with one-shot automatic local Accept on PASS;
 - successor-generic post-publication Maintenance Lifecycle Receipt;
-- real-successor qualification proving that lifecycle evidence composition is reusable without release-specific lifecycle constants.
+- real-successor qualification proving that lifecycle evidence composition is reusable without release-specific lifecycle constants;
+- registered local-app maintenance/package tooling under a fixed managed root;
+- clickable installed-app entry points with bounded read-only tree observation;
+- closable application/file inspection tabs and bounded double-click text inspection;
+- a four-action normal operator surface with historical controls kept outside the active UI.
 
-The stable Workbench maintenance chain remains:
+The current normal Workbench maintenance chain is:
 
 ```text
 Update Workbench
--> separate Launch candidate
--> separate Self-test
--> separate local Accept
+-> one explicit human confirmation
+-> bounded exact source apply/build
+-> one-shot candidate launch/handoff
+-> successor first-boot validation
+-> automatic local Accept only if validation PASS
 -> separate Publish accepted
 -> optional Lifecycle receipt
+```
+
+The candidate launch, validation and local acceptance stages remain distinct in authority/evidence semantics even though they are no longer separate normal-workflow buttons.
+
+```text
+Automatic Sequencing != Authority Collapse
+Internal Stage != Permanent UI Button
 ```
 
 ## Lifecycle qualification — closed
@@ -42,7 +56,7 @@ Initial successor-reuse result before stabilization:
 
 The stabilization patch removed release-bound lifecycle target/predecessor constants, decoupled publisher parent ownership and made permanent docs lifecycle-state-neutral.
 
-A real successor transition then completed with exact derived current/predecessor accepted tags, checkpoint-bound Self-test, matching orchestrator/publication evidence and clean state, producing `Complete=true` without manual artifact reconciliation.
+A real successor transition then completed with exact derived current/predecessor accepted tags, checkpoint-bound validation, matching orchestrator/publication evidence and clean state, producing `Complete=true` without manual artifact reconciliation.
 
 Final observed qualification outcome:
 
@@ -56,32 +70,27 @@ Generic Evidence Routing != Trust Discovery
 Summary != Authority
 ```
 
-## Current product demand — reduced surface + local applications
+## Current product surface
 
-The next feature line is justified by explicit operator demand, not by architectural novelty:
+The normal operator surface is intentionally small. Only four primary maintenance actions are active:
 
-1. keep only controls used in the normal maintenance workflow;
-2. remove persistent Agent/git-fetch checkboxes from the active UI;
-3. allow Workbench to update other already-registered local applications with the same evidence/authority discipline.
+- `Update Workbench`;
+- `Local apps`;
+- `Publish accepted`;
+- `Lifecycle receipt`.
 
-### Active product surface target
+`Self-test`, `Accept`, `Stop` and `Launch candidate` are retired from the active surface. Historical JSON/agent/catalog/recovery controls remain source/evidence history and compatibility bindings only where older code still requires object names.
 
-Only eight primary actions:
+Workspace and Catalog values remain internal persisted state because accepted maintenance/runtime services still consume them. They are not operator-facing fields.
 
-- Update Workbench;
-- Launch candidate;
-- Update local app;
-- Self-test;
-- Accept;
-- Publish accepted;
-- Lifecycle receipt;
-- Stop.
+```text
+Historical Capability != Permanent UI Obligation
+Hidden Compatibility Binding != Operator Authority
+Workspace/Catalog Hidden != Workspace/Catalog Undefined
+UI Removal != Evidence Erasure
+```
 
-Historical JSON/agent/catalog/recovery capabilities remain source/evidence history and hidden compatibility surfaces.
-
-`Historical Capability != Permanent UI Obligation`
-
-### Local Application Maintenance
+## Local Application Maintenance and Inspection
 
 Managed apps are restricted to:
 
@@ -91,25 +100,31 @@ and must already possess `.matawaka-app.json` identity/version evidence.
 
 Local app updates use a local exact-manifest ZIP and permit only fresh-preview-bound Add/Replace operations under the fixed app root with predecessor backups, target verification and rollback on failure.
 
-No network/package download, installer execution, app auto-launch, Git, registry/service/environment mutation or arbitrary root selection is admitted.
+Installed apps are observable from the main Workbench surface. An app entry opens a closable read-only tree tab. Explicit double-click on a represented file may open a closable read-only text tab under bounded path/reparse/size/encoding checks.
+
+No network/package download, installer execution, app auto-launch, Git, registry/service/environment mutation or arbitrary root selection is admitted by local-app maintenance or inspection.
 
 ```text
 Package Validity != Mutation Authority
 Local App Update != App Launch
 Managed Root != Arbitrary Target Root
 Initial Registration != Update Authority
+Tree Observation != File Mutation
+Text Inspection != Execution Authority
 ```
 
 ## Qualification after local-app feature
 
 Do not treat one successful Workbench build as proof that the local-app updater is operationally useful.
 
-After the feature is accepted, useful successor evidence should come from a real registered application update package. Possible outcomes:
+Useful successor evidence for mutation should still come from a real registered application update package. Possible outcomes:
 
 - `LOCAL_APP_UPDATE_REUSABLE` — exact managed-app update succeeds and receipt/rollback boundaries are adequate;
 - `LOCAL_APP_UPDATE_NEEDS_ADAPTER` — app-specific layout/process constraints require a bounded adapter;
 - `LOCAL_APP_REGISTRATION_REQUIRED` — useful existing apps cannot enter the managed root without a separately reviewed adoption boundary;
 - `LOCAL_APP_UPDATE_NOT_REQUIRED` — existing app update mechanisms are already sufficient.
+
+Read-only app tree/text inspection is a separate accepted product capability and does not itself prove mutation/update reuse.
 
 Negative outcomes are valid and should prevent building a general installer without evidence.
 
@@ -117,13 +132,13 @@ Negative outcomes are valid and should prevent building a general installer with
 
 Review only evidence-backed debt:
 
-- whether release-specific Self-test/checkpoint/publisher successor wrappers should be generalized or remain explicit version boundaries;
-- whether hidden legacy compatibility fields can be removed safely from `MainWindow.xaml.cs` without weakening run-state behavior;
+- whether release-specific validation/checkpoint/publisher successor wrappers should be generalized or remain explicit version boundaries;
+- whether quarantined hidden compatibility fields can eventually be physically removed without weakening historical run-state behavior;
 - whether a separately bounded **Register local app** function is actually needed;
 - whether a read-only update-feed discovery layer is useful after local packages are proven;
 - whether external/cross-machine portability has independent product demand.
 
-None of these are automatically authorized implementation tasks.
+The current v0.45 direction is quarantine and contract enforcement, not physical erasure of historical code. None of the remaining items are automatically authorized implementation tasks.
 
 ## Later research directions
 
