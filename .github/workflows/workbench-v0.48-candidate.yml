@@ -1,0 +1,290 @@
+name: Workbench v0.48 bounded read session leases qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.48-bounded-read-session-leases
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore and build zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if ($LASTEXITCODE -ne 0) { throw 'v0.48 restore failed' }
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.48 Release build failed' }
+
+      - name: Verify v0.48 static contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if (-not $app.Contains('ConfigureV048Routing()', [StringComparison]::Ordinal)) { throw 'v0.48 startup routing missing' }
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 4) { throw 'top-level surface is not exactly four buttons' }
+          $lease = Get-Content 'src/Matawaka.Workbench.App/LocalAppReadLeaseV048Service.cs' -Raw
+          foreach ($marker in @('matawaka.local-app-read-lease-request/v0.48','MaxTtlSeconds = 15 * 60','MaxCalls = 32','MaxTotalBytes = 8L * 1024L * 1024L','CryptographicOperations.FixedTimeEquals','READ_LEASE_CONSUMED_BOUNDED_NO_NETWORK','READ_LEASES_REVOKED_LOCAL_ONLY')) {
+            if (-not $lease.Contains($marker, [StringComparison]::Ordinal)) { throw "lease contract marker missing: $marker" }
+          }
+          foreach ($forbidden in @('HttpListener','HttpClient','TcpListener','Socket','NamedPipeServer','McpServer','SecureMcpTunnel')) {
+            if ($lease.Contains($forbidden, [StringComparison]::Ordinal)) { throw "forbidden transport in lease service: $forbidden" }
+          }
+          $docs = (Get-Content 'PATCH-v0.48.md' -Raw) + (Get-Content 'LOCAL-APP-READ-LEASES.md' -Raw)
+          foreach ($marker in @('Lease Request != Lease Authority','Bearer Possession != Authority Beyond Lease Bounds','Lease != Network Listener/Tunnel/MCP Authority','Expected Hash Mismatch => Refuse, Not Guess')) {
+            if (-not $docs.Contains($marker, [StringComparison]::Ordinal)) { throw "v0.48 invariant missing: $marker" }
+          }
+          Write-Host 'V048_STATIC_PASS buttons=4 leaseBounds=True hashOnlyBearer=True directNetwork=False docs=True'
+
+      - name: Execute bounded read lease probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v048-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using System.Threading;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              private static string Hash(string path)
+              {
+                  using var stream = File.OpenRead(path);
+                  return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+              }
+
+              private static async System.Threading.Tasks.Task Main()
+              {
+                  var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v048-" + Guid.NewGuid().ToString("N"));
+                  Directory.CreateDirectory(Path.Combine(workspace, "Workbench", "artifacts"));
+                  var appRoot = Path.Combine(workspace, "Apps", "alpha");
+                  Directory.CreateDirectory(Path.Combine(appRoot, "data"));
+                  File.WriteAllText(Path.Combine(appRoot, ".matawaka-app.json"), JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "1.0.0")), new UTF8Encoding(false));
+                  var statePath = Path.Combine(appRoot, "data", "state.json");
+                  File.WriteAllText(statePath, "{\"private\":\"LEASE-SECRET\"}", new UTF8Encoding(false));
+                  var otherPath = Path.Combine(appRoot, "data", "other.txt");
+                  File.WriteAllText(otherPath, "outside exact scope", new UTF8Encoding(false));
+
+                  var sourceRoot = Path.Combine(workspace, "AppSources", "alpha");
+                  Directory.CreateDirectory(Path.Combine(sourceRoot, "web"));
+                  File.WriteAllText(Path.Combine(sourceRoot, ".matawaka-source.json"), "{}", new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(sourceRoot, "web", "app.js"), "source-current", new UTF8Encoding(false));
+
+                  var service = new LocalAppReadLeaseV048Service();
+                  var req = new LocalAppReadLeaseRequestV048(
+                      LocalAppReadLeaseV048Service.RequestSchema,
+                      "lease:req:001",
+                      "alpha",
+                      new[] { new LocalAppReadLeaseScopeV048("installed", "data/state.json"), new LocalAppReadLeaseScopeV048("source", "web/") },
+                      1024,
+                      4096,
+                      4,
+                      300);
+                  var preview = service.Preview(workspace, "alpha", req, default);
+                  if (preview.ContainsFileContents || !preview.ReadyForExplicitLeaseAuthority || preview.Scopes.Count != 2) throw new Exception("lease preview contract failed");
+                  var created = await service.CreateAsync(workspace, "alpha", preview, false, default);
+                  var stateJson = File.ReadAllText(created.Receipt.StatePath);
+                  if (stateJson.Contains(created.Grant.Bearer, StringComparison.Ordinal)) throw new Exception("bearer plaintext persisted");
+                  if (!stateJson.Contains(created.Receipt.BearerSha256, StringComparison.Ordinal)) throw new Exception("bearer hash missing from state");
+
+                  var readReq = new LocalAppLeaseReadRequestV048(
+                      LocalAppReadLeaseV048Service.ReadRequestSchema,
+                      "read:001",
+                      created.Grant.LeaseId,
+                      created.Grant.Bearer,
+                      "alpha",
+                      "installed",
+                      "data/state.json",
+                      0,
+                      1024,
+                      Hash(statePath));
+                  var consumed = await service.AuthorizeAndReadAsync(workspace, readReq, default);
+                  if (consumed.Response.Utf8Text is null || !consumed.Response.Utf8Text.Contains("LEASE-SECRET", StringComparison.Ordinal)) throw new Exception("lease read failed");
+                  if (consumed.Response.RemainingCalls != 3 || consumed.Response.RemainingBytes != 4096 - consumed.Response.ReturnedBytes) throw new Exception("lease accounting failed");
+                  if (consumed.Receipt.NetworkAccessPerformed || consumed.Receipt.FileMutationPerformed || consumed.Receipt.ProcessLaunchPerformed) throw new Exception("lease response authority flags failed");
+
+                  var wrongBearer = false;
+                  try { _ = await service.AuthorizeAndReadAsync(workspace, readReq with { RequestId = "read:badbearer", Bearer = new string('0', 64) }, default); }
+                  catch (InvalidDataException) { wrongBearer = true; }
+                  if (!wrongBearer) throw new Exception("wrong bearer not refused");
+
+                  var outOfScope = false;
+                  try { _ = await service.AuthorizeAndReadAsync(workspace, readReq with { RequestId = "read:scope", RelativePath = "data/other.txt", ExpectedFileSha256 = Hash(otherPath) }, default); }
+                  catch (InvalidDataException) { outOfScope = true; }
+                  if (!outOfScope) throw new Exception("out-of-scope read not refused");
+
+                  var stale = false;
+                  try { _ = await service.AuthorizeAndReadAsync(workspace, readReq with { RequestId = "read:stale", ExpectedFileSha256 = new string('0', 64) }, default); }
+                  catch (InvalidDataException) { stale = true; }
+                  if (!stale) throw new Exception("stale expected hash not refused");
+
+                  var traversal = false;
+                  try { _ = await service.AuthorizeAndReadAsync(workspace, readReq with { RequestId = "read:traversal", RelativePath = "../escape.txt", ExpectedFileSha256 = null }, default); }
+                  catch (InvalidDataException) { traversal = true; }
+                  if (!traversal) throw new Exception("traversal not refused");
+
+                  var sourceRead = await service.AuthorizeAndReadAsync(workspace, readReq with { RequestId = "read:source", Role = "source", RelativePath = "web/app.js", ExpectedFileSha256 = Hash(Path.Combine(sourceRoot, "web", "app.js")) }, default);
+                  if (sourceRead.Response.Utf8Text != "source-current") throw new Exception("source prefix lease read failed");
+
+                  var revoked = await service.RevokeAllActiveAsync(workspace, "alpha", default);
+                  if (revoked.Receipt.RevokedLeases != 1) throw new Exception("lease revoke count failed");
+                  var afterRevoke = false;
+                  try { _ = await service.AuthorizeAndReadAsync(workspace, readReq with { RequestId = "read:revoked" }, default); }
+                  catch (InvalidDataException) { afterRevoke = true; }
+                  if (!afterRevoke) throw new Exception("revoked lease not refused");
+
+                  var narrowReq = req with { RequestId = "lease:budget", Scopes = new[] { new LocalAppReadLeaseScopeV048("installed", "data/state.json") }, MaxBytesPerRead = 64, MaxTotalBytes = 64, MaxCalls = 1 };
+                  var narrow = await service.CreateAsync(workspace, "alpha", service.Preview(workspace, "alpha", narrowReq, default), false, default);
+                  var overBudget = false;
+                  try { _ = await service.AuthorizeAndReadAsync(workspace, new LocalAppLeaseReadRequestV048(LocalAppReadLeaseV048Service.ReadRequestSchema, "read:over", narrow.Grant.LeaseId, narrow.Grant.Bearer, "alpha", "installed", "data/state.json", 0, 65, Hash(statePath)), default); }
+                  catch (InvalidDataException) { overBudget = true; }
+                  if (!overBudget) throw new Exception("over-budget read not refused");
+                  _ = await service.AuthorizeAndReadAsync(workspace, new LocalAppLeaseReadRequestV048(LocalAppReadLeaseV048Service.ReadRequestSchema, "read:last", narrow.Grant.LeaseId, narrow.Grant.Bearer, "alpha", "installed", "data/state.json", 0, 64, Hash(statePath)), default);
+                  var exhausted = false;
+                  try { _ = await service.AuthorizeAndReadAsync(workspace, new LocalAppLeaseReadRequestV048(LocalAppReadLeaseV048Service.ReadRequestSchema, "read:exhausted", narrow.Grant.LeaseId, narrow.Grant.Bearer, "alpha", "installed", "data/state.json", 0, 1, Hash(statePath)), default); }
+                  catch (InvalidDataException) { exhausted = true; }
+                  if (!exhausted) throw new Exception("exhausted call budget not refused");
+
+                  Exception? wpfFailure = null;
+                  var thread = new Thread(() =>
+                  {
+                      try
+                      {
+                          var window = new MainWindow();
+                          var method = typeof(MainWindow).GetMethod("ConfigureV048Routing", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
+                              ?? throw new Exception("ConfigureV048Routing missing");
+                          method.Invoke(window, Array.Empty<object>());
+                          if (window.Title != "Matawaka Workbench v0.48") throw new Exception("v0.48 title missing");
+                          if (OperatorSurfaceV045Contract.Observe(window).Any(x => !x.Passed)) throw new Exception("four-button surface regressed");
+                          window.Close();
+                      }
+                      catch (Exception ex) { wpfFailure = ex; }
+                  });
+                  thread.SetApartmentState(ApartmentState.STA);
+                  thread.Start();
+                  thread.Join();
+                  if (wpfFailure is not null) throw new Exception("WPF lease routing probe failed", wpfFailure);
+
+                  Directory.Delete(workspace, true);
+                  Console.WriteLine("V048_LEASE_PASS previewContentFree=True bearerHashOnly=True installedRead=True sourcePrefixRead=True wrongBearerRefused=True scopeRefused=True staleRefused=True traversalRefused=True budgetRefused=True exhaustionRefused=True revokeRefused=True accounting=True network=False surface=4");
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.48 lease probe failed' }
+
+      - name: Verify remote accepted frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = @(git ls-remote $remote refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLine.Count -ne 1) { throw 'unable to read remote main' }
+          $main = ($mainLine[0] -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '88505162a2ff1f9aeb5ca45bff876d9f0679b073') { throw "remote main moved from accepted v0.47: $main" }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.48-accepted refs/tags/workbench-v0.48-accepted^'{}').Count -ne 0) { throw 'v0.48 target tag already exists remotely' }
+          Write-Host 'V048_REMOTE_PASS main=v0.47 targetAbsent=True'
+
+      - name: Build and audit v0.48 source-only package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.48.md',
+            'LOCAL-APP-READ-LEASES.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV048Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV048Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V048.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV048AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalAppReadLeaseV048Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppReadLeaseRequestDialogV048.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV048.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.48-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.48.0';
+            PredecessorTag='workbench-v0.47-accepted'; PredecessorCommit='88505162a2ff1f9aeb5ca45bff876d9f0679b073';
+            TargetTag='workbench-v0.48-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('Workbench source update only','no Apps/AppSources/private data/bearer/lease state in package','no automatic read lease creation','no listener/tunnel/MCP/network transport')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.48-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $audit = Join-Path $env:RUNNER_TEMP 'workbench-v0.48-audit'
+          if (Test-Path $audit) { Remove-Item $audit -Recurse -Force }
+          [IO.Compression.ZipFile]::ExtractToDirectory($zip, $audit)
+          $m = Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if ($m.TargetVersion -ne '0.48.0' -or $m.PredecessorCommit -ne '88505162a2ff1f9aeb5ca45bff876d9f0679b073' -or $m.PredecessorTag -ne 'workbench-v0.47-accepted' -or $m.TargetTag -ne 'workbench-v0.48-accepted') { throw 'package identity audit failed' }
+          if ($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested) { throw 'package requested forbidden Workbench update capability' }
+          if ((@($m.Files.Path | Sort-Object) -join "`n") -ne (($files | Sort-Object) -join "`n")) { throw 'package file set mismatch' }
+          foreach ($item in $m.Files) {
+            $full = Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "missing payload: $($item.Path)" }
+            if ((Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.Sha256.ToLowerInvariant()) { throw "hash mismatch: $($item.Path)" }
+          }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.48-source-only.sha256.txt'), "$sha  workbench-v0.48-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "V048_PACKAGE_PASS sha256=$sha payloadFiles=$($files.Count) forbiddenFlags=False"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.48-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.48-source-only.zip
+            ${{ runner.temp }}/workbench-v0.48-source-only.sha256.txt
+          retention-days: 30
