@@ -34,10 +34,11 @@ public sealed class WorkbenchV049AcceptanceHarness
         var nonEffects = predecessor.NonEffects.Concat(new[]
         {
             "v0.49 adapter startup is not lease creation; exact active v0.48 lease grant remains required",
-            "MCP caller cannot supply ApplicationId, LeaseId or bearer; those remain fixed in the adapter DI session",
+            "MCP caller cannot supply ApplicationId, LeaseId or bearer; those remain fixed in the adapter runtime session",
             "every MCP content read delegates to LocalAppReadLeaseV048Service and remains bounded by scope, TTL, bytes, calls, revocation and expected SHA",
             "adapter listener is IPv4 loopback only with a random in-memory endpoint path token",
             "endpoint token hash only is persisted in adapter receipt; plaintext lease bearer is not persisted by adapter receipt",
+            "Workbench runtime adds no MCP NuGet dependency; interoperability with pinned official ModelContextProtocol 2.2.0 client is external qualification evidence",
             "v0.49 starts no Secure MCP Tunnel and performs no automatic account login/linking or public endpoint publication",
             "v0.47 manual Chat read relay and v0.48 lease create/revoke remain available",
             "no application/source mutation, arbitrary filesystem authority, app process execution, catalog mutation, Agent Execute, ActionPermit or Stable Core promotion"
@@ -56,7 +57,7 @@ public sealed class WorkbenchV049AcceptanceHarness
             predecessor.ExecuteProgressEvents,
             checks,
             nonEffects,
-            "Workbench v0.49 adds a lease-gated read-only MCP Streamable HTTP adapter using the pinned official C# MCP SDK. The listener is loopback-only and transport activation beyond the local endpoint remains separate from lease authority and separate from Workbench publication.");
+            "Workbench v0.49 adds an offline-update-compatible, lease-gated read-only MCP Streamable HTTP subset on IPv4 loopback. Official C# ModelContextProtocol 2.2.0 client interoperability is required qualification evidence; it is not a runtime package or transport authority. Secure tunnel/public activation remains separate.");
     }
 
     private static void Add(List<WorkbenchAcceptanceCheck> destination, IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> checks)
