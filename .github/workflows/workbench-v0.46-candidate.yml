@@ -1,0 +1,233 @@
+name: Workbench v0.46 local app operational handoff qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.46-local-app-operational-handoff
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore and build zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if ($LASTEXITCODE -ne 0) { throw 'v0.46 restore failed' }
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.46 Release build failed' }
+
+      - name: Verify v0.46 static contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if (-not $app.Contains('ConfigureV046Routing()', [StringComparison]::Ordinal)) { throw 'v0.46 startup routing missing' }
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 4) { throw 'top-level surface is not exactly four buttons' }
+          foreach ($marker in @('Export Context != Upload Context','Installed Bytes != Development Sources','Content Read != File Mutation')) {
+            $docs = (Get-Content 'DEVELOPMENT-AUDIT-ROADMAP.md' -Raw) + (Get-Content 'PATCH-v0.46.md' -Raw)
+            if (-not $docs.Contains($marker, [StringComparison]::Ordinal)) { throw "missing v0.46 invariant: $marker" }
+          }
+          $handoff = Get-Content 'LOCAL-APP-CHAT-HANDOFF.md' -Raw
+          foreach ($marker in @('matawaka-local-app-source-seed-<applicationId>-<version>.zip','Export PRIVATE development context','matawaka.local-app-read-request/v0.46')) {
+            if (-not $handoff.Contains($marker, [StringComparison]::Ordinal)) { throw "handoff marker missing: $marker" }
+          }
+          Write-Host 'V046_STATIC_PASS buttons=4 startup=True sourceHandoff=True privateContext=True readContract=True'
+
+      - name: Execute local app operational handoff probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v046-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.IO.Compression;
+          using System.Linq;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              [STAThread]
+              private static async System.Threading.Tasks.Task Main()
+              {
+                  var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v046-" + Guid.NewGuid().ToString("N"));
+                  Directory.CreateDirectory(Path.Combine(workspace, "Workbench", "artifacts"));
+                  var appRoot = Path.Combine(workspace, "Apps", "alpha");
+                  Directory.CreateDirectory(Path.Combine(appRoot, "data"));
+                  var identity = new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "baseline-test0000000000");
+                  File.WriteAllText(Path.Combine(appRoot, ".matawaka-app.json"), JsonSerializer.Serialize(identity), new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(appRoot, "data", "state.json"), "{\"private\":\"BANK-SECRET-123\"}", new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(appRoot, "ordinary.txt"), "installed text", new UTF8Encoding(false));
+                  var executable = Path.Combine(appRoot, "alpha.exe");
+                  File.Copy(Environment.ProcessPath!, executable);
+
+                  var sourceRoot = Path.Combine(workspace, "AppSources", "alpha");
+                  Directory.CreateDirectory(sourceRoot);
+                  File.WriteAllText(Path.Combine(sourceRoot, "source.txt"), "source text", new UTF8Encoding(false));
+
+                  var updateService = new LocalAppUpdateContextV046Service();
+                  var update = await updateService.ExportAsync(workspace, "alpha", default);
+                  if (update.Context.ContainsFileContents || update.Context.Files.Count < 4) throw new Exception("update context contract failed");
+                  var updateJson = File.ReadAllText(update.ArtifactPath);
+                  if (updateJson.Contains("BANK-SECRET-123", StringComparison.Ordinal)) throw new Exception("update context leaked file contents");
+
+                  var sourceService = new LocalAppSourceBindingV046Service();
+                  var sourcePlan = sourceService.Preview(workspace, "alpha", default);
+                  var bound = await sourceService.BindAsync(sourcePlan, workspace, default);
+                  if (!bound.Receipt.BindingCreated || bound.Receipt.SourceFileMutationPerformed) throw new Exception("source bind contract failed");
+
+                  var reader = new LocalAppReadToolV046Service();
+                  var installedRead = reader.Read(workspace, new LocalAppReadRequestV046(LocalAppReadToolV046Service.RequestSchema, "alpha", "installed", "data/state.json", 0, 1024), default);
+                  if (installedRead.Utf8Text is null || !installedRead.Utf8Text.Contains("BANK-SECRET-123", StringComparison.Ordinal)) throw new Exception("installed read failed");
+                  var sourceRead = reader.Read(workspace, new LocalAppReadRequestV046(LocalAppReadToolV046Service.RequestSchema, "alpha", "source", "source.txt", 0, 1024), default);
+                  if (sourceRead.Utf8Text != "source text") throw new Exception("source read failed");
+                  var traversalRefused = false;
+                  try { _ = reader.Read(workspace, new LocalAppReadRequestV046(LocalAppReadToolV046Service.RequestSchema, "alpha", "installed", "../outside.txt", 0, 20), default); }
+                  catch (InvalidDataException) { traversalRefused = true; }
+                  if (!traversalRefused) throw new Exception("read traversal not refused");
+
+                  var privateService = new LocalAppPrivateContextV046Service();
+                  var privatePlan = privateService.Preview(workspace, "alpha", default);
+                  var exported = await privateService.ExportAsync(privatePlan, workspace, default);
+                  if (exported.Receipt.UploadPerformed || exported.Receipt.NetworkAccessPerformed || !exported.Receipt.PrivateBytesDuplicatedIntoArtifact) throw new Exception("private export receipt failed");
+                  using (var zip = ZipFile.OpenRead(exported.Receipt.CapsulePath))
+                  {
+                      var names = zip.Entries.Select(x => x.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                      foreach (var required in new[] { "installed/data/state.json", "source/source.txt", "context/update-context.json", "context/read-tool-contract.json", "context/context-manifest.json", "HANDOFF.md" })
+                          if (!names.Contains(required)) throw new Exception("private context missing " + required);
+                  }
+
+                  var launchService = new LocalAppLaunchV046Service();
+                  var launchPlan = launchService.Preview(workspace, "alpha", executable, default);
+                  if (!launchPlan.NoArguments || !launchPlan.ExactRegisteredRootValidated) throw new Exception("launch preview failed");
+
+                  var window = new MainWindow();
+                  window.ConfigureV046Routing();
+                  OperatorSurfaceV045Contract.Apply(window);
+                  var surfaceChecks = OperatorSurfaceV045Contract.Observe(window);
+                  if (surfaceChecks.Any(x => !x.Passed)) throw new Exception("four-button surface regressed");
+                  window.Close();
+
+                  Directory.Delete(workspace, true);
+                  Console.WriteLine("V046_OPERATIONAL_PASS updateContextContentFree=True sourceBound=True privateContext=True readInstalled=True readSource=True traversalRefused=True launchPreview=True surface=4");
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.46 operational probe failed' }
+
+      - name: Verify remote accepted frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = @(git ls-remote $remote refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLine.Count -ne 1) { throw 'unable to read remote main' }
+          $main = ($mainLine[0] -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '710e3b8a98cc0f733735a7676ed7f78eee27a996') { throw "remote main moved from accepted v0.45: $main" }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.46-accepted refs/tags/workbench-v0.46-accepted^'{}').Count -ne 0) { throw 'v0.46 target tag already exists remotely' }
+          Write-Host 'V046_REMOTE_PASS main=v0.45 targetAbsent=True'
+
+      - name: Build and audit v0.46 source-only package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.46.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'LOCAL-APP-CHAT-HANDOFF.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV046Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV046Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V046.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV046AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalAppUpdateContextV046Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppSourceBindingV046Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppReadToolV046Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppLaunchV046Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppPrivateContextV046Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV046.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.46-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.46.0';
+            PredecessorTag='workbench-v0.45-accepted'; PredecessorCommit='710e3b8a98cc0f733735a7676ed7f78eee27a996';
+            TargetTag='workbench-v0.46-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('Workbench source update only','no local app/source/private-context bytes in package','no automatic app launch','no automatic upload/network')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.46-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+          $audit = Join-Path $env:RUNNER_TEMP 'workbench-v0.46-audit'
+          if (Test-Path $audit) { Remove-Item $audit -Recurse -Force }
+          [IO.Compression.ZipFile]::ExtractToDirectory($zip, $audit)
+          $m = Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if ($m.TargetVersion -ne '0.46.0' -or $m.PredecessorCommit -ne '710e3b8a98cc0f733735a7676ed7f78eee27a996' -or $m.PredecessorTag -ne 'workbench-v0.45-accepted' -or $m.TargetTag -ne 'workbench-v0.46-accepted') { throw 'package identity audit failed' }
+          if ($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested) { throw 'package requested forbidden Workbench update capability' }
+          if ((@($m.Files.Path | Sort-Object) -join "`n") -ne (($files | Sort-Object) -join "`n")) { throw 'package file set mismatch' }
+          foreach ($item in $m.Files) {
+            $full = Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "missing payload: $($item.Path)" }
+            if ((Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.Sha256.ToLowerInvariant()) { throw "hash mismatch: $($item.Path)" }
+          }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.46-source-only.sha256.txt'), "$sha  workbench-v0.46-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "V046_PACKAGE_PASS sha256=$sha payloadFiles=$($files.Count) forbiddenFlags=False"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.46-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.46-source-only.zip
+            ${{ runner.temp }}/workbench-v0.46-source-only.sha256.txt
+          retention-days: 30
