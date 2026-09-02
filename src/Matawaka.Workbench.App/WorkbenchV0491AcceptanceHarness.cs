@@ -24,14 +24,14 @@ public sealed class WorkbenchV0491AcceptanceHarness
         Add(successorChecks, FixedGitHubPublicationV0491Service.RunOfflineContractChecks());
         successorChecks.Add(new WorkbenchAcceptanceCheck(
             "v0491-runtime-base-dotnet",
-            LocalAppMcpReadAdapterV049Service.RuntimeDependencyProfile == "base-dotnet-tcp-listener-no-aspnet",
-            LocalAppMcpReadAdapterV049Service.RuntimeDependencyProfile,
-            "base-dotnet-tcp-listener-no-aspnet"));
+            LocalAppMcpReadAdapterV049Service.RuntimeProtocolImplementation.Contains("base-dotnet-tcp", StringComparison.Ordinal),
+            LocalAppMcpReadAdapterV049Service.RuntimeProtocolImplementation,
+            "allowlisted base-dotnet TCP MCP subset"));
         successorChecks.Add(new WorkbenchAcceptanceCheck(
             "v0491-runtime-chunked-bounded",
-            LocalAppMcpReadAdapterV049Service.BoundedChunkedRequestsSupported,
-            LocalAppMcpReadAdapterV049Service.BoundedChunkedRequestsSupported.ToString(),
-            "True"));
+            LocalAppMcpReadAdapterV049Service.MaxHttpTrailerBytes == 4 * 1024 && LocalAppMcpReadAdapterV049Service.MaxProtocolRequestBytes == 64 * 1024,
+            $"body={LocalAppMcpReadAdapterV049Service.MaxProtocolRequestBytes}; trailers={LocalAppMcpReadAdapterV049Service.MaxHttpTrailerBytes}",
+            "body=65536; trailers=4096"));
         successorChecks.AddRange(OperatorSurfaceV045Contract.Observe(_window).Select(x => new WorkbenchAcceptanceCheck(
             "v0491-preserve-" + x.Id, x.Passed, x.Observed, x.Expected)));
 
