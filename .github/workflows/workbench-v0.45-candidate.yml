@@ -39,7 +39,8 @@ jobs:
           $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
           if ([regex]::Matches($surface, '<Button\b').Count -ne 4) { throw 'active maintenance surface is not exactly four buttons' }
           foreach ($retired in @('SelfTestButton','AcceptCheckpointButton','CancelButton','LaunchCandidateButton')) {
-            if ($surface.Contains("x:Name=\"$retired\"", [StringComparison]::Ordinal)) { throw "retired button returned to active surface: $retired" }
+            $needle = 'x:Name="' + $retired + '"'
+            if ($surface.Contains($needle, [StringComparison]::Ordinal)) { throw "retired button returned to active surface: $retired" }
           }
           $legacy = [regex]::Match($xaml, '<StackPanel x:Name="HistoricalCompatibilityBindings"[\s\S]*?</StackPanel>').Value
           foreach ($marker in @('Visibility="Collapsed"','IsHitTestVisible="False"','Focusable="False"','x:Name="SelfTestButton"','x:Name="AcceptCheckpointButton"','x:Name="CancelButton"','x:Name="LaunchCandidateButton"','x:Name="AgentEnabledBox"','x:Name="AllowGitFetchBox"')) {
