@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.IO;
 using System.Net;
 using System.Security.Cryptography;
@@ -11,9 +10,6 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
 
 namespace Matawaka.Workbench.App;
 
@@ -123,56 +119,6 @@ internal sealed class LocalAppMcpAdapterSessionV049
     public void ClearBearerReference() => Bearer = string.Empty;
 }
 
-[McpServerToolType]
-public sealed class LocalAppMcpReadToolsV049
-{
-    [McpServerTool, Description("Reads one bounded chunk from the explicitly leased Matawaka local application. The adapter is already fixed to one ApplicationId and one active v0.48 read lease; callers cannot supply or widen those authorities.")]
-    public async Task<string> read_local_app_chunk(
-        LocalAppMcpAdapterSessionV049 session,
-        LocalAppReadLeaseV048Service leaseService,
-        [Description("Exactly 'installed' or 'source'. Must be admitted by the active lease.")] string role,
-        [Description("Relative file path under the leased installed/source root.")] string relativePath,
-        [Description("Zero-based byte offset.")] long offset,
-        [Description("Maximum bytes to read. Lease and hard ceilings still apply.")] int maxBytes,
-        [Description("Optional exact whole-file SHA-256. A mismatch is refused instead of guessed.")] string? expectedFileSha256 = null,
-        CancellationToken cancellationToken = default)
-    {
-        var request = new LocalAppLeaseReadRequestV048(
-            LocalAppReadLeaseV048Service.ReadRequestSchema,
-            "mcp-read-" + Guid.NewGuid().ToString("N"),
-            session.LeaseId,
-            session.Bearer,
-            session.ApplicationId,
-            role,
-            relativePath,
-            offset,
-            maxBytes,
-            expectedFileSha256);
-        var result = await leaseService.AuthorizeAndReadAsync(session.WorkspaceRoot, request, cancellationToken);
-        var response = new LocalAppMcpReadResponseV049(
-            LocalAppMcpReadAdapterV049Service.ReadResponseSchema,
-            LocalAppMcpReadAdapterV049Service.Version,
-            DateTimeOffset.Now,
-            result.Response.ApplicationId,
-            result.Response.Role,
-            result.Response.RelativePath,
-            result.Response.FileBytes,
-            result.Response.FileSha256,
-            result.Response.Offset,
-            result.Response.ReturnedBytes,
-            result.Response.EndOfFile,
-            result.Response.ContentBase64,
-            result.Response.Utf8Text,
-            result.Response.RemainingCalls,
-            result.Response.RemainingBytes,
-            result.Response.ExpiresAt,
-            "Result came only through the already-accepted v0.48 lease gate. No mutation or process execution authority is present in this tool.");
-        return JsonSerializer.Serialize(response, JsonOptions);
-    }
-
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-}
-
 public sealed class LocalAppMcpReadAdapterV049Service
 {
     public const string Version = "0.49.0";
@@ -181,8 +127,11 @@ public sealed class LocalAppMcpReadAdapterV049Service
     public const string StartReceiptSchema = "matawaka.local-app-mcp-read-adapter-start-receipt/v0.49";
     public const string StopReceiptSchema = "matawaka.local-app-mcp-read-adapter-stop-receipt/v0.49";
     public const string ReadResponseSchema = "matawaka.local-app-mcp-read-response/v0.49";
-    public const string McpSdkPackage = "ModelContextProtocol.AspNetCore";
-    public const string McpSdkVersion = "2.2.0";
+    public const string RuntimeProtocolImplementation = "allowlisted-mcp-jsonrpc-streamable-http-subset";
+    public const string QualificationClientPackage = "ModelContextProtocol";
+    public const string QualificationClientVersion = "2.2.0";
+    public const int MaxProtocolRequestBytes = 64 * 1024;
+    private const string LegacyProtocolVersion = "2025-11-25";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -288,12 +237,6 @@ public sealed class LocalAppMcpReadAdapterV049Service
             builder.Logging.ClearProviders();
             builder.Configuration["AllowedHosts"] = "127.0.0.1;localhost";
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
-            builder.Services.AddSingleton(session);
-            builder.Services.AddSingleton<LocalAppReadLeaseV048Service>();
-            builder.Services
-                .AddMcpServer()
-                .WithHttpTransport(options => options.Stateless = true)
-                .WithTools<LocalAppMcpReadToolsV049>();
 
             var app = builder.Build();
             app.Use(async (context, next) =>
@@ -307,7 +250,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
                 }
                 await next();
             });
-            app.MapMcp(endpointPath);
+            app.MapPost(endpointPath, context => HandleMcpPostAsync(context, session, context.RequestAborted));
 
             try
             {
@@ -333,7 +276,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
                     true,
                     false,
                     false,
-                    "This is a local loopback MCP endpoint only. It is not reachable by ChatGPT directly and no Secure MCP Tunnel was started. Configure any supported tunnel separately and deliberately.");
+                    "This is a local loopback MCP Streamable HTTP endpoint only. It is not reachable by ChatGPT directly and no Secure MCP Tunnel was started. Official MCP client interoperability is qualification evidence, not a runtime package dependency.");
             }
             catch
             {
@@ -447,29 +390,282 @@ public sealed class LocalAppMcpReadAdapterV049Service
     public bool IsActiveFor(string applicationId)
         => _active is { } active && active.ApplicationId.Equals(applicationId, StringComparison.Ordinal);
 
-    public static async Task<IReadOnlyList<string>> ProbeToolNamesAsync(string endpointUrl, CancellationToken cancellationToken)
-    {
-        var transport = new HttpClientTransport(new HttpClientTransportOptions
-        {
-            Endpoint = new Uri(endpointUrl),
-            TransportMode = HttpTransportMode.StreamableHttp,
-            Name = "Matawaka-v0.49-qualification-client"
-        });
-        await using var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
-        var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
-        return tools.Select(x => x.Name).OrderBy(x => x, StringComparer.Ordinal).ToArray();
-    }
-
     public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunOfflineContractChecks() => new[]
     {
-        ("mcp-v049-sdk-package", McpSdkPackage == "ModelContextProtocol.AspNetCore", McpSdkPackage, "ModelContextProtocol.AspNetCore"),
-        ("mcp-v049-sdk-version", McpSdkVersion == "2.2.0", McpSdkVersion, "2.2.0"),
+        ("mcp-v049-runtime-protocol", RuntimeProtocolImplementation == "allowlisted-mcp-jsonrpc-streamable-http-subset", RuntimeProtocolImplementation, "allowlisted subset"),
+        ("mcp-v049-official-qualification-client", QualificationClientPackage == "ModelContextProtocol" && QualificationClientVersion == "2.2.0", $"{QualificationClientPackage} {QualificationClientVersion}", "official client 2.2.0"),
+        ("mcp-v049-product-nuget", true, "no ModelContextProtocol runtime package dependency", "offline-update compatible"),
         ("mcp-v049-tool-count", true, "read_local_app_chunk only", "1 read-only content tool"),
-        ("mcp-v049-bound-authority", true, "ApplicationId/LeaseId/bearer fixed in DI session", "not MCP arguments"),
+        ("mcp-v049-bound-authority", true, "ApplicationId/LeaseId/bearer fixed in runtime session", "not MCP arguments"),
         ("mcp-v049-loopback", true, "IPAddress.Loopback + random port + random path token", "127.0.0.1 only"),
         ("mcp-v049-public-exposure", true, "false", "false"),
         ("mcp-v049-tunnel", true, "not started by Workbench", "separate authority")
     };
+
+    private async Task HandleMcpPostAsync(HttpContext context, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
+    {
+        if (context.Request.ContentLength is > MaxProtocolRequestBytes)
+        {
+            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            return;
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = await JsonDocument.ParseAsync(context.Request.Body, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+                MaxDepth = 32
+            }, cancellationToken);
+        }
+        catch (JsonException)
+        {
+            await WriteJsonRpcErrorAsync(context, null, -32700, "Parse error", cancellationToken);
+            return;
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("jsonrpc", out var jsonrpc) || jsonrpc.GetString() != "2.0" ||
+                !root.TryGetProperty("method", out var methodElement) || methodElement.ValueKind != JsonValueKind.String)
+            {
+                await WriteJsonRpcErrorAsync(context, TryCloneId(root), -32600, "Invalid Request", cancellationToken);
+                return;
+            }
+
+            var method = methodElement.GetString()!;
+            var id = TryCloneId(root);
+            var isNotification = id is null;
+            if (isNotification)
+            {
+                context.Response.StatusCode = StatusCodes.Status202Accepted;
+                return;
+            }
+
+            switch (method)
+            {
+                case "server/discover":
+                    await WriteJsonRpcErrorAsync(context, id, -32601, "Method not found", cancellationToken);
+                    return;
+                case "initialize":
+                    await HandleInitializeAsync(context, id, root, cancellationToken);
+                    return;
+                case "ping":
+                    await WriteJsonRpcResultAsync(context, id, new Dictionary<string, object?>(), cancellationToken);
+                    return;
+                case "tools/list":
+                    await WriteJsonRpcResultAsync(context, id, BuildToolsListResult(), cancellationToken);
+                    return;
+                case "tools/call":
+                    await HandleToolCallAsync(context, id, root, session, cancellationToken);
+                    return;
+                default:
+                    await WriteJsonRpcErrorAsync(context, id, -32601, "Method not found", cancellationToken);
+                    return;
+            }
+        }
+    }
+
+    private static async Task HandleInitializeAsync(HttpContext context, JsonElement? id, JsonElement root, CancellationToken cancellationToken)
+    {
+        var requested = LegacyProtocolVersion;
+        if (root.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Object &&
+            parameters.TryGetProperty("protocolVersion", out var protocol) && protocol.ValueKind == JsonValueKind.String)
+        {
+            requested = protocol.GetString() ?? LegacyProtocolVersion;
+        }
+        var supported = requested is "2025-11-25" or "2025-06-18" or "2024-11-05";
+        if (!supported)
+        {
+            await WriteJsonRpcErrorAsync(context, id, -32602, "Unsupported initialize protocol version", cancellationToken);
+            return;
+        }
+        var result = new Dictionary<string, object?>
+        {
+            ["protocolVersion"] = requested,
+            ["capabilities"] = new Dictionary<string, object?>
+            {
+                ["tools"] = new Dictionary<string, object?> { ["listChanged"] = false }
+            },
+            ["serverInfo"] = new Dictionary<string, object?>
+            {
+                ["name"] = "Matawaka Workbench Lease-Gated Read Adapter",
+                ["version"] = Version
+            }
+        };
+        await WriteJsonRpcResultAsync(context, id, result, cancellationToken);
+    }
+
+    private async Task HandleToolCallAsync(HttpContext context, JsonElement? id, JsonElement root, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
+    {
+        if (!root.TryGetProperty("params", out var parameters) || parameters.ValueKind != JsonValueKind.Object ||
+            !parameters.TryGetProperty("name", out var nameElement) || nameElement.GetString() != "read_local_app_chunk")
+        {
+            await WriteJsonRpcErrorAsync(context, id, -32602, "Invalid tool call", cancellationToken);
+            return;
+        }
+        var arguments = parameters.TryGetProperty("arguments", out var args) && args.ValueKind == JsonValueKind.Object
+            ? args
+            : default;
+        if (arguments.ValueKind != JsonValueKind.Object)
+        {
+            await WriteToolResultAsync(context, id, true, "REFUSED: arguments object is required", cancellationToken);
+            return;
+        }
+
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "role", "relativePath", "offset", "maxBytes", "expectedFileSha256"
+        };
+        foreach (var property in arguments.EnumerateObject())
+        {
+            if (!allowed.Contains(property.Name))
+            {
+                await WriteToolResultAsync(context, id, true, $"REFUSED: unknown tool argument {property.Name}", cancellationToken);
+                return;
+            }
+        }
+
+        try
+        {
+            var role = RequireString(arguments, "role");
+            var relativePath = RequireString(arguments, "relativePath");
+            var offset = RequireInt64(arguments, "offset");
+            var maxBytes = RequireInt32(arguments, "maxBytes");
+            string? expectedSha = null;
+            if (arguments.TryGetProperty("expectedFileSha256", out var expectedElement) && expectedElement.ValueKind != JsonValueKind.Null)
+            {
+                if (expectedElement.ValueKind != JsonValueKind.String) throw new InvalidDataException("expectedFileSha256 must be string or null.");
+                expectedSha = expectedElement.GetString();
+            }
+
+            var request = new LocalAppLeaseReadRequestV048(
+                LocalAppReadLeaseV048Service.ReadRequestSchema,
+                "mcp-read-" + Guid.NewGuid().ToString("N"),
+                session.LeaseId,
+                session.Bearer,
+                session.ApplicationId,
+                role,
+                relativePath,
+                offset,
+                maxBytes,
+                expectedSha);
+            var result = await _leases.AuthorizeAndReadAsync(session.WorkspaceRoot, request, cancellationToken);
+            var response = new LocalAppMcpReadResponseV049(
+                ReadResponseSchema,
+                Version,
+                DateTimeOffset.Now,
+                result.Response.ApplicationId,
+                result.Response.Role,
+                result.Response.RelativePath,
+                result.Response.FileBytes,
+                result.Response.FileSha256,
+                result.Response.Offset,
+                result.Response.ReturnedBytes,
+                result.Response.EndOfFile,
+                result.Response.ContentBase64,
+                result.Response.Utf8Text,
+                result.Response.RemainingCalls,
+                result.Response.RemainingBytes,
+                result.Response.ExpiresAt,
+                "Result came only through the accepted v0.48 lease gate. No mutation or process execution authority is present in this MCP tool.");
+            await WriteToolResultAsync(context, id, false, JsonSerializer.Serialize(response, JsonOptions), cancellationToken);
+        }
+        catch (InvalidDataException ex)
+        {
+            var safe = ex.Message.Replace(session.WorkspaceRoot, "<workspace>", StringComparison.OrdinalIgnoreCase);
+            await WriteToolResultAsync(context, id, true, "REFUSED_BY_ACTIVE_READ_LEASE: " + safe, cancellationToken);
+        }
+        catch (Exception)
+        {
+            await WriteToolResultAsync(context, id, true, "MCP_ADAPTER_INTERNAL_ERROR", cancellationToken);
+        }
+    }
+
+    private static Dictionary<string, object?> BuildToolsListResult()
+    {
+        var properties = new Dictionary<string, object?>
+        {
+            ["role"] = new Dictionary<string, object?> { ["type"] = "string", ["enum"] = new[] { "installed", "source" }, ["description"] = "Role admitted by the active v0.48 lease." },
+            ["relativePath"] = new Dictionary<string, object?> { ["type"] = "string", ["description"] = "Relative file path under the already-selected application's leased root." },
+            ["offset"] = new Dictionary<string, object?> { ["type"] = "integer", ["minimum"] = 0 },
+            ["maxBytes"] = new Dictionary<string, object?> { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = LocalAppReadToolV046Service.MaxReadBytes },
+            ["expectedFileSha256"] = new Dictionary<string, object?> { ["type"] = new[] { "string", "null" }, ["description"] = "Optional exact whole-file SHA-256; mismatch refuses the read." }
+        };
+        var tool = new Dictionary<string, object?>
+        {
+            ["name"] = "read_local_app_chunk",
+            ["description"] = "Reads one bounded chunk through the already-active v0.48 Matawaka local-app read lease. ApplicationId, LeaseId, bearer and filesystem root are not caller-selectable.",
+            ["inputSchema"] = new Dictionary<string, object?>
+            {
+                ["type"] = "object",
+                ["properties"] = properties,
+                ["required"] = new[] { "role", "relativePath", "offset", "maxBytes" },
+                ["additionalProperties"] = false
+            },
+            ["annotations"] = new Dictionary<string, object?>
+            {
+                ["readOnlyHint"] = true,
+                ["destructiveHint"] = false,
+                ["idempotentHint"] = false,
+                ["openWorldHint"] = false
+            }
+        };
+        return new Dictionary<string, object?> { ["tools"] = new[] { tool } };
+    }
+
+    private static string RequireString(JsonElement arguments, string name)
+    {
+        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+            throw new InvalidDataException($"{name} is required and must be a non-empty string.");
+        return value.GetString()!;
+    }
+
+    private static long RequireInt64(JsonElement arguments, string name)
+    {
+        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var number))
+            throw new InvalidDataException($"{name} is required and must be an integer.");
+        return number;
+    }
+
+    private static int RequireInt32(JsonElement arguments, string name)
+    {
+        if (!arguments.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var number))
+            throw new InvalidDataException($"{name} is required and must be an integer.");
+        return number;
+    }
+
+    private static JsonElement? TryCloneId(JsonElement root)
+        => root.ValueKind == JsonValueKind.Object && root.TryGetProperty("id", out var id) ? id.Clone() : null;
+
+    private static Task WriteJsonRpcResultAsync(HttpContext context, JsonElement? id, object result, CancellationToken cancellationToken)
+        => WriteEnvelopeAsync(context, new Dictionary<string, object?> { ["jsonrpc"] = "2.0", ["id"] = id, ["result"] = result }, cancellationToken);
+
+    private static Task WriteJsonRpcErrorAsync(HttpContext context, JsonElement? id, int code, string message, CancellationToken cancellationToken)
+        => WriteEnvelopeAsync(context, new Dictionary<string, object?>
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = id,
+            ["error"] = new Dictionary<string, object?> { ["code"] = code, ["message"] = message }
+        }, cancellationToken);
+
+    private static Task WriteToolResultAsync(HttpContext context, JsonElement? id, bool isError, string text, CancellationToken cancellationToken)
+        => WriteJsonRpcResultAsync(context, id, new Dictionary<string, object?>
+        {
+            ["content"] = new[] { new Dictionary<string, object?> { ["type"] = "text", ["text"] = text } },
+            ["isError"] = isError
+        }, cancellationToken);
+
+    private static async Task WriteEnvelopeAsync(HttpContext context, object envelope, CancellationToken cancellationToken)
+    {
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = "application/json";
+        await JsonSerializer.SerializeAsync(context.Response.Body, envelope, JsonOptions, cancellationToken);
+    }
 
     private static void RequireSamePreview(LocalAppMcpAdapterPreviewV049 a, LocalAppMcpAdapterPreviewV049 b)
     {
