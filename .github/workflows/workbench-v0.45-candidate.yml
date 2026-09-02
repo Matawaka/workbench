@@ -1,0 +1,229 @@
+name: Workbench v0.45 active surface contract qualification
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.45-operator-surface-contract
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Restore and build zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if ($LASTEXITCODE -ne 0) { throw 'v0.45 restore failed' }
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.45 Release build failed' }
+
+      - name: Verify exact four-button and roadmap contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if ([regex]::Matches($surface, '<Button\b').Count -ne 4) { throw 'active maintenance surface is not exactly four buttons' }
+          foreach ($retired in @('SelfTestButton','AcceptCheckpointButton','CancelButton','LaunchCandidateButton')) {
+            if ($surface.Contains("x:Name=\"$retired\"", [StringComparison]::Ordinal)) { throw "retired button returned to active surface: $retired" }
+          }
+          $legacy = [regex]::Match($xaml, '<StackPanel x:Name="HistoricalCompatibilityBindings"[\s\S]*?</StackPanel>').Value
+          foreach ($marker in @('Visibility="Collapsed"','IsHitTestVisible="False"','Focusable="False"','x:Name="SelfTestButton"','x:Name="AcceptCheckpointButton"','x:Name="CancelButton"','x:Name="LaunchCandidateButton"','x:Name="AgentEnabledBox"','x:Name="AllowGitFetchBox"')) {
+            if (-not $legacy.Contains($marker, [StringComparison]::Ordinal)) { throw "legacy quarantine marker missing: $marker" }
+          }
+          if (-not $xaml.Contains('Title="Matawaka Workbench v0.45"', [StringComparison]::Ordinal)) { throw 'v0.45 title missing' }
+          $roadmap = Get-Content 'DEVELOPMENT-AUDIT-ROADMAP.md' -Raw
+          foreach ($marker in @('Only four primary maintenance actions are active','one explicit human confirmation','automatic local Accept only if validation PASS','Hidden Compatibility Binding != Operator Authority')) {
+            if (-not $roadmap.Contains($marker, [StringComparison]::Ordinal)) { throw "roadmap contract marker missing: $marker" }
+          }
+          Write-Host 'V045_STATIC_SURFACE_PASS buttons=4 retiredActive=False roadmapCurrent=True'
+
+      - name: Execute WPF quarantine and app-inspection regression probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v045-surface-probe'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Reflection;
+          using System.Text;
+          using System.Text.Json;
+          using System.Windows;
+          using System.Windows.Controls;
+          using System.Windows.Input;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              [STAThread]
+              private static void Main()
+              {
+                  var root = Path.Combine(Path.GetTempPath(), "matawaka-v045-" + Guid.NewGuid().ToString("N"));
+                  var appRoot = Path.Combine(root, "Apps", "alpha");
+                  Directory.CreateDirectory(Path.Combine(appRoot, "nested"));
+                  File.WriteAllText(Path.Combine(appRoot, ".matawaka-app.json"), JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "1.0")), new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(appRoot, "nested", "file.txt"), "v045 preserved text", new UTF8Encoding(false));
+
+                  var window = new MainWindow();
+                  Invoke(window, "ConfigureV045Routing");
+                  var workspace = (TextBox?)window.FindName("WorkspaceRootBox") ?? throw new Exception("WorkspaceRootBox missing");
+                  workspace.Text = root;
+                  OperatorSurfaceV045Contract.Apply(window);
+                  var checks = OperatorSurfaceV045Contract.Observe(window);
+                  var failed = checks.Where(c => !c.Passed).ToArray();
+                  if (failed.Length != 0) throw new Exception("surface contract failed: " + string.Join(" | ", failed.Select(x => x.Id + ":" + x.Observed)));
+
+                  var fileNode = new AppTreeNodeV043("file.txt", "nested/file.txt", false, 18, Array.Empty<AppTreeNodeV043>());
+                  var fileSource = new TextBlock { Text = fileNode.Display };
+                  var fileItem = new TreeViewItem { Header = fileSource, DataContext = fileNode };
+                  var folderNode = new AppTreeNodeV043("nested", "nested", true, null, new[] { fileNode });
+                  var folderItem = new TreeViewItem { Header = "nested", DataContext = folderNode, IsExpanded = true };
+                  folderItem.Items.Add(fileItem);
+                  var rootNode = new AppTreeNodeV043("alpha · 1.0", string.Empty, true, null, new[] { folderNode });
+                  var rootItem = new TreeViewItem { Header = "alpha", DataContext = rootNode, IsExpanded = true };
+                  rootItem.Items.Add(folderItem);
+                  var tree = new TreeView { Tag = "alpha" };
+                  tree.Items.Add(rootItem);
+                  var host = new Window { Width = 480, Height = 320, Content = tree, ShowInTaskbar = false };
+                  host.Show();
+                  host.UpdateLayout();
+
+                  if (!TreeViewItemRoutingV0441Service.TryResolveFileNode(tree, fileSource, out var resolved) || resolved?.RelativePath != "nested/file.txt")
+                      throw new Exception("accepted nested file resolver regressed");
+                  var handler = typeof(MainWindow).GetMethod("AppTreeV0441_MouseDoubleClick", BindingFlags.Instance | BindingFlags.NonPublic) ?? throw new Exception("accepted double-click handler missing");
+                  var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                  {
+                      RoutedEvent = Control.MouseDoubleClickEvent,
+                      Source = fileSource
+                  };
+                  handler.Invoke(window, new object[] { tree, args });
+                  if (!args.Handled) throw new Exception("accepted file double-click was not handled");
+                  var tabs = (TabControl?)window.FindName("OutputTabs") ?? throw new Exception("OutputTabs missing");
+                  if (tabs.Items.OfType<TabItem>().Count(t => t.Content is TextBox tb && tb.Text == "v045 preserved text") != 1)
+                      throw new Exception("accepted app text tab behavior regressed");
+
+                  host.Close();
+                  window.Close();
+                  Directory.Delete(root, true);
+                  Console.WriteLine("V045_WPF_PASS surface=4 legacyQuarantined=True appInspectionPreserved=True");
+              }
+
+              private static object? Invoke(MainWindow window, string name)
+              {
+                  var method = typeof(MainWindow).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public) ?? throw new Exception("missing method: " + name);
+                  try { return method.Invoke(window, Array.Empty<object>()); }
+                  catch (TargetInvocationException ex) when (ex.InnerException is not null) { throw ex.InnerException; }
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.45 WPF contract probe failed' }
+
+      - name: Verify remote accepted frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = @(git ls-remote $remote refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLine.Count -ne 1) { throw 'unable to read remote main' }
+          $main = ($mainLine[0] -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '2877b4bf95143780edff19231eedf57520bd57ec') { throw "remote main moved from accepted v0.44.1: $main" }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.45-accepted refs/tags/workbench-v0.45-accepted^'{}').Count -ne 0) { throw 'v0.45 target tag already exists remotely' }
+          Write-Host 'V045_REMOTE_PASS main=v0.44.1 targetAbsent=True'
+
+      - name: Build and audit v0.45 source-only package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files = @(
+            'PATCH-v0.45.md',
+            'DEVELOPMENT-AUDIT-ROADMAP.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV045Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV045Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V045.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/OperatorSurfaceV045Contract.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV045AcceptanceHarness.cs'
+          )
+          $root = Join-Path $env:RUNNER_TEMP 'workbench-v0.45-package'
+          $payload = Join-Path $root 'payload'
+          if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($file in $files) {
+            $dest = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{ Path=$file; Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'; PackageVersion='0.10'; TargetVersion='0.45.0';
+            PredecessorTag='workbench-v0.44.1-accepted'; PredecessorCommit='2877b4bf95143780edff19231eedf57520bd57ec';
+            TargetTag='workbench-v0.45-accepted'; PayloadRoot='payload/'; Files=$manifestFiles;
+            NetworkAccessRequested=$false; CatalogMutationRequested=$false; AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false; InstallerScriptExecutionRequested=$false;
+            NonEffects=@('operator-surface contract only','legacy controls quarantined not erased','no new authority','Publish and Lifecycle separate')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.45-source-only.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [IO.Compression.ZipFile]::CreateFromDirectory($root, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+
+          $audit = Join-Path $env:RUNNER_TEMP 'workbench-v0.45-audit'
+          if (Test-Path $audit) { Remove-Item $audit -Recurse -Force }
+          [IO.Compression.ZipFile]::ExtractToDirectory($zip, $audit)
+          $m = Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if ($m.TargetVersion -ne '0.45.0' -or $m.PredecessorCommit -ne '2877b4bf95143780edff19231eedf57520bd57ec' -or $m.PredecessorTag -ne 'workbench-v0.44.1-accepted' -or $m.TargetTag -ne 'workbench-v0.45-accepted') { throw 'package identity audit failed' }
+          if ($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested) { throw 'package requested forbidden capability' }
+          if ((@($m.Files.Path | Sort-Object) -join "`n") -ne (($files | Sort-Object) -join "`n")) { throw 'package file set mismatch' }
+          foreach ($item in $m.Files) {
+            $full = Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "missing payload: $($item.Path)" }
+            if ((Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.Sha256.ToLowerInvariant()) { throw "hash mismatch: $($item.Path)" }
+          }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.45-source-only.sha256.txt'), "$sha  workbench-v0.45-source-only.zip`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "V045_PACKAGE_PASS sha256=$sha payloadFiles=$($files.Count) forbiddenFlags=False"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.45-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.45-source-only.zip
+            ${{ runner.temp }}/workbench-v0.45-source-only.sha256.txt
+          retention-days: 30
