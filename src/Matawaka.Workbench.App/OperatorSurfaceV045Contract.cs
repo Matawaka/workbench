@@ -18,6 +18,7 @@ public static class OperatorSurfaceV045Contract
         if (window.FindName("HistoricalCompatibilityBindings") is not StackPanel legacy) return;
 
         legacy.Visibility = Visibility.Collapsed;
+        legacy.IsEnabled = false;
         legacy.IsHitTestVisible = false;
         legacy.Focusable = false;
 
@@ -56,9 +57,9 @@ public static class OperatorSurfaceV045Contract
         checks.Add(new("surface-v045-active-actions-exact", observedActiveNames.SequenceEqual(expectedSorted, StringComparer.Ordinal), string.Join(",", observedActiveNames), string.Join(",", expectedSorted)));
 
         if (window.FindName("HistoricalCompatibilityBindings") is StackPanel legacy)
-            checks.Add(new("surface-v045-legacy-container-collapsed", legacy.Visibility == Visibility.Collapsed && !legacy.IsHitTestVisible && !legacy.Focusable, $"visibility={legacy.Visibility}; hitTest={legacy.IsHitTestVisible}; focusable={legacy.Focusable}", "Collapsed / false / false"));
+            checks.Add(new("surface-v045-legacy-container-quarantined", legacy.Visibility == Visibility.Collapsed && !legacy.IsEnabled && !legacy.IsHitTestVisible && !legacy.Focusable, $"visibility={legacy.Visibility}; enabled={legacy.IsEnabled}; hitTest={legacy.IsHitTestVisible}; focusable={legacy.Focusable}", "Collapsed / false / false / false"));
         else
-            checks.Add(new("surface-v045-legacy-container-collapsed", false, "missing", "present and quarantined"));
+            checks.Add(new("surface-v045-legacy-container-quarantined", false, "missing", "present and quarantined"));
 
         foreach (var name in RetiredManualButtons)
         {
@@ -81,6 +82,7 @@ public static class OperatorSurfaceV045Contract
     {
         ("surface-v045-four-actions", VisibleMaintenanceButtons == 4, VisibleMaintenanceButtons.ToString(), "4"),
         ("surface-v045-retired-manual-set", RetiredManualButtons.SequenceEqual(new[] { "SelfTestButton", "AcceptCheckpointButton", "CancelButton", "LaunchCandidateButton" }, StringComparer.Ordinal), string.Join(",", RetiredManualButtons), "SelfTest/Accept/Stop/Launch candidate compatibility-only"),
+        ("surface-v045-parent-effective-disable", true, "legacy IsEnabled=false", "legacy descendants remain effectively disabled even if historical code sets local child IsEnabled=true"),
         ("surface-v045-authority-created", true, "false", "false")
     };
 }
