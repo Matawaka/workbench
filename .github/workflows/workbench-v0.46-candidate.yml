@@ -40,8 +40,8 @@ jobs:
           $xaml = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
           $surface = [regex]::Match($xaml, '<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
           if ([regex]::Matches($surface, '<Button\b').Count -ne 4) { throw 'top-level surface is not exactly four buttons' }
+          $docs = (Get-Content 'DEVELOPMENT-AUDIT-ROADMAP.md' -Raw) + (Get-Content 'PATCH-v0.46.md' -Raw)
           foreach ($marker in @('Export Context != Upload Context','Installed Bytes != Development Sources','Content Read != File Mutation')) {
-            $docs = (Get-Content 'DEVELOPMENT-AUDIT-ROADMAP.md' -Raw) + (Get-Content 'PATCH-v0.46.md' -Raw)
             if (-not $docs.Contains($marker, [StringComparison]::Ordinal)) { throw "missing v0.46 invariant: $marker" }
           }
           $handoff = Get-Content 'LOCAL-APP-CHAT-HANDOFF.md' -Raw
@@ -80,11 +80,11 @@ jobs:
           using System.Reflection;
           using System.Text;
           using System.Text.Json;
+          using System.Threading;
           using Matawaka.Workbench.App;
 
           internal static class Program
           {
-              [STAThread]
               private static async System.Threading.Tasks.Task Main()
               {
                   var workspace = Path.Combine(Path.GetTempPath(), "matawaka-v046-" + Guid.NewGuid().ToString("N"));
@@ -105,8 +105,7 @@ jobs:
                   var updateService = new LocalAppUpdateContextV046Service();
                   var update = await updateService.ExportAsync(workspace, "alpha", default);
                   if (update.Context.ContainsFileContents || update.Context.Files.Count < 4) throw new Exception("update context contract failed");
-                  var updateJson = File.ReadAllText(update.ArtifactPath);
-                  if (updateJson.Contains("BANK-SECRET-123", StringComparison.Ordinal)) throw new Exception("update context leaked file contents");
+                  if (File.ReadAllText(update.ArtifactPath).Contains("BANK-SECRET-123", StringComparison.Ordinal)) throw new Exception("update context leaked file contents");
 
                   var sourceService = new LocalAppSourceBindingV046Service();
                   var sourcePlan = sourceService.Preview(workspace, "alpha", default);
@@ -138,14 +137,26 @@ jobs:
                   var launchPlan = launchService.Preview(workspace, "alpha", executable, default);
                   if (!launchPlan.NoArguments || !launchPlan.ExactRegisteredRootValidated) throw new Exception("launch preview failed");
 
-                  var window = new MainWindow();
-                  var configure = typeof(MainWindow).GetMethod("ConfigureV046Routing", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                      ?? throw new Exception("ConfigureV046Routing missing");
-                  configure.Invoke(window, Array.Empty<object>());
-                  OperatorSurfaceV045Contract.Apply(window);
-                  var surfaceChecks = OperatorSurfaceV045Contract.Observe(window);
-                  if (surfaceChecks.Any(x => !x.Passed)) throw new Exception("four-button surface regressed");
-                  window.Close();
+                  Exception? wpfFailure = null;
+                  var thread = new Thread(() =>
+                  {
+                      try
+                      {
+                          var window = new MainWindow();
+                          var configure = typeof(MainWindow).GetMethod("ConfigureV046Routing", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                              ?? throw new Exception("ConfigureV046Routing missing");
+                          configure.Invoke(window, Array.Empty<object>());
+                          OperatorSurfaceV045Contract.Apply(window);
+                          var surfaceChecks = OperatorSurfaceV045Contract.Observe(window);
+                          if (surfaceChecks.Any(x => !x.Passed)) throw new Exception("four-button surface regressed");
+                          window.Close();
+                      }
+                      catch (Exception ex) { wpfFailure = ex; }
+                  });
+                  thread.SetApartmentState(ApartmentState.STA);
+                  thread.Start();
+                  thread.Join();
+                  if (wpfFailure is not null) throw new Exception("WPF v0.46 probe failed", wpfFailure);
 
                   Directory.Delete(workspace, true);
                   Console.WriteLine("V046_OPERATIONAL_PASS updateContextContentFree=True sourceBound=True privateContext=True readInstalled=True readSource=True traversalRefused=True launchPreview=True surface=4");
