@@ -21,44 +21,70 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Build and dependency closure
+      - name: Build, routing and dependency closure
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
           dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
-          if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+          if($LASTEXITCODE -ne 0){throw 'build failed'}
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV0491Routing()', [StringComparison]::Ordinal)){throw 'v0.49.1 startup routing missing'}
           $project=Get-Content 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj' -Raw
-          if ($project.Contains('Microsoft.AspNetCore',[StringComparison]::Ordinal) -or $project.Contains('ModelContextProtocol',[StringComparison]::Ordinal)) { throw 'product runtime dependency expansion detected' }
+          if($project.Contains('Microsoft.AspNetCore',[StringComparison]::Ordinal) -or $project.Contains('ModelContextProtocol',[StringComparison]::Ordinal)){throw 'product runtime dependency expansion detected'}
           $adapter=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs' -Raw
-          foreach($m in @('TcpListener(IPAddress.Loopback, 0)','MaxHttpHeaderBytes = 16 * 1024','MaxProtocolRequestBytes = 64 * 1024','MaxHttpTrailerBytes = 4 * 1024','ReadChunkedBodyAsync','Transfer-Encoding','read_local_app_chunk','REFUSED_BY_ACTIVE_READ_LEASE')) { if(-not $adapter.Contains($m,[StringComparison]::Ordinal)){throw "missing $m"} }
-          foreach($m in @('Microsoft.AspNetCore','WebApplication','Kestrel','IPAddress.Any','IPAddress.IPv6Any')) { if($adapter.Contains($m,[StringComparison]::Ordinal)){throw "forbidden $m"} }
+          foreach($m in @('TcpListener(IPAddress.Loopback, 0)','MaxHttpHeaderBytes = 16 * 1024','MaxProtocolRequestBytes = 64 * 1024','MaxHttpTrailerBytes = 4 * 1024','ReadChunkedBodyAsync','Transfer-Encoding','read_local_app_chunk','REFUSED_BY_ACTIVE_READ_LEASE')){if(-not $adapter.Contains($m,[StringComparison]::Ordinal)){throw "missing $m"}}
+          foreach($m in @('Microsoft.AspNetCore','WebApplication','Kestrel','IPAddress.Any','IPAddress.IPv6Any')){if($adapter.Contains($m,[StringComparison]::Ordinal)){throw "forbidden $m"}}
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0491Service.cs' -Raw
+          foreach($m in @('9b6b7b5b895ef6364c7c964ecb8d7084d3de6944','workbench-v0.49-accepted','workbench-v0.49.1-accepted','0.49.1')){if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "checkpoint binding missing $m"}}
+          $pub=Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0491Service.cs' -Raw
+          foreach($m in @('ExpectedRemoteBase = "2b0e3127e3c0284ff569720d85889cec3374f053"','FailedRemoteTag = "workbench-v0.49-accepted"','AcceptedTag = "workbench-v0.49.1-accepted"')){if(-not $pub.Contains($m,[StringComparison]::Ordinal)){throw "publication binding missing $m"}}
           $out=Join-Path $env:RUNNER_TEMP 'publish-v0491'
           dotnet publish src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -c Release --no-restore -o $out
+          if($LASTEXITCODE -ne 0){throw 'publish failed'}
           $deps=Get-Content (Join-Path $out 'Matawaka.Workbench.App.deps.json') -Raw
           if($deps.Contains('Microsoft.AspNetCore',[StringComparison]::Ordinal)){throw 'published deps include ASP.NET Core'}
           if(@(Get-ChildItem $out -Filter 'Microsoft.AspNetCore*.dll' -File).Count -ne 0){throw 'published output includes ASP.NET Core dlls'}
-          Write-Host 'V0491_CLOSURE_PASS build=True aspnet=False mcpRuntimePackage=False tcpLoopback=True chunkedBounded=True'
+          Write-Host 'V0491_CLOSURE_PASS build=True routing=True aspnet=False mcpRuntimePackage=False tcpLoopback=True chunkedBounded=True'
 
-      - name: Prove failed v0.49 source tree accepts stabilization with no restore
+      - name: Prove failed v0.49 source tree accepts exact v0.49.1 package overlay with no restore
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           $candidate=(Get-Location).Path
           $overlay=Join-Path $env:RUNNER_TEMP 'overlay-v0491'
+          if(Test-Path $overlay){Remove-Item $overlay -Recurse -Force}
           git worktree add --detach $overlay 7445fba8b0317a69074960612fa0c018db50c70a
+          if($LASTEXITCODE -ne 0){throw 'failed-v0.49 source tree unavailable'}
           try {
             Push-Location $overlay
             dotnet restore Matawaka.Workbench.sln
+            if($LASTEXITCODE -ne 0){throw 'failed-v0.49 predecessor restore failed'}
             Pop-Location
-            foreach($file in @('src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj','src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs','src/Matawaka.Workbench.App/WorkbenchV049AcceptanceHarness.cs')) {
-              Copy-Item (Join-Path $candidate ($file -replace '/', [IO.Path]::DirectorySeparatorChar)) (Join-Path $overlay ($file -replace '/', [IO.Path]::DirectorySeparatorChar)) -Force
+            $files=@(
+              'PATCH-v0.49.1.md',
+              'LOCAL-APP-MCP-ADAPTER.md',
+              'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj',
+              'src/Matawaka.Workbench.App/App.xaml.cs',
+              'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs',
+              'src/Matawaka.Workbench.App/WorkbenchV049AcceptanceHarness.cs',
+              'src/Matawaka.Workbench.App/WorkbenchV0491AcceptanceHarness.cs',
+              'src/Matawaka.Workbench.App/LocalCheckpointV0491Service.cs',
+              'src/Matawaka.Workbench.App/FixedGitHubPublicationV0491Service.cs',
+              'src/Matawaka.Workbench.App/MainWindow.V0491.cs'
+            )
+            foreach($file in $files){
+              $src=Join-Path $candidate ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+              $dst=Join-Path $overlay ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+              New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force | Out-Null
+              Copy-Item -LiteralPath $src -Destination $dst -Force
             }
             Push-Location $overlay
             dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
-            if($LASTEXITCODE -ne 0){throw 'no-restore stabilization failed'}
+            if($LASTEXITCODE -ne 0){throw 'exact v0.49.1 package overlay failed no-restore build'}
             Pop-Location
-            Write-Host 'V0491_NO_RESTORE_PASS sourceTree=failed-v0.49'
+            Write-Host "V0491_NO_RESTORE_PASS sourceTree=failed-v0.49 payloadFiles=$($files.Count)"
           } finally { if((Get-Location).Path -eq $overlay){Pop-Location}; git worktree remove --force $overlay 2>$null }
 
       - name: Official MCP 2.2.0 client interoperability
@@ -66,6 +92,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $probe=Join-Path $env:RUNNER_TEMP 'mcp-v0491-probe'
+          if(Test-Path $probe){Remove-Item $probe -Recurse -Force}
           New-Item -ItemType Directory -Path $probe -Force | Out-Null
           $appProject=(Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
           $escaped=[Security.SecurityElement]::Escape($appProject)
@@ -83,42 +110,105 @@ jobs:
           using Matawaka.Workbench.App;
           using ModelContextProtocol.Client;
           using ModelContextProtocol.Protocol;
-
           static class Program {
-            static string Hash(string p){using var s=File.OpenRead(p); return Convert.ToHexString(SHA256.HashData(s)).ToLowerInvariant();}
+            static string Hash(string p){using var s=File.OpenRead(p);return Convert.ToHexString(SHA256.HashData(s)).ToLowerInvariant();}
             static async Task Main(){
-              var w=Path.Combine(Path.GetTempPath(),"v0491-"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(Path.Combine(w,"Workbench","artifacts"));
-              var a=Path.Combine(w,"Apps","alpha"); Directory.CreateDirectory(Path.Combine(a,"data"));
+              var w=Path.Combine(Path.GetTempPath(),"v0491-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(Path.Combine(w,"Workbench","artifacts"));
+              var a=Path.Combine(w,"Apps","alpha");Directory.CreateDirectory(Path.Combine(a,"data"));
               File.WriteAllText(Path.Combine(a,".matawaka-app.json"),JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema,"alpha","1.0.0")),new UTF8Encoding(false));
-              var state=Path.Combine(a,"data","state.json"); File.WriteAllText(state,"{\"private\":\"MCP-LEASE-SECRET\"}",new UTF8Encoding(false));
-              var outside=Path.Combine(a,"data","outside.txt"); File.WriteAllText(outside,"outside",new UTF8Encoding(false));
-              var sr=Path.Combine(w,"AppSources","alpha"); Directory.CreateDirectory(Path.Combine(sr,"web")); File.WriteAllText(Path.Combine(sr,".matawaka-source.json"),"{}",new UTF8Encoding(false));
-              var source=Path.Combine(sr,"web","app.js"); File.WriteAllText(source,"source-v0491",new UTF8Encoding(false));
+              var state=Path.Combine(a,"data","state.json");File.WriteAllText(state,"{\"private\":\"MCP-LEASE-SECRET\"}",new UTF8Encoding(false));
+              var outside=Path.Combine(a,"data","outside.txt");File.WriteAllText(outside,"outside",new UTF8Encoding(false));
+              var sr=Path.Combine(w,"AppSources","alpha");Directory.CreateDirectory(Path.Combine(sr,"web"));File.WriteAllText(Path.Combine(sr,".matawaka-source.json"),"{}",new UTF8Encoding(false));
+              var source=Path.Combine(sr,"web","app.js");File.WriteAllText(source,"source-v0491",new UTF8Encoding(false));
               var ls=new LocalAppReadLeaseV048Service();
               var req=new LocalAppReadLeaseRequestV048(LocalAppReadLeaseV048Service.RequestSchema,"lease:v0491","alpha",new[]{new LocalAppReadLeaseScopeV048("installed","data/state.json"),new LocalAppReadLeaseScopeV048("source","web/")},1024,8192,8,300);
-              var lp=ls.Preview(w,"alpha",req,default); var created=await ls.CreateAsync(w,"alpha",lp,false,default); var gj=LocalAppReadLeaseV048Service.SerializeGrant(created.Grant);
-              var ad=new LocalAppMcpReadAdapterV049Service(); var ap=ad.PreviewFromGrantJson(w,"alpha",gj,default); var ag=await ad.StartAsync(w,"alpha",ap,gj,default);
+              var lp=ls.Preview(w,"alpha",req,default);var created=await ls.CreateAsync(w,"alpha",lp,false,default);var gj=LocalAppReadLeaseV048Service.SerializeGrant(created.Grant);
+              var ad=new LocalAppMcpReadAdapterV049Service();var ap=ad.PreviewFromGrantJson(w,"alpha",gj,default);var ag=await ad.StartAsync(w,"alpha",ap,gj,default);
               var transport=new HttpClientTransport(new HttpClientTransportOptions{Endpoint=new Uri(ag.EndpointUrl),TransportMode=HttpTransportMode.StreamableHttp,EnableStandaloneGetStream=false});
               await using var client=await McpClient.CreateAsync(transport,new McpClientOptions{ClientInfo=new Implementation{Name="v0491",Version="1"}});
-              var tools=await client.ListToolsAsync(); if(tools.Count!=1||tools[0].Name!="read_local_app_chunk") throw new Exception("tools mismatch");
-              var ok=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",1024},{"expectedFileSha256",Hash(state)}}); if(ok.IsError is true||!ok.Content.OfType<TextContentBlock>().Single().Text.Contains("MCP-LEASE-SECRET"))throw new Exception("installed failed");
-              var src=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","source"},{"relativePath","web/app.js"},{"offset",0L},{"maxBytes",1024},{"expectedFileSha256",Hash(source)}}); if(src.IsError is true)throw new Exception("source failed");
-              var outscope=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/outside.txt"},{"offset",0L},{"maxBytes",32},{"expectedFileSha256",Hash(outside)}}); if(outscope.IsError is not true)throw new Exception("scope not refused");
-              var injected=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",32},{"ApplicationId","other"}}); if(injected.IsError is not true)throw new Exception("authority not refused");
-              var stale=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",32},{"expectedFileSha256",new string('0',64)}}); if(stale.IsError is not true)throw new Exception("stale not refused");
-              var rv=await ls.RevokeAllActiveAsync(w,"alpha",default); if(rv.Receipt.RevokedLeases!=1)throw new Exception("revoke failed");
-              var denied=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",32}}); if(denied.IsError is not true)throw new Exception("revoked not refused");
-              await client.DisposeAsync(); var stop=await ad.StopAsync(w,default); if(!stop.Receipt.ListenerStopped||ad.IsActiveFor("alpha"))throw new Exception("stop failed");
-              Directory.Delete(w,true); Console.WriteLine("V0491_INTEROP_PASS officialClient=2.2.0 chunked=True installed=True source=True negatives=True revoke=True stop=True");
+              var tools=await client.ListToolsAsync();if(tools.Count!=1||tools[0].Name!="read_local_app_chunk")throw new Exception("tools mismatch");
+              var ok=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",1024},{"expectedFileSha256",Hash(state)}});if(ok.IsError is true||!ok.Content.OfType<TextContentBlock>().Single().Text.Contains("MCP-LEASE-SECRET"))throw new Exception("installed failed");
+              var src=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","source"},{"relativePath","web/app.js"},{"offset",0L},{"maxBytes",1024},{"expectedFileSha256",Hash(source)}});if(src.IsError is true)throw new Exception("source failed");
+              var outscope=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/outside.txt"},{"offset",0L},{"maxBytes",32},{"expectedFileSha256",Hash(outside)}});if(outscope.IsError is not true)throw new Exception("scope not refused");
+              var injected=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",32},{"ApplicationId","other"}});if(injected.IsError is not true)throw new Exception("authority not refused");
+              var stale=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",32},{"expectedFileSha256",new string('0',64)}});if(stale.IsError is not true)throw new Exception("stale not refused");
+              var rv=await ls.RevokeAllActiveAsync(w,"alpha",default);if(rv.Receipt.RevokedLeases!=1)throw new Exception("revoke failed");
+              var denied=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",32}});if(denied.IsError is not true)throw new Exception("revoked not refused");
+              await client.DisposeAsync();var stop=await ad.StopAsync(w,default);if(!stop.Receipt.ListenerStopped||ad.IsActiveFor("alpha"))throw new Exception("stop failed");
+              Directory.Delete(w,true);Console.WriteLine("V0491_INTEROP_PASS officialClient=2.2.0 chunked=True installed=True source=True negatives=True revoke=True stop=True");
             }
           }
           '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
           dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
           if($LASTEXITCODE -ne 0){throw 'interop failed'}
 
-      - name: Remote accepted frontier unchanged
+      - name: Remote accepted frontier and failed-tag suppression precondition
         shell: pwsh
         run: |
-          $main=((git ls-remote https://github.com/Matawaka/workbench.git refs/heads/main) -split '\s+')[0].ToLowerInvariant()
+          $ErrorActionPreference='Stop'
+          $remote='https://github.com/Matawaka/workbench.git'
+          $main=((git ls-remote $remote refs/heads/main) -split '\s+')[0].ToLowerInvariant()
           if($main -ne '2b0e3127e3c0284ff569720d85889cec3374f053'){throw "main moved: $main"}
-          Write-Host 'V0491_REMOTE_PASS main=v0.48'
+          if(@(git ls-remote $remote refs/tags/workbench-v0.49-accepted refs/tags/workbench-v0.49-accepted^'{}').Count -ne 0){throw 'failed v0.49 tag unexpectedly exists remotely'}
+          if(@(git ls-remote $remote refs/tags/workbench-v0.49.1-accepted refs/tags/workbench-v0.49.1-accepted^'{}').Count -ne 0){throw 'v0.49.1 target tag already exists remotely'}
+          Write-Host 'V0491_REMOTE_PASS main=v0.48 failedV049TagAbsent=True targetAbsent=True'
+
+      - name: Build and audit v0.49.1 source-only recovery package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files=@(
+            'PATCH-v0.49.1.md',
+            'LOCAL-APP-MCP-ADAPTER.md',
+            'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV049AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0491AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0491Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0491Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0491.cs'
+          )
+          $root=Join-Path $env:RUNNER_TEMP 'workbench-v0.49.1-package'
+          $payload=Join-Path $root 'payload'
+          if(Test-Path $root){Remove-Item $root -Recurse -Force}
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles=@()
+          foreach($file in $files){
+            $dest=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dest)) -Force | Out-Null
+            Copy-Item -LiteralPath $file -Destination $dest -Force
+            $manifestFiles += [ordered]@{Path=$file;Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10';PackageVersion='0.10';TargetVersion='0.49.1';
+            PredecessorTag='workbench-v0.49-accepted';PredecessorCommit='9b6b7b5b895ef6364c7c964ecb8d7084d3de6944';
+            TargetTag='workbench-v0.49.1-accepted';PayloadRoot='payload/';Files=$manifestFiles;
+            NetworkAccessRequested=$false;CatalogMutationRequested=$false;AgentExecuteRequested=$false;
+            ArbitraryProcessExecutionRequested=$false;InstallerScriptExecutionRequested=$false;
+            NonEffects=@('Workbench source stabilization only','failed v0.49 remote tag remains absent','no Apps/AppSources/private data/bearer/lease/endpoint state in package','no automatic MCP listener/tunnel start','no Microsoft.AspNetCore installation or MCP runtime package dependency')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.49.1-source-only.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          [IO.Compression.ZipFile]::CreateFromDirectory($root,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+          $audit=Join-Path $env:RUNNER_TEMP 'workbench-v0.49.1-audit'
+          if(Test-Path $audit){Remove-Item $audit -Recurse -Force}
+          [IO.Compression.ZipFile]::ExtractToDirectory($zip,$audit)
+          $m=Get-Content (Join-Path $audit 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if($m.TargetVersion -ne '0.49.1' -or $m.PredecessorCommit -ne '9b6b7b5b895ef6364c7c964ecb8d7084d3de6944' -or $m.PredecessorTag -ne 'workbench-v0.49-accepted' -or $m.TargetTag -ne 'workbench-v0.49.1-accepted'){throw 'package identity audit failed'}
+          if($m.NetworkAccessRequested -or $m.CatalogMutationRequested -or $m.AgentExecuteRequested -or $m.ArbitraryProcessExecutionRequested -or $m.InstallerScriptExecutionRequested){throw 'package requested forbidden capability'}
+          if((@($m.Files.Path|Sort-Object)-join "`n") -ne (($files|Sort-Object)-join "`n")){throw 'package file set mismatch'}
+          foreach($item in $m.Files){$full=Join-Path (Join-Path $audit 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar);if((Get-FileHash $full -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.Sha256.ToLowerInvariant()){throw "hash mismatch $($item.Path)"}}
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'workbench-v0.49.1-source-only.sha256.txt'),"$sha  workbench-v0.49.1-source-only.zip`n",[Text.UTF8Encoding]::new($false))
+          Write-Host "V0491_PACKAGE_PASS sha256=$sha payloadFiles=$($files.Count) forbiddenFlags=False"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.49.1-source-only
+          path: |
+            ${{ runner.temp }}/workbench-v0.49.1-source-only.zip
+            ${{ runner.temp }}/workbench-v0.49.1-source-only.sha256.txt
+          retention-days: 30
