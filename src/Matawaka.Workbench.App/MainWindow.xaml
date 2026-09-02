@@ -106,7 +106,7 @@
         </Grid>
 
         <!-- Historical bindings remain only so old partial classes compile; v0.45 runtime quarantine keeps them inert. -->
-        <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False">
+        <StackPanel x:Name="HistoricalCompatibilityBindings" Grid.Row="0" Visibility="Collapsed" IsEnabled="False" IsHitTestVisible="False" Focusable="False">
             <TextBox x:Name="WorkspaceRootBox" Focusable="False" IsTabStop="False"/>
             <TextBox x:Name="CatalogRootBox" Focusable="False" IsTabStop="False"/>
             <Button x:Name="SelfTestButton" Content="Self-test" IsEnabled="False" Visibility="Collapsed" Focusable="False" IsTabStop="False" Click="SelfTestV040Button_Click"/>
