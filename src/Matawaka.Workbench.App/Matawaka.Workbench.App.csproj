@@ -11,4 +11,8 @@
     <ProjectReference Include="..\Matawaka.Workbench.Protocol\Matawaka.Workbench.Protocol.csproj" />
     <ProjectReference Include="..\Matawaka.Workbench.Runtime\Matawaka.Workbench.Runtime.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+  </ItemGroup>
 </Project>
