@@ -77,6 +77,7 @@ jobs:
           using System.IO;
           using System.IO.Compression;
           using System.Linq;
+          using System.Reflection;
           using System.Text;
           using System.Text.Json;
           using Matawaka.Workbench.App;
@@ -138,7 +139,9 @@ jobs:
                   if (!launchPlan.NoArguments || !launchPlan.ExactRegisteredRootValidated) throw new Exception("launch preview failed");
 
                   var window = new MainWindow();
-                  window.ConfigureV046Routing();
+                  var configure = typeof(MainWindow).GetMethod("ConfigureV046Routing", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                      ?? throw new Exception("ConfigureV046Routing missing");
+                  configure.Invoke(window, Array.Empty<object>());
                   OperatorSurfaceV045Contract.Apply(window);
                   var surfaceChecks = OperatorSurfaceV045Contract.Observe(window);
                   if (surfaceChecks.Any(x => !x.Passed)) throw new Exception("four-button surface regressed");
