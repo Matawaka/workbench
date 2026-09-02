@@ -1,0 +1,150 @@
+name: Workbench v0.44.1 nested TreeView routing probe v3
+
+on:
+  push:
+    branches:
+      - stabilize/workbench-v0.44.1-tree-doubleclick-routing
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: false
+
+      - name: Build zero warnings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore Matawaka.Workbench.sln
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'v0.44.1 build failed' }
+
+      - name: Verify narrow stabilization
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '343a452a8136e8b4f7af6374108e1b4d6e851428'
+          $allowed = @(
+            '.github/workflows/workbench-v0.44.1-routing-probe-v3.yml',
+            'src/Matawaka.Workbench.App/MainWindow.V0441RoutingFix.cs',
+            'src/Matawaka.Workbench.App/TreeViewItemRoutingV0441Service.cs'
+          ) | Sort-Object
+          $actual = @(git diff --name-only $base HEAD) | Sort-Object
+          if (($actual -join "`n") -ne ($allowed -join "`n")) { throw "unexpected stabilization diff:`n$($actual -join "`n")" }
+          git diff --quiet $base HEAD -- src/Matawaka.Workbench.App/MainWindow.V044.cs
+          if ($LASTEXITCODE -ne 0) { throw 'qualified v0.44 source was rewritten' }
+          Write-Host 'V0441_NARROW_DIFF_PASS'
+
+      - name: Execute nested explicit-container resolver and exact handler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'v0441-routing-probe-v3'
+          if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          $appProject = (Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped = [Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0-windows</TargetFramework>
+              <UseWPF>true</UseWPF>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $probe 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Reflection;
+          using System.Text;
+          using System.Text.Json;
+          using System.Windows;
+          using System.Windows.Controls;
+          using System.Windows.Input;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              [STAThread]
+              private static void Main()
+              {
+                  var root = Path.Combine(Path.GetTempPath(), "matawaka-v0441-routing-v3-" + Guid.NewGuid().ToString("N"));
+                  var appRoot = Path.Combine(root, "Apps", "alpha");
+                  Directory.CreateDirectory(Path.Combine(appRoot, "nested"));
+                  File.WriteAllText(Path.Combine(appRoot, ".matawaka-app.json"), JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema, "alpha", "1.0")), new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(appRoot, "nested", "file.txt"), "real nested text", new UTF8Encoding(false));
+
+                  var fileNode = new AppTreeNodeV043("file.txt", "nested/file.txt", false, 16, Array.Empty<AppTreeNodeV043>());
+                  var folderNode = new AppTreeNodeV043("nested", "nested", true, null, new[] { fileNode });
+                  var rootNode = new AppTreeNodeV043("alpha · 1.0", string.Empty, true, null, new[] { folderNode });
+
+                  var fileHeader = new TextBlock { Text = fileNode.Display, DataContext = fileNode };
+                  var fileItem = new TreeViewItem { Header = fileHeader, DataContext = fileNode };
+                  var folderItem = new TreeViewItem { Header = new TextBlock { Text = folderNode.Display }, DataContext = folderNode, IsExpanded = true };
+                  folderItem.Items.Add(fileItem);
+                  var rootItem = new TreeViewItem { Header = new TextBlock { Text = rootNode.Display }, DataContext = rootNode, IsExpanded = true };
+                  rootItem.Items.Add(folderItem);
+                  var tree = new TreeView { Tag = "alpha" };
+                  tree.Items.Add(rootItem);
+                  var host = new Window { Width = 500, Height = 400, Content = tree, ShowInTaskbar = false };
+                  host.Show();
+                  host.UpdateLayout();
+
+                  var oldRootOnly = ItemsControl.ContainerFromElement(tree, fileHeader) as TreeViewItem;
+                  if (ReferenceEquals(oldRootOnly, fileItem)) throw new Exception("root-only lookup unexpectedly resolved nested file container");
+                  var nearest = TreeViewItemRoutingV0441Service.FindNearestTreeViewItem(tree, fileHeader);
+                  if (!ReferenceEquals(nearest, fileItem)) throw new Exception("nearest TreeViewItem resolver missed nested file");
+                  if (!TreeViewItemRoutingV0441Service.TryResolveFileNode(tree, fileHeader, out var node) || node?.RelativePath != "nested/file.txt")
+                      throw new Exception("nested file node resolution mismatch");
+
+                  var workbench = new MainWindow();
+                  var workspace = (TextBox?)workbench.FindName("WorkspaceRootBox") ?? throw new Exception("workspace binding missing");
+                  workspace.Text = root;
+                  var tabs = (TabControl?)workbench.FindName("OutputTabs") ?? throw new Exception("tabs missing");
+                  var handler = typeof(MainWindow).GetMethod("AppTreeV0441_MouseDoubleClick", BindingFlags.Instance | BindingFlags.NonPublic) ?? throw new Exception("v0.44.1 handler missing");
+                  var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                  {
+                      RoutedEvent = Control.MouseDoubleClickEvent,
+                      Source = fileHeader
+                  };
+                  handler.Invoke(workbench, new object[] { tree, args });
+                  if (!args.Handled) throw new Exception("resolved nested file interaction was not consumed");
+                  var textTabs = tabs.Items.OfType<TabItem>().Where(t => t.Content is TextBox tb && tb.Text == "real nested text").ToArray();
+                  if (textTabs.Length != 1) throw new Exception($"exact v0.44.1 handler opened {textTabs.Length} matching text tabs");
+
+                  host.Close();
+                  workbench.Close();
+                  Directory.Delete(root, true);
+                  Console.WriteLine("V0441_NESTED_DOUBLECLICK_PASS rootOnlyMiss=True nearestResolved=True handlerOpenedText=True");
+              }
+          }
+          '@ | Set-Content (Join-Path $probe 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $probe 'Probe.csproj') -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'v0.44.1 nested resolver/handler probe failed' }
+
+      - name: Verify remote frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $main = ((git ls-remote $remote refs/heads/main) -split '\s+')[0].ToLowerInvariant()
+          if ($main -ne '77f1a7027b0f2bf2a95dbdd415c06efa231b2e22') { throw "remote main moved: $main" }
+          if (@(git ls-remote $remote refs/tags/workbench-v0.44-accepted refs/tags/workbench-v0.44-accepted^'{}').Count -ne 0) { throw 'failed v0.44 was published remotely' }
+          Write-Host 'V0441_REMOTE_FRONTIER_PASS'
