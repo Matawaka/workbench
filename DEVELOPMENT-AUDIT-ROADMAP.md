@@ -102,7 +102,7 @@ Local app updates use a local exact-manifest ZIP and permit only fresh-preview-b
 
 Installed apps are observable from the main Workbench surface. An app entry opens a closable read-only tree tab. Explicit double-click on a represented file may open a closable read-only text tab under bounded path/reparse/size/encoding checks.
 
-The existing update package is already sparse: only actual Add/Replace payload files plus target `.matawaka-app.json` need to be present. `Export update context` is the planned/implemented bridge that lets another conversation build such a sparse package without receiving unchanged private application bytes merely to reconstruct predecessor SHA-256 bindings.
+The existing update package is already sparse: only actual Add/Replace payload files plus target `.matawaka-app.json` need to be present. `Export update context` lets another conversation build such a sparse package without receiving unchanged private application bytes merely to reconstruct predecessor SHA-256 bindings.
 
 ```text
 Package Validity != Mutation Authority
@@ -116,13 +116,11 @@ Sparse Update != Full Application Copy
 
 ## v0.46 — Local App Operational Handoff
 
-The next admitted Workbench layer is **Local App Operational Handoff**. It remains inside the existing top-level `Local apps` surface and does not add a fifth primary Workbench button.
+v0.46 established **Local App Operational Handoff** inside the existing top-level `Local apps` surface without adding a fifth primary Workbench button.
 
 ### Explicit app launch
 
-A registered application may be launched only after the operator selects one exact `.exe` already under its fixed managed root and confirms a preview bound to relative path, SHA-256, size and installed identity/version. v0.46 supplies zero arguments and writes a local launch receipt.
-
-Workbench does not claim the launched program is sandboxed merely because its launch was bounded.
+A registered application may be launched only after the operator selects one exact `.exe` already under its fixed managed root and confirms a preview bound to relative path, SHA-256, size and installed identity/version. Workbench supplies zero arguments and writes a local launch receipt.
 
 ```text
 Registration != Update != Launch
@@ -132,8 +130,6 @@ Exact Launch Authority != Authority Over App Behavior
 ### Content-free update context
 
 `Export update context` writes a local JSON containing installed identity/version, file paths, SHA-256, sizes and coarse roles. It contains no application file contents and performs no upload.
-
-Its main consumer is another development chat building `matawaka.local-app-update-package/v1` with only changed/added files.
 
 ```text
 Update Context != Application Copy
@@ -156,28 +152,41 @@ Source Edit != Installed App Mutation
 
 ### PRIVATE development context
 
-After source binding, the operator may explicitly create one PRIVATE local context capsule containing installed/runtime/evidence bytes, bound development sources, the content-free update context, a handoff manifest and the local read-tool contract.
-
-This is deliberately a disclosure-preparation operation and may duplicate confidential banking/evidence bytes into one ignored local artifact. Workbench never uploads that artifact automatically.
+After source binding, the operator may explicitly create one PRIVATE local context capsule containing installed/runtime/evidence bytes, bound development sources, the content-free update context, a handoff manifest and the local read-tool contract. Workbench never uploads that artifact automatically.
 
 ```text
 Export Context != Upload Context != Authority to Disclose
 Private Context Export != Public Repository Publication
 ```
 
-For large private applications, the intended later optimization is an immutable private base capsule plus smaller context deltas bound to the base digest. That is a portability/handoff optimization, not cloud synchronization authority.
+### Local content-read primitive
 
-### Future local content-read primitive
-
-v0.46 establishes a reusable local read service with request/response contracts for roles `installed` and `source`, fixed ApplicationId + relative-path confinement, reparse refusal, bounded chunk reads, full-file SHA-256/size evidence, Base64 response bytes and strict UTF-8 text when possible.
-
-No external connector/network transport is part of v0.46. A later ChatGPT/Workbench tool adapter must invoke this bounded primitive rather than receiving general filesystem authority.
+v0.46 established a reusable local read service with request/response contracts for roles `installed` and `source`, fixed ApplicationId + relative-path confinement, reparse refusal, bounded chunk reads, full-file SHA-256/size evidence, Base64 response bytes and strict UTF-8 text when possible.
 
 ```text
 Content Read != File Mutation != Execution
 Tool Contract != Transport Authority
 Local Read Primitive != Automatic Disclosure
 ```
+
+## v0.47 — Bounded Chat Read Relay
+
+The next Workbench layer connects an independent chat to the accepted local read primitive through a **human-gated, transport-neutral relay** rather than granting direct filesystem or network access.
+
+The registered-app action `Chat read relay` accepts one pasted request JSON containing exact ApplicationId, role, relative path, offset, maximum bytes and optional expected file SHA-256. Workbench first resolves only metadata/hash and shows the exact disclosure preview. A request or preview alone does not read file contents and does not write the clipboard.
+
+After explicit confirmation Workbench revalidates whole-file SHA/size/range, invokes the accepted bounded v0.46 read primitive, and writes the exact response JSON only to the local Windows clipboard for manual paste back into the chosen chat.
+
+```text
+Chat Request != Local Read Authority
+Local Read != Clipboard Disclosure
+Clipboard Response != Automatic Upload
+Selected App != Arbitrary Filesystem Root
+Expected Hash Mismatch => Refuse, Not Guess
+Read Authority != Mutation/Execution/Network Authority
+```
+
+v0.47 deliberately adds no HTTP listener, tunnel, MCP exposure or automatic cloud transport. A later direct adapter may automate the transport only if it preserves the same selected-app, path, hash, range and authority boundaries.
 
 ## Qualification after local-app feature
 
@@ -188,7 +197,8 @@ Useful successor evidence should include real registered applications. Possible 
 - `LOCAL_APP_UPDATE_REUSABLE` — exact managed-app update succeeds and receipt/rollback boundaries are adequate;
 - `LOCAL_APP_UPDATE_NEEDS_ADAPTER` — app-specific layout/process constraints require a bounded adapter;
 - `LOCAL_APP_SOURCE_HANDOFF_REUSABLE` — source seed -> AppSources binding -> private development context gives another conversation enough reproducible development state;
-- `LOCAL_APP_READ_TOOL_NEEDS_TRANSPORT_ADAPTER` — local read primitive is correct but a separate connector/transport is still required;
+- `LOCAL_APP_CHAT_READ_RELAY_REUSABLE` — chat request -> human preview/confirmation -> bounded response allows fresh file access without repeating full private capsules;
+- `LOCAL_APP_READ_TOOL_NEEDS_DIRECT_TRANSPORT_ADAPTER` — the relay works but direct transport still requires a separately bounded connector;
 - `LOCAL_APP_PRIVATE_CONTEXT_TOO_HEAVY` — base+delta context should be implemented before routine handoff;
 - `LOCAL_APP_UPDATE_NOT_REQUIRED` — existing app update mechanisms are already sufficient.
 
@@ -202,7 +212,7 @@ Review only evidence-backed debt:
 - whether quarantined hidden compatibility fields can eventually be physically removed without weakening historical run-state behavior;
 - whether a read-only update-feed discovery layer is useful after local packages are proven;
 - whether base+delta PRIVATE context materially reduces repeated transfer of large confidential evidence;
-- what connector/tool transport can expose the v0.46 local read primitive without general filesystem authority;
+- whether a later direct connector/MCP/local-agent adapter can invoke the bounded read primitive without exposing general filesystem or automatic disclosure authority;
 - whether external/cross-machine portability has independent product demand.
 
 None of the remaining items are automatically authorized implementation tasks.
@@ -231,5 +241,6 @@ Local App Maintenance != General Installer Authority
 Export Context != Upload Context
 Installed Bytes != Development Sources
 Content Read != Mutation Authority
+Clipboard Response != Automatic Upload
 Qualification != Promotion
 ```
