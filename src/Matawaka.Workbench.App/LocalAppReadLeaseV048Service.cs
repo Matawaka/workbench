@@ -155,6 +155,73 @@ public sealed record LocalAppReadLeaseConsumptionReceiptV048(
     string Status,
     string Note);
 
+public sealed record LocalAppLeaseListRequestV051(
+    string Schema,
+    string RequestId,
+    string LeaseId,
+    string Bearer,
+    string ApplicationId,
+    string Role,
+    string RelativeDirectory,
+    int StartIndex,
+    int MaxEntries);
+
+public sealed record LocalAppLeaseListEntryV051(
+    string RelativePath,
+    string Kind,
+    long? FileBytes);
+
+public sealed record LocalAppReadLeaseListResponseV051(
+    string Schema,
+    string Version,
+    DateTimeOffset ObservedAt,
+    string RequestId,
+    string LeaseId,
+    string ApplicationId,
+    string Role,
+    string RelativeDirectory,
+    int TotalEntries,
+    int StartIndex,
+    int ReturnedEntries,
+    int? NextStartIndex,
+    int DisclosureBytes,
+    IReadOnlyList<LocalAppLeaseListEntryV051> Entries,
+    int RemainingCalls,
+    long RemainingBytes,
+    DateTimeOffset ExpiresAt,
+    bool NetworkAccessPerformed,
+    bool FileContentReadPerformed,
+    bool FileMutationPerformed,
+    bool ProcessLaunchPerformed,
+    string Note);
+
+public sealed record LocalAppReadLeaseListConsumptionReceiptV051(
+    string Schema,
+    string Version,
+    DateTimeOffset ObservedAt,
+    string RequestId,
+    string LeaseId,
+    string ApplicationId,
+    string Role,
+    string RelativeDirectory,
+    int StartIndex,
+    int ReturnedEntries,
+    int DisclosureBytes,
+    int RemainingCalls,
+    long RemainingBytes,
+    DateTimeOffset ExpiresAt,
+    long StateRevision,
+    bool BearerVerified,
+    bool DirectoryPrefixScopeVerified,
+    bool ImmediateChildrenOnly,
+    bool NetworkAccessPerformed,
+    bool FileContentReadPerformed,
+    bool FileMutationPerformed,
+    bool ProcessLaunchPerformed,
+    IReadOnlyList<string> NonEffects,
+    string Status,
+    string Note);
+
 public sealed record LocalAppReadLeaseRevokeReceiptV048(
     string Schema,
     string Version,
@@ -179,12 +246,17 @@ public sealed class LocalAppReadLeaseV048Service
     public const string ReadRequestSchema = "matawaka.local-app-lease-read-request/v0.48";
     public const string ReadResponseSchema = "matawaka.local-app-read-lease-response/v0.48";
     public const string ConsumptionReceiptSchema = "matawaka.local-app-read-lease-consumption-receipt/v0.48";
+    public const string ListRequestSchemaV051 = "matawaka.local-app-lease-list-request/v0.51";
+    public const string ListResponseSchemaV051 = "matawaka.local-app-read-lease-list-response/v0.51";
+    public const string ListConsumptionReceiptSchemaV051 = "matawaka.local-app-read-lease-list-consumption-receipt/v0.51";
     public const string RevokeReceiptSchema = "matawaka.local-app-read-lease-revoke-receipt/v0.48";
     public const int MaxScopes = 16;
     public const int MaxBytesPerRead = LocalAppReadToolV046Service.MaxReadBytes;
     public const long MaxTotalBytes = 8L * 1024L * 1024L;
     public const int MaxCalls = 32;
     public const int MaxTtlSeconds = 15 * 60;
+    public const int MaxListEntriesV051 = 256;
+    public const int MaxListDisclosureBytesV051 = 64 * 1024;
 
     private static readonly SemaphoreSlim StateGate = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -477,6 +549,152 @@ public sealed class LocalAppReadLeaseV048Service
         }
     }
 
+    public async Task<(LocalAppReadLeaseListResponseV051 Response, LocalAppReadLeaseListConsumptionReceiptV051 Receipt, string ReceiptPath)> AuthorizeAndListAsync(
+        string workspaceRoot,
+        LocalAppLeaseListRequestV051 request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || request.Schema != ListRequestSchemaV051)
+            throw new InvalidDataException("Exact v0.51 lease list request schema is required.");
+        if (!SafeRequestId(request.RequestId) || !SafeLeaseId(request.LeaseId))
+            throw new InvalidDataException("Unsafe list RequestId or LeaseId.");
+        if (string.IsNullOrWhiteSpace(request.Bearer)) throw new InvalidDataException("Lease bearer is required.");
+        if (request.StartIndex < 0) throw new InvalidDataException("StartIndex must be non-negative.");
+        if (request.MaxEntries <= 0 || request.MaxEntries > MaxListEntriesV051)
+            throw new InvalidDataException($"MaxEntries must be between 1 and {MaxListEntriesV051}.");
+
+        await StateGate.WaitAsync(cancellationToken);
+        try
+        {
+            var statePath = StatePath(workspaceRoot, request.ApplicationId, request.LeaseId);
+            var state = ReadState(statePath, request.ApplicationId, request.LeaseId);
+            ValidateLiveState(state);
+            VerifyBearer(state, request.Bearer);
+            if (state.RemainingCalls <= 0) throw new InvalidDataException("Read lease call budget is exhausted.");
+            if (state.RemainingBytes <= 0) throw new InvalidDataException("Read lease byte budget is exhausted.");
+
+            var role = request.Role.Trim().ToLowerInvariant();
+            var rawDirectory = request.RelativeDirectory.Replace('\\', '/').Trim().TrimEnd('/');
+            if (string.IsNullOrWhiteSpace(rawDirectory) || rawDirectory == ".")
+                throw new InvalidDataException("Application-root listing is not authorized; choose a leased directory-prefix scope.");
+            var relativeDirectory = LocalAppV046FileBoundary.NormalizeRelative(rawDirectory);
+            if (!ScopeAllowsDirectory(state.Scopes, role, relativeDirectory))
+                throw new InvalidDataException("Requested directory is outside directory-prefix lease scope; exact-file scopes do not authorize sibling enumeration.");
+
+            var roleRoot = role switch
+            {
+                "installed" => LocalAppV046FileBoundary.ResolveRegisteredApplicationRoot(workspaceRoot, state.ApplicationId),
+                "source" => LocalAppV046FileBoundary.ResolveSourceRoot(workspaceRoot, state.ApplicationId, requireBinding: true),
+                _ => throw new InvalidDataException("List role must be exactly installed or source.")
+            };
+            LocalAppV046FileBoundary.EnsureNoReparseBoundary(roleRoot, relativeDirectory);
+            var directoryPath = Path.GetFullPath(Path.Combine(roleRoot, relativeDirectory.Replace('/', Path.DirectorySeparatorChar)));
+            LocalAppV046FileBoundary.EnsureInsideRoot(roleRoot, directoryPath, "lease list directory");
+            if (!Directory.Exists(directoryPath)) throw new InvalidDataException("Leased list directory does not exist.");
+            LocalAppV046FileBoundary.RejectReparse(directoryPath, "lease list directory");
+
+            var observed = new List<FileSystemInfo>();
+            foreach (var entry in new DirectoryInfo(directoryPath).EnumerateFileSystemInfos().OrderBy(x => x.Name, StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                LocalAppV046FileBoundary.RejectReparse(entry.FullName, "lease list child");
+                LocalAppV046FileBoundary.EnsureInsideRoot(roleRoot, entry.FullName, "lease list child");
+                observed.Add(entry);
+            }
+            if (request.StartIndex > observed.Count) throw new InvalidDataException("StartIndex exceeds current immediate-child entry count.");
+
+            var selected = observed.Skip(request.StartIndex).Take(request.MaxEntries).Select(entry =>
+            {
+                var isDirectory = entry is DirectoryInfo;
+                var relative = LocalAppV046FileBoundary.NormalizeRelative(Path.GetRelativePath(roleRoot, entry.FullName).Replace('\\', '/'));
+                return new LocalAppLeaseListEntryV051(
+                    relative + (isDirectory ? "/" : string.Empty),
+                    isDirectory ? "directory" : "file",
+                    isDirectory ? null : ((FileInfo)entry).Length);
+            }).ToArray();
+            var disclosureBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(selected, JsonOptions));
+            var perCallLimit = Math.Min(state.MaxBytesPerRead, MaxListDisclosureBytesV051);
+            if (disclosureBytes > perCallLimit)
+                throw new InvalidDataException("Directory metadata disclosure exceeds the per-call lease/v0.51 list ceiling; request fewer entries.");
+            if (disclosureBytes > state.RemainingBytes)
+                throw new InvalidDataException("Directory metadata disclosure exceeds remaining lease byte budget.");
+
+            var remainingCalls = state.RemainingCalls - 1;
+            var remainingBytes = state.RemainingBytes - disclosureBytes;
+            var next = state with
+            {
+                RemainingCalls = remainingCalls,
+                RemainingBytes = remainingBytes,
+                LastConsumedAt = DateTimeOffset.Now,
+                StateRevision = state.StateRevision + 1
+            };
+            await WriteStateAtomicAsync(statePath, next, cancellationToken);
+
+            var nextStartIndex = request.StartIndex + selected.Length < observed.Count ? request.StartIndex + selected.Length : (int?)null;
+            var response = new LocalAppReadLeaseListResponseV051(
+                ListResponseSchemaV051,
+                "0.51.0",
+                DateTimeOffset.Now,
+                request.RequestId,
+                state.LeaseId,
+                state.ApplicationId,
+                role,
+                relativeDirectory,
+                observed.Count,
+                request.StartIndex,
+                selected.Length,
+                nextStartIndex,
+                disclosureBytes,
+                selected,
+                remainingCalls,
+                remainingBytes,
+                next.ExpiresAt,
+                false,
+                false,
+                false,
+                false,
+                "Only immediate-child path/kind/size metadata was disclosed through an already-created directory-prefix read lease. No file contents, hashes, timestamps, mutation or process launch occurred.");
+            var receipt = new LocalAppReadLeaseListConsumptionReceiptV051(
+                ListConsumptionReceiptSchemaV051,
+                "0.51.0",
+                DateTimeOffset.Now,
+                request.RequestId,
+                state.LeaseId,
+                state.ApplicationId,
+                role,
+                relativeDirectory,
+                request.StartIndex,
+                selected.Length,
+                disclosureBytes,
+                remainingCalls,
+                remainingBytes,
+                next.ExpiresAt,
+                next.StateRevision,
+                true,
+                true,
+                true,
+                false,
+                false,
+                false,
+                false,
+                DefaultNonEffects().Concat(new[]
+                {
+                    "no application-root browse wildcard",
+                    "no recursive enumeration",
+                    "no exact-file-scope sibling enumeration",
+                    "no file hash/timestamp/ACL/content disclosure from list operation"
+                }).ToArray(),
+                "READ_LEASE_LIST_CONSUMED_BOUNDED_NO_NETWORK",
+                "One immediate-child metadata listing was consumed atomically from the same v0.48 lease call/byte state. Bearer plaintext is not written to the receipt.");
+            var receiptPath = await WriteReceiptAsync(workspaceRoot, "list-consumption-v051", state.ApplicationId, state.LeaseId, receipt, cancellationToken);
+            return (response, receipt, receiptPath);
+        }
+        finally
+        {
+            StateGate.Release();
+        }
+    }
+
     public IReadOnlyList<LocalAppReadLeaseStateV048> ListActive(string workspaceRoot, string applicationId)
     {
         _ = LocalAppV046FileBoundary.ResolveRegisteredApplicationRoot(workspaceRoot, applicationId);
@@ -553,6 +771,17 @@ public sealed class LocalAppReadLeaseV048Service
         ("lease-v048-write-authority", true, "false", "false")
     };
 
+    public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunV051BrowseContractChecks() => new[]
+    {
+        ("browse-v051-max-entries", MaxListEntriesV051 == 256, MaxListEntriesV051.ToString(), "256"),
+        ("browse-v051-max-disclosure", MaxListDisclosureBytesV051 == 65536, MaxListDisclosureBytesV051.ToString(), "65536"),
+        ("browse-v051-same-state-gate", true, "StateGate shared with read consumption", "same atomic lease state"),
+        ("browse-v051-directory-prefix-only", true, "exact-file scopes refused", "directory-prefix only"),
+        ("browse-v051-root-wildcard", true, "refused", "refused"),
+        ("browse-v051-recursion", true, "immediate children only", "non-recursive"),
+        ("browse-v051-content", true, "path/kind/size only", "no file contents/hashes/timestamps")
+    };
+
     private static LocalAppReadLeaseScopeV048 NormalizeAndValidateScope(
         string workspaceRoot,
         string applicationId,
@@ -599,6 +828,17 @@ public sealed class LocalAppReadLeaseV048Service
                 if (relative.StartsWith(scope.PathPrefix, StringComparison.OrdinalIgnoreCase)) return true;
             }
             else if (relative.Equals(scope.PathPrefix, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    private static bool ScopeAllowsDirectory(IReadOnlyList<LocalAppReadLeaseScopeV048> scopes, string role, string relativeDirectory)
+    {
+        var candidate = relativeDirectory.TrimEnd('/') + "/";
+        foreach (var scope in scopes)
+        {
+            if (!scope.Role.Equals(role, StringComparison.OrdinalIgnoreCase) || !scope.PathPrefix.EndsWith('/', StringComparison.Ordinal)) continue;
+            if (candidate.Equals(scope.PathPrefix, StringComparison.OrdinalIgnoreCase) || candidate.StartsWith(scope.PathPrefix, StringComparison.OrdinalIgnoreCase)) return true;
         }
         return false;
     }
@@ -658,7 +898,7 @@ public sealed class LocalAppReadLeaseV048Service
     private static string StateDirectory(string workspaceRoot, string applicationId)
     {
         var workspace = LocalAppV046FileBoundary.ResolveWorkspaceRoot(workspaceRoot);
-        var workbench = Path.GetFullPath(Path.Combine(workspace, "Workbench"));
+        var workbench = Path.GetFullPath(Path.Combine(workspace.Trim(), "Workbench"));
         if (!Directory.Exists(workbench)) throw new InvalidDataException($"Workbench root missing: {workbench}");
         var stateRoot = Path.GetFullPath(Path.Combine(workbench, ".workbench", "read-leases"));
         Directory.CreateDirectory(stateRoot);
