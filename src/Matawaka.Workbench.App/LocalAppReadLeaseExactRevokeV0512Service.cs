@@ -129,7 +129,8 @@ public sealed class LocalAppReadLeaseExactRevokeV0512Service
         ("closure-v0512-bearer", true, "not required", "not required for explicit local closure"),
         ("closure-v0512-budget", true, "unchanged", "no call/byte consumption"),
         ("closure-v0512-network", true, "false", "false"),
-        ("closure-v0512-runtime-start", true, "false", "false")
+        ("closure-v0512-runtime-start", true, "false", "false"),
+        ("closure-v0512-state-reparse", true, "reject before hash/read/write", "fail closed")
     };
 
     private static LocalAppReadLeaseStateV048 ReadExactState(string path, string applicationId, string leaseId)
@@ -174,6 +175,7 @@ public sealed class LocalAppReadLeaseExactRevokeV0512Service
         {
             await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(state, JsonOptions), new UTF8Encoding(false), cancellationToken);
             LocalAppV046FileBoundary.RejectReparse(temp, "temporary v0.51.2 exact lease state");
+            LocalAppV046FileBoundary.RejectReparse(path, "pre-replace v0.51.2 exact lease state");
             File.Move(temp, path, true);
             LocalAppV046FileBoundary.RejectReparse(path, "v0.51.2 exact lease state");
         }
@@ -194,6 +196,7 @@ public sealed class LocalAppReadLeaseExactRevokeV0512Service
     private static string HashFile(string path)
     {
         if (!File.Exists(path)) throw new InvalidDataException("Exact lease state file is missing.");
+        LocalAppV046FileBoundary.RejectReparse(path, "v0.51.2 exact lease state before hashing");
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
