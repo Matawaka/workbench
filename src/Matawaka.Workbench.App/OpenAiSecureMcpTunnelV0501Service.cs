@@ -108,7 +108,7 @@ public sealed record OpenAiSecureMcpTunnelReadinessFailureReceiptV0501(
     string Status,
     string Note);
 
-internal sealed class OpenAiTunnelReadinessFailureV0501 : InvalidDataException
+internal sealed class OpenAiTunnelReadinessFailureV0501 : Exception
 {
     public OpenAiTunnelReadinessDiagnosticV0501 Diagnostic { get; }
 
