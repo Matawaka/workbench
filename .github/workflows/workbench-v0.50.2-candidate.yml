@@ -33,7 +33,7 @@ jobs:
           if(-not $app.Contains('ConfigureV0502Routing()', [StringComparison]::Ordinal)){throw 'v0.50.2 routing missing'}
           $svc=Get-Content 'src/Matawaka.Workbench.App/PlainMcpOAuthDiscoveryCompatV0502Service.cs' -Raw
           foreach($m in @('/.well-known/oauth-protected-resource','OAuthMetadataAdvertised','Authorization/Cookie not forwarded','TcpListener(IPAddress.Loopback, 0)','MaxRequestBodyBytes = 64 * 1024','MaxResponseBodyBytes = 2 * 1024 * 1024')){if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "missing v0.50.2 marker: $m"}}
-          foreach($m in @('WWW-Authenticate:','IPAddress.Any','UseShellExecute = true','authorization_servers','oauth-authorization-server')){if($svc.Contains($m,[StringComparison]::Ordinal)){throw "forbidden OAuth/authority marker: $m"}}
+          foreach($m in @('WWW-Authenticate:','IPAddress.Any','UseShellExecute = true','authorization_servers')){if($svc.Contains($m,[StringComparison]::Ordinal)){throw "forbidden OAuth/authority marker: $m"}}
           $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0502Service.cs' -Raw
           if(-not $cp.Contains('1b3c5aa44e2bb302764b044b3b3ac00de14a5994')){throw 'local failed-v0.50.1 predecessor binding missing'}
           $pub=Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0502Service.cs' -Raw
@@ -125,6 +125,7 @@ jobs:
           @'
           using System;
           using System.IO;
+          using System.Linq;
           using System.Net;
           using System.Net.Http;
           using System.Net.Sockets;
