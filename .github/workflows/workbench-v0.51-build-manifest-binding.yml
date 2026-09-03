@@ -1,0 +1,59 @@
+name: Workbench v0.51 build source manifest binding
+
+on:
+  push:
+    branches: [feat/workbench-v0.51-live-app-browse]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest-binding:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Prove update-writer and checkpoint-reader agree on v0.51 manifest identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $checkpoint=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV051Service.cs' -Raw
+          $writer=Get-Content 'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs' -Raw
+          $candidate=Get-Content '.github/workflows/workbench-v0.51-candidate.yml' -Raw
+
+          if(-not $candidate.Contains("TargetVersion='0.51.0'",[StringComparison]::Ordinal)){
+            throw 'v0.51 candidate package target version is not exact 0.51.0'
+          }
+          if(-not $writer.Contains('$"v{plan.TargetVersion}-source-manifest-{DateTime.Now:yyyyMMdd-HHmmssfff}.json"',[StringComparison]::Ordinal)){
+            throw 'dynamic build source manifest filename writer contract changed'
+          }
+          if(-not $writer.Contains('return $"v{parts[0]}.{parts[1]}";',[StringComparison]::Ordinal)){
+            throw 'dynamic build source manifest schema writer contract changed'
+          }
+
+          $targetVersion='0.51.0'
+          $parts=$targetVersion.Split('.')
+          $writerPattern="v$targetVersion-source-manifest*.json"
+          $writerSchema="matawaka.workbench-build-source-manifest/v$($parts[0]).$($parts[1])"
+
+          if($writerPattern -ne 'v0.51.0-source-manifest*.json'){throw "unexpected derived writer filename pattern: $writerPattern"}
+          if($writerSchema -ne 'matawaka.workbench-build-source-manifest/v0.51'){throw "unexpected derived writer schema: $writerSchema"}
+          if(-not $checkpoint.Contains('Directory.GetFiles(dir, "v0.51.0-source-manifest*.json")',[StringComparison]::Ordinal)){
+            throw 'v0.51 checkpoint reader filename pattern does not match update writer'
+          }
+          if(-not $checkpoint.Contains('manifest.Schema != "matawaka.workbench-build-source-manifest/v0.51"',[StringComparison]::Ordinal)){
+            throw 'v0.51 checkpoint reader schema does not match update writer'
+          }
+          if($checkpoint.Contains('Directory.GetFiles(dir, "v0.51-source-manifest*.json")',[StringComparison]::Ordinal)){
+            throw 'stale v0.51 manifest filename reader survived'
+          }
+          if($checkpoint.Contains('manifest.Schema != "matawaka.workbench-build-source-manifest/v0.50"',[StringComparison]::Ordinal)){
+            throw 'stale v0.50 manifest schema reader survived'
+          }
+
+          Write-Host 'V051_BUILD_MANIFEST_BINDING_PASS target=0.51.0 filename=v0.51.0-source-manifest schema=v0.51 writerReaderMatch=True'
