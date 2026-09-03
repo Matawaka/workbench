@@ -1,0 +1,110 @@
+name: Workbench v0.51.2 local predecessor binder bundle
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.2-end-read-session]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify fixed v0.51.2 source payload and package binder
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sourceCommit='1545c98f9982917d6d10fcd76e86938b4eb7a2a0'
+          $files=@(
+            'PATCH-v0.51.2.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/GlobalUsings.V0512.cs',
+            'src/Matawaka.Workbench.App/LocalAppReadLeaseExactRevokeV0512Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV0512.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0512Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0512.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0512.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0512AcceptanceHarness.cs'
+          )
+
+          git diff --exit-code $sourceCommit HEAD -- @files
+          if($LASTEXITCODE -ne 0){throw 'v0.51.2 payload drifted after fixed qualified source commit'}
+
+          $stage=Join-Path $env:RUNNER_TEMP 'v0512-local-binder'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          New-Item -ItemType Directory -Path $stage|Out-Null
+          $payload=Join-Path $stage 'payload';New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file-replace'/',[IO.Path]::DirectorySeparatorChar)
+            $dst=Join-Path $payload ($file-replace'/',[IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          Copy-Item 'tools/BindWorkbenchV0512LocalPredecessor.ps1' (Join-Path $stage 'BindWorkbenchV0512LocalPredecessor.ps1') -Force
+          Copy-Item 'tools/BIND-v0.51.2.cmd' (Join-Path $stage 'BIND-v0.51.2.cmd') -Force
+
+          [ordered]@{
+            Schema='matawaka.workbench-v0512-local-binder-source/v0.1'
+            Version='0.1.0'
+            SourceCommit=$sourceCommit
+            Files=$items
+            NonEffects=@('bundle contains source payload and local binder only','binder performs read-only Git/tag/hash checks','no network required by binder','no Workbench repository mutation by binder')
+          } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage 'bundle-source.json') -Encoding UTF8
+
+          @'
+          Matawaka Workbench v0.51.2 — Local Predecessor Binder
+
+          Why this exists
+          ---------------
+          v0.51.1 was accepted locally, so its exact accepted commit SHA exists only in the local Workbench repository. This bundle avoids asking the operator to find/copy that SHA manually.
+
+          What the binder verifies
+          ------------------------
+          - Workbench Git working tree is clean.
+          - workbench-v0.51.1-accepted points at current HEAD.
+          - current HEAD parent is exact accepted v0.51 a8a93143e942a02913475013e355d61b2fa6bee8.
+          - the v0.51.1 accepted commit changes exactly the five files from the supplied source manifest.
+          - all five v0.51.1 source SHA-256 values match that manifest.
+          - workbench-v0.51.2-accepted does not already exist.
+          - bundled v0.51.2 payload matches fixed qualified source commit 1545c98f9982917d6d10fcd76e86938b4eb7a2a0.
+
+          What it does
+          ------------
+          It creates a new source-only Workbench update ZIP under bound-output/ with PredecessorCommit set to the locally observed accepted v0.51.1 HEAD. It does not edit, commit, tag, reset, fetch, push, or otherwise mutate the Workbench repository.
+
+          Steps
+          -----
+          1. Extract this whole bundle to one folder.
+          2. Double-click BIND-v0.51.2.cmd.
+          3. Select the Matawaka workspace root (the folder containing Workbench).
+          4. If all checks pass, use the generated ZIP under bound-output/ with Workbench v0.51.1 -> Update Workbench.
+
+          Before applying the update, stop the currently active local MCP and revoke the current read lease using the existing v0.51.1 controls. Secure MCP Tunnel should remain off.
+          '@ | Set-Content (Join-Path $stage 'README.txt') -Encoding UTF8
+
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.51.2-local-predecessor-binder-bundle.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0512_BINDER_BUNDLE_PASS payloadFiles=$($files.Count) source=$sourceCommit sha256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.51.2-local-predecessor-binder-bundle
+          path: ${{ steps.pack.outputs.zip }}
+          if-no-files-found: error
