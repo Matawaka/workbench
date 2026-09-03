@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -176,6 +177,7 @@ public sealed class PlainMcpOAuthDiscoveryCompatV0502Service
                 active.Stop.Cancel();
                 active.Listener.Stop();
                 active.Stop.Dispose();
+                active.StopMonitor.Dispose();
             }
             finally { _gate.Release(); }
         }
@@ -303,7 +305,7 @@ public sealed class PlainMcpOAuthDiscoveryCompatV0502Service
         if (requestLine.Length != 3 || requestLine[2] != "HTTP/1.1") throw new InvalidDataException("HTTP/1.1 request line required.");
         var method = requestLine[0];
         var path = requestLine[1];
-        if (!path.StartsWith('/', StringComparison.Ordinal) || path.Contains('?', StringComparison.Ordinal) || path.Contains('#', StringComparison.Ordinal)) throw new InvalidDataException("Absolute path without query/fragment required.");
+        if (!path.StartsWith("/", StringComparison.Ordinal) || path.Contains("?", StringComparison.Ordinal) || path.Contains("#", StringComparison.Ordinal)) throw new InvalidDataException("Absolute path without query/fragment required.");
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 1; i < lines.Length; i++)
         {
