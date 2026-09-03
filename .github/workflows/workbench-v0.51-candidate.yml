@@ -1,0 +1,243 @@
+name: Workbench v0.51 lease-gated live app browse candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51-live-app-browse]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static browse-authority checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV051Routing()', [StringComparison]::Ordinal)){throw 'v0.51 startup routing missing'}
+          $xaml=Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface=[regex]::Match($xaml,'<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if([regex]::Matches($surface,'<Button\b').Count -ne 4){throw 'top-level surface is not exactly four buttons'}
+
+          $lease=Get-Content 'src/Matawaka.Workbench.App/LocalAppReadLeaseV048Service.cs' -Raw
+          foreach($m in @('AuthorizeAndListAsync','ScopeAllowsDirectory','MaxListEntriesV051 = 256','MaxListDisclosureBytesV051 = 64 * 1024','Application-root listing is not authorized','exact-file scopes do not authorize sibling enumeration','RejectReparse(entry.FullName','RemainingCalls = remainingCalls','RemainingBytes = remainingBytes')){if(-not $lease.Contains($m,[StringComparison]::Ordinal)){throw "lease browse marker missing: $m"}}
+
+          $adapter=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs' -Raw
+          foreach($m in @('read_local_app_chunk','list_local_app_entries','ToolSurfaceVersionV051 = "0.51.0"','ListToolEnvelopeAsync','openWorldHint')){if(-not $adapter.Contains($m,[StringComparison]::Ordinal)){throw "MCP browse marker missing: $m"}}
+          $toolBlock=[regex]::Match($adapter,'private static Dictionary<string, object\?> BuildToolsListResult\(\)[\s\S]*?return new Dictionary<string, object\?> \{ \["tools"\]').Value
+          if([string]::IsNullOrWhiteSpace($toolBlock)){throw 'v0.51 tool schema block not found'}
+          foreach($forbiddenArg in @('ApplicationId','LeaseId','Bearer','WorkspaceRoot','AbsolutePath','recursive','glob')){if($toolBlock.Contains('["'+$forbiddenArg+'"]',[StringComparison]::Ordinal)){throw "forbidden caller-selectable browse authority arg: $forbiddenArg"}}
+          foreach($requiredArg in @('"role"','"relativeDirectory"','"startIndex"','"maxEntries"')){if(-not $toolBlock.Contains($requiredArg,[StringComparison]::Ordinal)){throw "required browse arg missing: $requiredArg"}}
+
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV051Service.cs' -Raw
+          if(-not $cp.Contains('632ddbb73e8d70b485f02d21f772674d429adf8c')){throw 'v0.51 predecessor binding missing'}
+          $pub=Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV051Service.cs' -Raw
+          foreach($m in @('ExpectedRemoteBase = "632ddbb73e8d70b485f02d21f772674d429adf8c"','AcceptedTag = "workbench-v0.51-accepted"','FailedRemoteTagV0501 = "workbench-v0.50.1-accepted"')){if(-not $pub.Contains($m,[StringComparison]::Ordinal)){throw "v0.51 publication marker missing: $m"}}
+          Write-Host 'V051_STATIC_PASS build=True buttons=4 dirPrefixOnly=True exactFileSiblingBrowse=False rootBrowse=False recursive=False tools=2'
+
+      - name: Prove exact accepted v0.50.2 builds v0.51 overlay with no restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=(Get-Location).Path
+          $overlay=Join-Path $env:RUNNER_TEMP 'overlay-v051'
+          if(Test-Path $overlay){Remove-Item $overlay -Recurse -Force}
+          git worktree add --detach $overlay 632ddbb73e8d70b485f02d21f772674d429adf8c
+          if($LASTEXITCODE -ne 0){throw 'accepted v0.50.2 predecessor unavailable'}
+          $files=@(
+            'PATCH-v0.51.md',
+            'LOCAL-APP-LIVE-BROWSE.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalAppReadLeaseV048Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V051.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV051AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV051Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV051Service.cs'
+          )
+          try {
+            Push-Location $overlay
+            dotnet restore Matawaka.Workbench.sln
+            if($LASTEXITCODE -ne 0){throw 'accepted v0.50.2 restore failed'}
+            Pop-Location
+            foreach($file in $files){
+              $src=Join-Path $candidate ($file-replace'/',[IO.Path]::DirectorySeparatorChar)
+              $dst=Join-Path $overlay ($file-replace'/',[IO.Path]::DirectorySeparatorChar)
+              New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+              Copy-Item $src $dst -Force
+            }
+            Push-Location $overlay
+            dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+            if($LASTEXITCODE -ne 0){throw 'v0.51 overlay --no-restore build failed'}
+            Pop-Location
+            Write-Host "V051_NO_RESTORE_PASS predecessor=v0.50.2 successorFiles=$($files.Count)"
+          } finally {
+            if((Get-Location).Path -eq $overlay){Pop-Location}
+            git worktree remove --force $overlay 2>$null
+          }
+
+      - name: Execute browse lease controls and official MCP 2.2.0 interoperability
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Join-Path $env:RUNNER_TEMP 'v051-probe';if(Test-Path $p){Remove-Item $p -Recurse -Force};New-Item -ItemType Directory -Path $p|Out-Null
+          $appProject=(Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path;$escaped=[Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+            <ItemGroup><ProjectReference Include="$escaped" /><PackageReference Include="ModelContextProtocol" Version="2.2.0" /></ItemGroup>
+          </Project>
+          "@ | Set-Content (Join-Path $p 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.Net;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+          using ModelContextProtocol.Client;
+          using ModelContextProtocol.Protocol;
+
+          static void ExpectRefusal(Func<Task> action, string role)
+          {
+              try { action().GetAwaiter().GetResult(); throw new Exception(role + " unexpectedly succeeded"); }
+              catch (InvalidDataException) { }
+          }
+
+          static string Hash(string path)
+          {
+              using var stream=File.OpenRead(path);
+              return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+          }
+
+          var workspace=Path.Combine(Path.GetTempPath(),"matawaka-v051-"+Guid.NewGuid().ToString("N"));
+          Directory.CreateDirectory(Path.Combine(workspace,"Workbench","artifacts"));
+          var appRoot=Path.Combine(workspace,"Apps","alpha");
+          var data=Path.Combine(appRoot,"data");var history=Path.Combine(data,"history");var many=Path.Combine(data,"many");
+          Directory.CreateDirectory(history);Directory.CreateDirectory(many);
+          File.WriteAllText(Path.Combine(appRoot,".matawaka-app.json"),JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema,"alpha","1.0.0")),new UTF8Encoding(false));
+          var statePath=Path.Combine(data,"state.json");File.WriteAllText(statePath,"{\"live\":\"browse-read\"}",new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(data,"other.txt"),"other",new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(history,"h1.txt"),"h1",new UTF8Encoding(false));
+          for(var i=0;i<260;i++) File.WriteAllText(Path.Combine(many,$"f{i:D3}.txt"),i.ToString(),new UTF8Encoding(false));
+
+          var leases=new LocalAppReadLeaseV048Service();
+          async Task<(LocalAppReadLeaseGrantV048 Grant,LocalAppReadLeasePreviewV048 Preview)> Create(string id,string scope,int perRead=65536,long total=262144,int calls=8)
+          {
+              var req=new LocalAppReadLeaseRequestV048(LocalAppReadLeaseV048Service.RequestSchema,id,"alpha",new[]{new LocalAppReadLeaseScopeV048("installed",scope)},perRead,total,calls,300);
+              var preview=leases.Preview(workspace,"alpha",req,default);var created=await leases.CreateAsync(workspace,"alpha",preview,false,default);return(created.Grant,preview);
+          }
+
+          var broad=await Create("lease:v051:broad","data/");
+          var first=await leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:data",broad.Grant.LeaseId,broad.Grant.Bearer,"alpha","installed","data",0,64),default);
+          if(first.Response.ReturnedEntries!=4||first.Response.Entries.Any(e=>e.RelativePath.Contains("h1.txt",StringComparison.Ordinal))||first.Response.RemainingCalls!=7||first.Response.RemainingBytes!=262144-first.Response.DisclosureBytes)throw new Exception("immediate-child list/accounting mismatch");
+          if(!first.Response.Entries.Any(e=>e.RelativePath=="data/history/"&&e.Kind=="directory")||!first.Response.Entries.Any(e=>e.RelativePath=="data/state.json"&&e.Kind=="file"))throw new Exception("expected list entries missing");
+          var nested=await leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:history",broad.Grant.LeaseId,broad.Grant.Bearer,"alpha","installed","data/history",0,64),default);
+          if(nested.Response.ReturnedEntries!=1||nested.Response.Entries[0].RelativePath!="data/history/h1.txt"||nested.Response.RemainingCalls!=6)throw new Exception("nested list failed");
+          var read=await leases.AuthorizeAndReadAsync(workspace,new LocalAppLeaseReadRequestV048(LocalAppReadLeaseV048Service.ReadRequestSchema,"read:v051:state",broad.Grant.LeaseId,broad.Grant.Bearer,"alpha","installed","data/state.json",0,1024,Hash(statePath)),default);
+          if(read.Response.RemainingCalls!=5||read.Response.RemainingBytes!=nested.Response.RemainingBytes-read.Response.ReturnedBytes)throw new Exception("browse/read shared accounting mismatch");
+          ExpectRefusal(()=>leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:root",broad.Grant.LeaseId,broad.Grant.Bearer,"alpha","installed",".",0,10),default).AsTask(),"root list");
+          ExpectRefusal(()=>leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:wrongbearer",broad.Grant.LeaseId,new string('0',64),"alpha","installed","data",0,10),default).AsTask(),"wrong bearer");
+          ExpectRefusal(()=>leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:wrongrole",broad.Grant.LeaseId,broad.Grant.Bearer,"alpha","source","data",0,10),default).AsTask(),"wrong role");
+
+          var exact=await Create("lease:v051:exact","data/state.json");
+          ExpectRefusal(()=>leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:exact",exact.Grant.LeaseId,exact.Grant.Bearer,"alpha","installed","data",0,10),default).AsTask(),"exact-file sibling list");
+
+          var paged=await Create("lease:v051:paged","data/many/");
+          var page1=await leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:page1",paged.Grant.LeaseId,paged.Grant.Bearer,"alpha","installed","data/many",0,256),default);
+          if(page1.Response.ReturnedEntries!=256||page1.Response.NextStartIndex!=256)throw new Exception("256-entry page bound mismatch");
+          var page2=await leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:page2",paged.Grant.LeaseId,paged.Grant.Bearer,"alpha","installed","data/many",256,256),default);
+          if(page2.Response.ReturnedEntries!=4||page2.Response.NextStartIndex is not null)throw new Exception("pagination tail mismatch");
+          ExpectRefusal(()=>leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:257",paged.Grant.LeaseId,paged.Grant.Bearer,"alpha","installed","data/many",0,257),default).AsTask(),"entry ceiling");
+
+          var tiny=await Create("lease:v051:tiny","data/",32,64,2);
+          ExpectRefusal(()=>leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:tiny",tiny.Grant.LeaseId,tiny.Grant.Bearer,"alpha","installed","data",0,1),default).AsTask(),"metadata byte ceiling");
+          var tinyState=leases.ListActive(workspace,"alpha").Single(x=>x.LeaseId==tiny.Grant.LeaseId);
+          if(tinyState.RemainingCalls!=2||tinyState.RemainingBytes!=64)throw new Exception("failed list consumed lease budget");
+
+          var revoked=await Create("lease:v051:revoke","data/");
+          await leases.RevokeAllActiveAsync(workspace,"alpha",default);
+          ExpectRefusal(()=>leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,"list:v051:revoked",revoked.Grant.LeaseId,revoked.Grant.Bearer,"alpha","installed","data",0,10),default).AsTask(),"revoked list");
+
+          // Fresh lease for the official MCP client path.
+          var mcpLease=await Create("lease:v051:mcp","data/",65536,262144,8);
+          var grantJson=LocalAppReadLeaseV048Service.SerializeGrant(mcpLease.Grant);
+          var adapter=new LocalAppMcpReadAdapterV049Service();var adapterPreview=adapter.PreviewFromGrantJson(workspace,"alpha",grantJson,default);var adapterGrant=await adapter.StartAsync(workspace,"alpha",adapterPreview,grantJson,default);
+          var facade=new PlainMcpOAuthDiscoveryCompatV0502Service();var facadeGrant=await facade.StartAsync("alpha",mcpLease.Grant.LeaseId,mcpLease.Grant.ExpiresAt,adapterGrant.EndpointUrl,default);
+          var facadeUri=new Uri(facadeGrant.EndpointUrl);using(var http=new HttpClient()){
+              var root=await http.GetAsync($"http://127.0.0.1:{facadeUri.Port}/.well-known/oauth-protected-resource");if(root.StatusCode!=HttpStatusCode.NotFound)throw new Exception("root PRMD regression");
+              var specific=await http.GetAsync($"http://127.0.0.1:{facadeUri.Port}/.well-known/oauth-protected-resource{facadeUri.AbsolutePath}");if(specific.StatusCode!=HttpStatusCode.NotFound)throw new Exception("path PRMD regression");
+          }
+          var transport=new HttpClientTransport(new HttpClientTransportOptions{Endpoint=facadeUri,TransportMode=HttpTransportMode.StreamableHttp,EnableStandaloneGetStream=false});
+          await using var client=await McpClient.CreateAsync(transport,new McpClientOptions{ClientInfo=new Implementation{Name="Matawaka-v0.51-qualification",Version="1.0"}});
+          var tools=await client.ListToolsAsync();var names=tools.Select(t=>t.Name).OrderBy(x=>x,StringComparer.Ordinal).ToArray();
+          if(names.Length!=2||names[0]!="list_local_app_entries"||names[1]!="read_local_app_chunk")throw new Exception("official client two-tool surface mismatch");
+          var listed=await client.CallToolAsync("list_local_app_entries",new Dictionary<string,object?>{{"role","installed"},{"relativeDirectory","data"},{"startIndex",0},{"maxEntries",64}});
+          if(listed.IsError is true)throw new Exception("official client browse unexpectedly refused");
+          var listText=listed.Content.OfType<TextContentBlock>().Single().Text;using(var doc=JsonDocument.Parse(listText)){if(doc.RootElement.GetProperty("Schema").GetString()!=LocalAppMcpReadAdapterV049Service.ListResponseSchemaV051||!doc.RootElement.GetProperty("Entries").EnumerateArray().Any(e=>e.GetProperty("RelativePath").GetString()=="data/state.json"))throw new Exception("official MCP browse response mismatch");}
+          var readTool=await client.CallToolAsync("read_local_app_chunk",new Dictionary<string,object?>{{"role","installed"},{"relativePath","data/state.json"},{"offset",0L},{"maxBytes",1024},{"expectedFileSha256",Hash(statePath)}});
+          if(readTool.IsError is true||!readTool.Content.OfType<TextContentBlock>().Single().Text.Contains("browse-read",StringComparison.Ordinal))throw new Exception("official MCP read regression");
+          await facade.StopAsync(default);await adapter.StopAsync(workspace,default);await leases.RevokeAllActiveAsync(workspace,"alpha",default);
+
+          Console.WriteLine("V051_BROWSE_PASS immediateOnly=True nested=True exactFileSibling=False pagination=256 byteAccounting=True failedAtomic=True tools=2 officialMcp=True prmd404=True");
+          '@ | Set-Content (Join-Path $p 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $p 'Probe.csproj') -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51 browse/MCP integration failed'}
+
+      - name: Remote prepublication boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$remote='https://github.com/Matawaka/workbench.git'
+          $main=((git ls-remote $remote refs/heads/main)-split '\s+')[0].ToLowerInvariant();if($main -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved: $main"}
+          $baseCommit=(git rev-list -n 1 workbench-v0.50.2-accepted).Trim().ToLowerInvariant();if($baseCommit -ne $main){throw 'accepted v0.50.2 base tag peel mismatch'}
+          foreach($tag in @('workbench-v0.49-accepted','workbench-v0.50-accepted','workbench-v0.50.1-accepted','workbench-v0.51-accepted')){if(@(git ls-remote $remote "refs/tags/$tag").Count -ne 0){throw "unexpected remote tag: $tag"}}
+          Write-Host 'V051_REMOTE_PASS main=v0.50.2 failedTagsAbsent=True targetAbsent=True'
+
+      - name: Package source-only v0.51 candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files=@(
+            'PATCH-v0.51.md',
+            'LOCAL-APP-LIVE-BROWSE.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalAppReadLeaseV048Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpReadAdapterV049Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V051.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV051AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV051Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV051Service.cs'
+          )
+          $root=Join-Path $env:RUNNER_TEMP 'v051-package';$payload=Join-Path $root 'payload';if(Test-Path $root){Remove-Item $root -Recurse -Force};New-Item -ItemType Directory -Path $payload -Force|Out-Null
+          $mf=@();foreach($file in $files){$d=Join-Path $payload ($file-replace'/',[IO.Path]::DirectorySeparatorChar);New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($d)) -Force|Out-Null;Copy-Item $file $d;$mf+=[ordered]@{Path=$file;Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()}}
+          $m=[ordered]@{Schema='matawaka.workbench-update-package/v0.10';PackageVersion='0.10';TargetVersion='0.51.0';PredecessorTag='workbench-v0.50.2-accepted';PredecessorCommit='632ddbb73e8d70b485f02d21f772674d429adf8c';TargetTag='workbench-v0.51-accepted';PayloadRoot='payload/';Files=$mf;NetworkAccessRequested=$false;CatalogMutationRequested=$false;AgentExecuteRequested=$false;ArbitraryProcessExecutionRequested=$false;InstallerScriptExecutionRequested=$false;NonEffects=@('source only','no private app bytes','no runtime lease/bearer/tunnel credentials','no new OAuth/tunnel authority','browse remains directory-prefix lease-gated')}
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'),($m|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.51-live-app-browse-candidate.zip';if(Test-Path $zip){Remove-Item $zip -Force};[IO.Compression.ZipFile]::CreateFromDirectory($root,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();$size=(Get-Item $zip).Length
+          $entries=[IO.Compression.ZipFile]::OpenRead($zip);try{$names=@($entries.Entries|% FullName);if($names.Count -ne ($files.Count+1)){throw "unexpected zip entries: $($names.Count)"};if($names -contains '.github/workflows/workbench-v0.51-candidate.yml'){throw 'workflow leaked into package'}}finally{$entries.Dispose()}
+          "PACKAGE_SHA256=$sha"|Out-File $env:GITHUB_ENV -Append;"PACKAGE_SIZE=$size"|Out-File $env:GITHUB_ENV -Append;"PACKAGE_PATH=$zip"|Out-File $env:GITHUB_ENV -Append
+          Write-Host "V051_PACKAGE_PASS sha256=$sha bytes=$size payloadFiles=$($files.Count) authorityFlags=false"
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.51-live-app-browse-candidate
+          path: ${{ env.PACKAGE_PATH }}
+          if-no-files-found: error
