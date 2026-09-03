@@ -1,0 +1,146 @@
+name: Workbench v0.51.2 exact End Read Session candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.2-end-read-session]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static closure-authority checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.2 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.2 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV0512Routing()', [StringComparison]::Ordinal)){throw 'v0.51.2 startup routing missing'}
+
+          $main=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0512.cs' -Raw
+          foreach($m in @('EndReadSessionV0512Async','Exact bound LeaseId','StopAsync','StopBestEffortAsync','RevokeExactAsync','SiblingLeasesRevoked','READ_SESSION_ENDED_EXACT_LEASE_REVOKED','END_READ_SESSION_PARTIAL','AutomaticRetryPerformed = false','ClearV050McpRuntimeView')){
+            if(-not $main.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.2 end-session marker missing: $m"}
+          }
+          $end=[regex]::Match($main,'private async Task EndReadSessionV0512Async[\s\S]*?private void ShowEndReadSessionPartialV0512').Value
+          if([string]::IsNullOrWhiteSpace($end)){throw 'EndReadSession method block missing'}
+          if($end.Contains('RevokeAllActiveAsync',[StringComparison]::Ordinal)){throw 'End Read Session must not revoke all leases'}
+          if($end.Contains('StartSecureMcpTunnel',[StringComparison]::Ordinal)){throw 'End Read Session must not gain tunnel-start authority'}
+          if($end.IndexOf('.StopAsync(',[StringComparison]::Ordinal) -gt $end.IndexOf('RevokeExactAsync',[StringComparison]::Ordinal)){throw 'exact revoke must not precede MCP stop'}
+
+          $closure=Get-Content 'src/Matawaka.Workbench.App/LocalAppReadLeaseExactRevokeV0512Service.cs' -Raw
+          foreach($m in @('SiblingLeasesRevoked','SiblingLeasesRevoked,','0,','READ_SESSION_EXACT_LEASE_REVOKED','no sibling lease enumeration or revocation','no read/list call or byte budget consumption')){
+            if(-not $closure.Contains($m,[StringComparison]::Ordinal)){throw "exact closure marker missing: $m"}
+          }
+          if($closure.Contains('EnumerateFiles(',[StringComparison]::Ordinal) -or $closure.Contains('ListActive(',[StringComparison]::Ordinal)){throw 'exact closure service must not enumerate sibling leases'}
+
+          $dialog=Get-Content 'src/Matawaka.Workbench.App/LocalAppsActionDialogV0512.cs' -Raw
+          if(-not $dialog.Contains('End Read Session — stop MCP + revoke exact bound lease',[StringComparison]::Ordinal)){throw 'v0.51.2 closure affordance missing'}
+          $xaml=Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface=[regex]::Match($xaml,'<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if([regex]::Matches($surface,'<Button\b').Count -ne 4){throw 'top-level four-button surface changed'}
+          Write-Host 'V0512_STATIC_PASS exactLease=True siblingEnumeration=False stopBeforeRevoke=True tunnelSeparate=True buttons=4'
+
+      - name: Execute exact closure with sibling lease hostile control
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Join-Path $env:RUNNER_TEMP 'v0512-probe'
+          if(Test-Path $p){Remove-Item $p -Recurse -Force}
+          New-Item -ItemType Directory -Path $p|Out-Null
+          $appProject=(Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped=[Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup><ItemGroup><ProjectReference Include="$escaped" /></ItemGroup></Project>
+          "@ | Set-Content (Join-Path $p 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.IO;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          static async Task ExpectRefused(Func<Task> action,string role)
+          {
+              try{await action();throw new Exception(role+" unexpectedly succeeded");}
+              catch(InvalidDataException){}
+          }
+
+          var workspace=Path.Combine(Path.GetTempPath(),"matawaka-v0512-"+Guid.NewGuid().ToString("N"));
+          Directory.CreateDirectory(Path.Combine(workspace,"Workbench","artifacts"));
+          var appRoot=Path.Combine(workspace,"Apps","alpha");
+          var data=Path.Combine(appRoot,"data");
+          Directory.CreateDirectory(data);
+          File.WriteAllText(Path.Combine(appRoot,".matawaka-app.json"),JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema,"alpha","1.0.0")),new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(data,"state.json"),"{\"closure\":true}",new UTF8Encoding(false));
+
+          var leases=new LocalAppReadLeaseV048Service();
+          async Task<LocalAppReadLeaseGrantV048> Create(string requestId)
+          {
+              var req=new LocalAppReadLeaseRequestV048(LocalAppReadLeaseV048Service.RequestSchema,requestId,"alpha",new[]{new LocalAppReadLeaseScopeV048("installed","data/")},65536,262144,8,300);
+              var preview=leases.Preview(workspace,"alpha",req,default);
+              return (await leases.CreateAsync(workspace,"alpha",preview,false,default)).Grant;
+          }
+
+          var bound=await Create("lease:v0512:bound");
+          var sibling=await Create("lease:v0512:sibling");
+          var before=leases.ListActive(workspace,"alpha");
+          if(before.Count!=2)throw new Exception("expected two active leases before closure");
+          var siblingBefore=before.Single(x=>x.LeaseId==sibling.LeaseId);
+
+          var adapter=new LocalAppMcpReadAdapterV049Service();
+          var boundJson=LocalAppReadLeaseV048Service.SerializeGrant(bound);
+          var ap=adapter.PreviewFromGrantJson(workspace,"alpha",boundJson,default);
+          var ag=await adapter.StartAsync(workspace,"alpha",ap,boundJson,default);
+          if(!adapter.IsActiveFor("alpha")||ag.LeaseId!=bound.LeaseId||ag.Tools.Count!=2)throw new Exception("bound MCP adapter did not start correctly");
+          var stopped=await adapter.StopAsync(workspace,default);
+          if(!stopped.Receipt.ListenerStopped||!stopped.Receipt.InMemoryBearerReferenceCleared||adapter.IsActiveFor("alpha"))throw new Exception("adapter stop boundary failed");
+
+          var closure=new LocalAppReadLeaseExactRevokeV0512Service();
+          var ended=await closure.RevokeExactAsync(workspace,"alpha",bound.LeaseId,default);
+          if(!ended.Receipt.ExactLeaseRevoked||ended.Receipt.SiblingLeasesRevoked!=0||ended.Receipt.LeaseId!=bound.LeaseId)throw new Exception("exact closure receipt mismatch");
+          if(ended.Receipt.RemainingCalls!=8||ended.Receipt.RemainingBytes!=262144)throw new Exception("exact closure consumed lease budget");
+
+          var after=leases.ListActive(workspace,"alpha");
+          if(after.Count!=1||after[0].LeaseId!=sibling.LeaseId)throw new Exception("sibling lease did not remain the sole active lease");
+          if(after[0].RemainingCalls!=siblingBefore.RemainingCalls||after[0].RemainingBytes!=siblingBefore.RemainingBytes||after[0].StateRevision!=siblingBefore.StateRevision)throw new Exception("sibling lease state changed during exact closure");
+
+          await ExpectRefused(async()=>{await leases.AuthorizeAndReadAsync(workspace,new LocalAppLeaseReadRequestV048(LocalAppReadLeaseV048Service.ReadRequestSchema,"read:v0512:revoked",bound.LeaseId,bound.Bearer,"alpha","installed","data/state.json",0,128,null),default);},"revoked bound lease read");
+          var siblingRead=await leases.AuthorizeAndReadAsync(workspace,new LocalAppLeaseReadRequestV048(LocalAppReadLeaseV048Service.ReadRequestSchema,"read:v0512:sibling",sibling.LeaseId,sibling.Bearer,"alpha","installed","data/state.json",0,128,null),default);
+          if(siblingRead.Response.ReturnedBytes<=0||siblingRead.Response.RemainingCalls!=7)throw new Exception("sibling lease no longer reads independently");
+
+          var again=await closure.RevokeExactAsync(workspace,"alpha",bound.LeaseId,default);
+          if(!again.Receipt.WasAlreadyRevoked||!again.Receipt.ExactLeaseRevoked||again.Receipt.StateRevisionAfter!=again.Receipt.StateRevisionBefore)throw new Exception("idempotent exact closure evidence mismatch");
+
+          Console.WriteLine($"V0512_RUNTIME_PASS bound={bound.LeaseId} sibling={sibling.LeaseId} siblingRevokes={ended.Receipt.SiblingLeasesRevoked} boundReadRefused=True siblingRead=True");
+          '@ | Set-Content (Join-Path $p 'Program.cs') -Encoding UTF8
+          Push-Location $p
+          try {
+            dotnet restore Probe.csproj
+            if($LASTEXITCODE -ne 0){throw 'v0.51.2 probe restore failed'}
+            dotnet run --project Probe.csproj -c Release --no-restore
+            if($LASTEXITCODE -ne 0){throw 'v0.51.2 exact closure runtime probe failed'}
+          } finally { Pop-Location }
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0512_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
