@@ -1,0 +1,233 @@
+name: Workbench v0.50.1 readiness diagnostics candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.50.1-readiness-diagnostics]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static authority checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'Release build failed'}
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV0501Routing()', [StringComparison]::Ordinal)){throw 'v0.50.1 routing missing'}
+          $svc=Get-Content 'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelV0501Service.cs' -Raw
+          foreach($m in @('ReadinessTimeout = TimeSpan.FromSeconds(90)','deadline = hardDeadline <= leaseDeadline ? hardDeadline : leaseDeadline','/healthz','/readyz','ReadinessBodyLimitBytes = 4096','ReadinessBodyLimitChars = 512','SECURE_MCP_TUNNEL_READINESS_FAILED_CHILD_STOPPED','TryKill(process)')){if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "missing v0.50.1 marker: $m"}}
+          foreach($m in @('UseShellExecute = true','IPAddress.Any','ArgumentList.Add("admin")','ArgumentList.Add("init")','ArgumentList.Add("runtimes")')){if($svc.Contains($m,[StringComparison]::Ordinal)){throw "forbidden authority marker: $m"}}
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0501Service.cs' -Raw
+          if(-not $cp.Contains('bd7b0c4cb69deaee2f575961b9f277e7168485c3')){throw 'local failed-v0.50 predecessor binding missing'}
+          $pub=Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0501Service.cs' -Raw
+          foreach($m in @('ExpectedRemoteBase = "1e0453ccf047bd948e76b577c2395a7d0009ff7a"','FailedRemoteTag = "workbench-v0.50-accepted"','AcceptedTag = "workbench-v0.50.1-accepted"')){if(-not $pub.Contains($m,[StringComparison]::Ordinal)){throw "publication boundary missing: $m"}}
+          Write-Host 'V0501_STATIC_PASS build=True readinessBounded=True redactedEvidence=True authorityWidening=False'
+
+      - name: Reconstruct local v0.50 product tree then overlay v0.50.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=(Get-Location).Path
+          $overlay=Join-Path $env:RUNNER_TEMP 'overlay-v0501'
+          if(Test-Path $overlay){Remove-Item $overlay -Recurse -Force}
+          git worktree add --detach $overlay 1e0453ccf047bd948e76b577c2395a7d0009ff7a
+          if($LASTEXITCODE -ne 0){throw 'accepted v0.49.1 predecessor unavailable'}
+          $v050=@(
+            'PATCH-v0.50.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelV050Service.cs',
+            'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V050.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV050AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV050Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV050Service.cs'
+          )
+          $v0501=@(
+            'PATCH-v0.50.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelV0501Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0501.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0501AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0501Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0501Service.cs'
+          )
+          try {
+            Push-Location $overlay
+            dotnet restore Matawaka.Workbench.sln
+            if($LASTEXITCODE -ne 0){throw 'accepted predecessor restore failed'}
+            Pop-Location
+            foreach($file in $v050){
+              $dst=Join-Path $overlay ($file-replace'/',[IO.Path]::DirectorySeparatorChar)
+              New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+              $text=git show "993200f753a1b399c1e8724e8e41927127394d02`:$file"
+              if($LASTEXITCODE -ne 0){throw "cannot reconstruct v0.50 file: $file"}
+              [IO.File]::WriteAllText($dst,($text -join "`n")+"`n",[Text.UTF8Encoding]::new($false))
+            }
+            foreach($file in $v0501){
+              $src=Join-Path $candidate ($file-replace'/',[IO.Path]::DirectorySeparatorChar)
+              $dst=Join-Path $overlay ($file-replace'/',[IO.Path]::DirectorySeparatorChar)
+              New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+              Copy-Item $src $dst -Force
+            }
+            Push-Location $overlay
+            dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+            if($LASTEXITCODE -ne 0){throw 'v0.50.1 reconstructed overlay --no-restore build failed'}
+            Pop-Location
+            Write-Host "V0501_NO_RESTORE_PASS remoteBase=v0.49.1 reconstructedLocalV050Files=$($v050.Count) successorFiles=$($v0501.Count)"
+          } finally {
+            if((Get-Location).Path -eq $overlay){Pop-Location}
+            git worktree remove --force $overlay 2>$null
+          }
+
+      - name: Bounded readiness diagnostics fixture integration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $f=Join-Path $env:RUNNER_TEMP 'v0501-fixture';$fo=Join-Path $f 'out'
+          New-Item -ItemType Directory -Path $f -Force|Out-Null
+          @'
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>tunnel-client-runtime</AssemblyName><UseAppHost>true</UseAppHost></PropertyGroup></Project>
+          '@ | Set-Content (Join-Path $f 'Fixture.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Net;
+          using System.Net.Sockets;
+          using System.Text;
+          using System.Threading;
+          if(args.Length==1&&args[0]=="--version"){Console.WriteLine("0.0.14 flavor=runtime");return;}
+          if(args.Length==0||args[0]!="run"){Environment.ExitCode=2;return;}
+          var key=Environment.GetEnvironmentVariable("CONTROL_PLANE_API_KEY")??"";
+          var tunnel=Environment.GetEnvironmentVariable("CONTROL_PLANE_TUNNEL_ID")??"";
+          var mcp=Environment.GetEnvironmentVariable("MCP_SERVER_URL")??"";
+          var mode=Environment.GetEnvironmentVariable("V0501_FIXTURE_MODE")??"ready";
+          if(string.IsNullOrWhiteSpace(key)||string.IsNullOrWhiteSpace(tunnel)||string.IsNullOrWhiteSpace(mcp)){Environment.ExitCode=3;return;}
+          var h=Array.IndexOf(args,"--health.url-file");if(h<0||h+1>=args.Length){Environment.ExitCode=4;return;}
+          if(mode=="no-health-exit"){await Task.Delay(650);Environment.ExitCode=7;return;}
+          var l=new TcpListener(IPAddress.Loopback,0);l.Start();var ep=(IPEndPoint)l.LocalEndpoint;
+          File.WriteAllText(args[h+1],$"http://127.0.0.1:{ep.Port}",new UTF8Encoding(false));
+          using var cts=mode=="pending-exit"?new CancellationTokenSource(1600):new CancellationTokenSource();
+          try{
+            while(true){
+              using var c=await l.AcceptTcpClientAsync(cts.Token);using var s=c.GetStream();var b=new byte[4096];var n=await s.ReadAsync(b,cts.Token);if(n<=0)continue;
+              var t=Encoding.ASCII.GetString(b,0,n);var first=t.Split("\r\n",StringSplitOptions.None)[0];
+              var health=first.StartsWith("GET /healthz ",StringComparison.Ordinal);var ready=first.StartsWith("GET /readyz ",StringComparison.Ordinal);
+              var ok=health||(ready&&mode=="ready");
+              var body=health?"live":ready&&mode=="ready"?"ready":$"oauth discovery pending credential={key} endpoint={mcp}";
+              var status=ok?"200 OK":ready?"503 Service Unavailable":"404 Not Found";
+              var bytes=Encoding.UTF8.GetBytes(body);var head=Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
+              await s.WriteAsync(head,cts.Token);await s.WriteAsync(bytes,cts.Token);
+            }
+          }catch(OperationCanceledException) when(cts.IsCancellationRequested){}
+          '@ | Set-Content (Join-Path $f 'Program.cs') -Encoding UTF8
+          dotnet publish (Join-Path $f 'Fixture.csproj') -c Release -o $fo
+          if($LASTEXITCODE -ne 0){throw 'fixture build failed'}
+
+          $p=Join-Path $env:RUNNER_TEMP 'v0501-probe';New-Item -ItemType Directory -Path $p -Force|Out-Null
+          $appProject=(Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path;$escaped=[Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable></PropertyGroup><ItemGroup><ProjectReference Include="$escaped" /></ItemGroup></Project>
+          "@ | Set-Content (Join-Path $p 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Text.Json;
+          using System.Threading.Tasks;
+          using Matawaka.Workbench.App;
+          var w=Path.Combine(Path.GetTempPath(),"matawaka-v0501-"+Guid.NewGuid().ToString("N"));
+          var tools=Path.Combine(w,"Tools","OpenAI","tunnel-client");Directory.CreateDirectory(tools);
+          foreach(var f in Directory.GetFiles(Environment.GetEnvironmentVariable("V0501_FIXTURE_OUT")!)){File.Copy(f,Path.Combine(tools,Path.GetFileName(f)),true);}
+          var tunnel="tunnel_0123456789abcdef0123456789abcdef";
+          var secret="runtime-secret-value-for-qualification-0123456789";
+          var token=new string('a',64);var local=$"http://127.0.0.1:31337/mcp/{token}";
+          async Task<OpenAiSecureMcpTunnelPreviewV050> Preview(OpenAiSecureMcpTunnelV0501Service svc,double seconds,string lease)=>await svc.PreviewAsync(w,"alpha",lease,DateTimeOffset.Now.AddSeconds(seconds),tunnel,secret,true,default);
+          Environment.SetEnvironmentVariable("V0501_FIXTURE_MODE","ready");
+          var readySvc=new OpenAiSecureMcpTunnelV0501Service();var ready=await readySvc.StartAsync(w,await Preview(readySvc,30,"lease-ready"),secret,local,default);if(!ready.Ready||!readySvc.IsActiveFor("alpha"))throw new Exception("ready path failed");
+          var sr=await readySvc.WriteStartReceiptAsync(w,ready,default);var sj=File.ReadAllText(sr.ReceiptPath);if(sj.Contains(secret)||sj.Contains(token))throw new Exception("success receipt secret leak");await readySvc.StopAsync(w,default);
+
+          Environment.SetEnvironmentVariable("V0501_FIXTURE_MODE","pending-exit");
+          var pendingSvc=new OpenAiSecureMcpTunnelV0501Service();try{await pendingSvc.StartAsync(w,await Preview(pendingSvc,30,"lease-pending"),secret,local,default);throw new Exception("pending unexpectedly ready");}catch(InvalidDataException){}
+          var failures=Directory.GetFiles(Path.Combine(w,"Workbench","artifacts","secure-mcp-tunnel"),"*readiness-failure*",SearchOption.TopDirectoryOnly).OrderBy(File.GetLastWriteTimeUtc).ToArray();if(failures.Length==0)throw new Exception("pending failure receipt missing");
+          var pj=File.ReadAllText(failures[^1]);if(!pj.Contains("503")||!pj.Contains("oauth discovery pending")||pj.Contains(secret)||pj.Contains(token)||pendingSvc.IsActiveFor("alpha"))throw new Exception("pending diagnostics/redaction failed");
+
+          Environment.SetEnvironmentVariable("V0501_FIXTURE_MODE","no-health-exit");
+          var noHealthSvc=new OpenAiSecureMcpTunnelV0501Service();try{await noHealthSvc.StartAsync(w,await Preview(noHealthSvc,30,"lease-no-health"),secret,local,default);throw new Exception("no-health unexpectedly ready");}catch(InvalidDataException){}
+          var nj=File.ReadAllText(Directory.GetFiles(Path.Combine(w,"Workbench","artifacts","secure-mcp-tunnel"),"*readiness-failure*",SearchOption.TopDirectoryOnly).OrderBy(File.GetLastWriteTimeUtc).Last());if(!nj.Contains("child-exited-before-health-surface"))throw new Exception("no-health stage missing");
+
+          Environment.SetEnvironmentVariable("V0501_FIXTURE_MODE","lease-stall");
+          var leaseSvc=new OpenAiSecureMcpTunnelV0501Service();try{await leaseSvc.StartAsync(w,await Preview(leaseSvc,2.2,"lease-bound"),secret,local,default);throw new Exception("lease stall unexpectedly ready");}catch(InvalidDataException){}
+          var lj=File.ReadAllText(Directory.GetFiles(Path.Combine(w,"Workbench","artifacts","secure-mcp-tunnel"),"*readiness-failure*",SearchOption.TopDirectoryOnly).OrderBy(File.GetLastWriteTimeUtc).Last());if(!lj.Contains("\"LeaseBoundDeadline\": true")||!lj.Contains("lease-deadline-readyz-not-ready")||leaseSvc.IsActiveFor("alpha"))throw new Exception("lease-bounded deadline failed");
+          var red=OpenAiSecureMcpTunnelV0501Service.RedactDiagnosticForQualification($"value={secret}; endpoint={local}; Bearer opaque-token-value",secret,local);if(red.Contains(secret)||red.Contains(token)||red.Contains("opaque-token-value"))throw new Exception("direct redaction failed");
+          Directory.Delete(w,true);Console.WriteLine("V0501_FIXTURE_PASS ready=True pending503=True noHealth=True leaseBound=True redacted=True childStopped=True");
+          '@ | Set-Content (Join-Path $p 'Program.cs') -Encoding UTF8
+          $env:V0501_FIXTURE_OUT=$fo
+          dotnet run --project (Join-Path $p 'Probe.csproj') -c Release
+          if($LASTEXITCODE -ne 0){throw 'readiness fixture integration failed'}
+
+      - name: Remote prepublication boundary
+        shell: pwsh
+        run: |
+          $remote='https://github.com/Matawaka/workbench.git'
+          $main=((git ls-remote $remote refs/heads/main)-split '\s+')[0].ToLowerInvariant()
+          if($main -ne '1e0453ccf047bd948e76b577c2395a7d0009ff7a'){throw "remote main moved: $main"}
+          $base=@(git ls-remote $remote refs/tags/workbench-v0.49.1-accepted refs/tags/workbench-v0.49.1-accepted^{} )
+          if(-not (($base -join "`n").Contains('1e0453ccf047bd948e76b577c2395a7d0009ff7a'))){throw 'remote v0.49.1 accepted tag moved'}
+          if(@(git ls-remote $remote refs/tags/workbench-v0.49-accepted).Count -ne 0){throw 'failed v0.49 tag exists remotely'}
+          if(@(git ls-remote $remote refs/tags/workbench-v0.50-accepted).Count -ne 0){throw 'failed v0.50 tag exists remotely'}
+          if(@(git ls-remote $remote refs/tags/workbench-v0.50.1-accepted).Count -ne 0){throw 'target v0.50.1 tag already exists'}
+          Write-Host 'V0501_REMOTE_PASS main=v0.49.1 failedV049Absent=True failedV050Absent=True targetAbsent=True'
+
+      - name: Package source-only v0.50.1 candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $files=@(
+            'PATCH-v0.50.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/OpenAiSecureMcpTunnelV0501Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0501.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0501AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0501Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0501Service.cs'
+          )
+          $root=Join-Path $env:RUNNER_TEMP 'v0501-package';$payload=Join-Path $root 'payload';if(Test-Path $root){Remove-Item $root -Recurse -Force};New-Item -ItemType Directory -Path $payload -Force|Out-Null
+          $mf=@();foreach($file in $files){$d=Join-Path $payload ($file-replace'/',[IO.Path]::DirectorySeparatorChar);New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($d)) -Force|Out-Null;Copy-Item $file $d;$mf+=[ordered]@{Path=$file;Sha256=(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()}}
+          $m=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10';PackageVersion='0.10';TargetVersion='0.50.1';
+            PredecessorTag='workbench-v0.50-accepted';PredecessorCommit='bd7b0c4cb69deaee2f575961b9f277e7168485c3';TargetTag='workbench-v0.50.1-accepted';PayloadRoot='payload/';Files=$mf;
+            NetworkAccessRequested=$false;CatalogMutationRequested=$false;AgentExecuteRequested=$false;ArbitraryProcessExecutionRequested=$false;InstallerScriptExecutionRequested=$false;
+            NonEffects=@('source only','failed v0.50 remains local predecessor evidence','external tunnel-client excluded','credentials/private bytes/readiness state excluded','no automatic tunnel or ChatGPT configuration')
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'workbench-update-manifest.json'),($m|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.50.1-readiness-diagnostics-candidate.zip';if(Test-Path $zip){Remove-Item $zip -Force};[IO.Compression.ZipFile]::CreateFromDirectory($root,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();$size=(Get-Item $zip).Length
+          $entries=[IO.Compression.ZipFile]::OpenRead($zip);try{$names=@($entries.Entries|% FullName);if($names.Count -ne ($files.Count+1)){throw "unexpected zip entries: $($names.Count)"};if($names -contains '.github/workflows/workbench-v0.50.1-candidate.yml'){throw 'workflow leaked into package'}}finally{$entries.Dispose()}
+          "PACKAGE_SHA256=$sha"|Out-File $env:GITHUB_ENV -Append;"PACKAGE_SIZE=$size"|Out-File $env:GITHUB_ENV -Append;"PACKAGE_PATH=$zip"|Out-File $env:GITHUB_ENV -Append
+          Write-Host "V0501_PACKAGE_PASS sha256=$sha bytes=$size payloadFiles=$($files.Count) authorityFlags=false"
+
+      - name: Upload candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.50.1-readiness-diagnostics-candidate
+          path: ${{ env.PACKAGE_PATH }}
+          if-no-files-found: error
