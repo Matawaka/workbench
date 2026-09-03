@@ -190,12 +190,15 @@ jobs:
           $remote='https://github.com/Matawaka/workbench.git'
           $main=((git ls-remote $remote refs/heads/main)-split '\s+')[0].ToLowerInvariant()
           if($main -ne '1e0453ccf047bd948e76b577c2395a7d0009ff7a'){throw "remote main moved: $main"}
-          $base=@(git ls-remote $remote refs/tags/workbench-v0.49.1-accepted refs/tags/workbench-v0.49.1-accepted^{} )
-          if(-not (($base -join "`n").Contains('1e0453ccf047bd948e76b577c2395a7d0009ff7a'))){throw 'remote v0.49.1 accepted tag moved'}
+          $remoteBaseTag=((git ls-remote $remote refs/tags/workbench-v0.49.1-accepted)-split '\s+')[0].ToLowerInvariant()
+          $localBaseTagObject=(git rev-parse workbench-v0.49.1-accepted).Trim().ToLowerInvariant()
+          $localBaseTagCommit=(git rev-list -n 1 workbench-v0.49.1-accepted).Trim().ToLowerInvariant()
+          if($remoteBaseTag -ne $localBaseTagObject){throw "remote v0.49.1 tag object moved: $remoteBaseTag"}
+          if($localBaseTagCommit -ne '1e0453ccf047bd948e76b577c2395a7d0009ff7a'){throw "v0.49.1 tag no longer peels to accepted base: $localBaseTagCommit"}
           if(@(git ls-remote $remote refs/tags/workbench-v0.49-accepted).Count -ne 0){throw 'failed v0.49 tag exists remotely'}
           if(@(git ls-remote $remote refs/tags/workbench-v0.50-accepted).Count -ne 0){throw 'failed v0.50 tag exists remotely'}
           if(@(git ls-remote $remote refs/tags/workbench-v0.50.1-accepted).Count -ne 0){throw 'target v0.50.1 tag already exists'}
-          Write-Host 'V0501_REMOTE_PASS main=v0.49.1 failedV049Absent=True failedV050Absent=True targetAbsent=True'
+          Write-Host 'V0501_REMOTE_PASS main=v0.49.1 baseTagExact=True failedV049Absent=True failedV050Absent=True targetAbsent=True'
 
       - name: Package source-only v0.50.1 candidate
         shell: pwsh
