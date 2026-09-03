@@ -1,0 +1,110 @@
+name: Workbench v0.51 hostile browse qualification
+
+on:
+  push:
+    branches: [feat/workbench-v0.51-live-app-browse]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hostile-browse:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Execute traversal reparse and fixed disclosure ceiling probes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Join-Path $env:RUNNER_TEMP 'v051-hostile-probe'
+          if(Test-Path $p){Remove-Item $p -Recurse -Force}
+          New-Item -ItemType Directory -Path $p|Out-Null
+          $appProject=(Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped=[Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup><ItemGroup><ProjectReference Include="$escaped" /></ItemGroup></Project>
+          "@ | Set-Content (Join-Path $p 'Probe.csproj') -Encoding UTF8
+          @'
+          using System;
+          using System.Collections.Generic;
+          using System.Diagnostics;
+          using System.IO;
+          using System.Linq;
+          using System.Text;
+          using System.Text.Json;
+          using System.Threading;
+          using System.Threading.Tasks;
+          using Matawaka.Workbench.App;
+
+          static async Task ExpectRefusal(Func<Task> action,string label)
+          {
+              try { await action(); throw new Exception(label+" unexpectedly succeeded"); }
+              catch(InvalidDataException) { }
+          }
+
+          var workspace=Path.Combine(Path.GetTempPath(),"matawaka-v051-hostile-"+Guid.NewGuid().ToString("N"));
+          Directory.CreateDirectory(Path.Combine(workspace,"Workbench","artifacts"));
+          var appRoot=Path.Combine(workspace,"Apps","alpha");
+          var data=Path.Combine(appRoot,"data");
+          var huge=Path.Combine(data,"huge");
+          Directory.CreateDirectory(huge);
+          File.WriteAllText(Path.Combine(appRoot,".matawaka-app.json"),JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema,"alpha","1.0.0")),new UTF8Encoding(false));
+          File.WriteAllText(Path.Combine(data,"state.json"),"{}",new UTF8Encoding(false));
+
+          var leases=new LocalAppReadLeaseV048Service();
+          async Task<LocalAppReadLeaseGrantV048> Create(string requestId,string scope,int perRead=65536,long total=262144,int calls=4)
+          {
+              var req=new LocalAppReadLeaseRequestV048(LocalAppReadLeaseV048Service.RequestSchema,requestId,"alpha",new[]{new LocalAppReadLeaseScopeV048("installed",scope)},perRead,total,calls,300);
+              var preview=leases.Preview(workspace,"alpha",req,default);
+              return (await leases.CreateAsync(workspace,"alpha",preview,false,default)).Grant;
+          }
+          Task List(LocalAppReadLeaseGrantV048 grant,string requestId,string relativeDirectory,int maxEntries=64)
+              => leases.AuthorizeAndListAsync(workspace,new LocalAppLeaseListRequestV051(LocalAppReadLeaseV048Service.ListRequestSchemaV051,requestId,grant.LeaseId,grant.Bearer,"alpha","installed",relativeDirectory,0,maxEntries),default);
+
+          var broad=await Create("hostile:broad","data/");
+          await ExpectRefusal(()=>List(broad,"hostile:traversal","../data"),"traversal listing");
+          await ExpectRefusal(()=>List(broad,"hostile:outside","outside"),"out-of-scope listing");
+          var broadState=leases.ListActive(workspace,"alpha").Single(x=>x.LeaseId==broad.LeaseId);
+          if(broadState.RemainingCalls!=4||broadState.RemainingBytes!=262144)throw new Exception("refused traversal/out-of-scope listing consumed budget");
+
+          var outsideTarget=Path.Combine(workspace,"outside-junction-target");
+          Directory.CreateDirectory(outsideTarget);
+          File.WriteAllText(Path.Combine(outsideTarget,"secret.txt"),"outside",new UTF8Encoding(false));
+          var link=Path.Combine(data,"junction");
+          var psi=new ProcessStartInfo("cmd.exe"){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true};
+          psi.ArgumentList.Add("/c");psi.ArgumentList.Add("mklink");psi.ArgumentList.Add("/J");psi.ArgumentList.Add(link);psi.ArgumentList.Add(outsideTarget);
+          using(var proc=Process.Start(psi)??throw new Exception("junction process failed"))
+          {
+              await proc.WaitForExitAsync();
+              if(proc.ExitCode!=0)throw new Exception("junction creation failed: "+await proc.StandardError.ReadToEndAsync());
+          }
+          await ExpectRefusal(()=>List(broad,"hostile:reparse-child","data"),"reparse child listing");
+          broadState=leases.ListActive(workspace,"alpha").Single(x=>x.LeaseId==broad.LeaseId);
+          if(broadState.RemainingCalls!=4||broadState.RemainingBytes!=262144)throw new Exception("refused reparse-child listing consumed budget");
+          if(Directory.Exists(link))Directory.Delete(link);
+          if(Directory.Exists(link))throw new Exception("junction cleanup failed");
+
+          for(var i=0;i<256;i++)
+          {
+              var name=$"{i:D3}-"+new string('x',220)+".txt";
+              File.WriteAllText(Path.Combine(huge,name),"x",new UTF8Encoding(false));
+          }
+          var hugeLease=await Create("hostile:fixed64k","data/huge/",1048576,2097152,2);
+          await ExpectRefusal(()=>List(hugeLease,"hostile:fixed64k-list","data/huge",256),"fixed 64 KiB disclosure ceiling");
+          var hugeState=leases.ListActive(workspace,"alpha").Single(x=>x.LeaseId==hugeLease.LeaseId);
+          if(hugeState.RemainingCalls!=2||hugeState.RemainingBytes!=2097152)throw new Exception("fixed-ceiling refusal consumed budget");
+
+          Console.WriteLine("V051_HOSTILE_PASS traversal=False outside=False reparseChild=False fixedDisclosure64KiB=True refusedBudgetConsumption=False");
+          '@ | Set-Content (Join-Path $p 'Program.cs') -Encoding UTF8
+          dotnet run --project (Join-Path $p 'Probe.csproj') -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51 hostile browse qualification failed'}
