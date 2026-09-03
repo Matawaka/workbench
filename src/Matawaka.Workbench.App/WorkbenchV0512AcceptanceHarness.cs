@@ -22,6 +22,7 @@ public sealed class WorkbenchV0512AcceptanceHarness
         var successorChecks = new List<WorkbenchAcceptanceCheck>();
         Add(successorChecks, LocalAppReadLeaseExactRevokeV0512Service.RunOfflineContractChecks());
         Add(successorChecks, LocalAppsActionDialogV0512.RunOfflineContractChecks());
+        Add(successorChecks, LocalCheckpointV0512Service.RunOfflineContractChecks());
         Add(successorChecks, _window.ObserveV0512EndSessionContract());
         successorChecks.AddRange(OperatorSurfaceV045Contract.Observe(_window).Select(x => new WorkbenchAcceptanceCheck(
             "v0512-preserve-" + x.Id, x.Passed, x.Observed, x.Expected)));
@@ -36,6 +37,7 @@ public sealed class WorkbenchV0512AcceptanceHarness
             "exact closure addresses only the bound ApplicationId/LeaseId state and performs no sibling lease enumeration",
             "existing revoke-all remains a separate recovery action and is not invoked automatically",
             "Secure MCP Tunnel remains separate and must already be stopped before local End Read Session",
+            "local checkpoint predecessor identity is dual-bound by the exact build-source manifest plus workbench-v0.51.1-accepted at current HEAD",
             "no automatic retry, network access, remote publication, catalog mutation, Agent Execute or ActionPermit authority",
             "top-level four-button Workbench operator surface remains unchanged"
         }).Distinct(StringComparer.Ordinal).ToArray();
