@@ -96,6 +96,24 @@ public sealed record LocalAppMcpReadResponseV049(
     DateTimeOffset LeaseExpiresAt,
     string Note);
 
+public sealed record LocalAppMcpListResponseV051(
+    string Schema,
+    string Version,
+    DateTimeOffset ObservedAt,
+    string ApplicationId,
+    string Role,
+    string RelativeDirectory,
+    int TotalEntries,
+    int StartIndex,
+    int ReturnedEntries,
+    int? NextStartIndex,
+    int DisclosureBytes,
+    IReadOnlyList<LocalAppLeaseListEntryV051> Entries,
+    int RemainingCalls,
+    long RemainingBytes,
+    DateTimeOffset LeaseExpiresAt,
+    string Note);
+
 internal sealed class LocalAppMcpAdapterSessionV049
 {
     public string WorkspaceRoot { get; }
@@ -117,11 +135,13 @@ internal sealed class LocalAppMcpAdapterSessionV049
 public sealed class LocalAppMcpReadAdapterV049Service
 {
     public const string Version = "0.49.0";
+    public const string ToolSurfaceVersionV051 = "0.51.0";
     public const string PreviewSchema = "matawaka.local-app-mcp-read-adapter-preview/v0.49";
     public const string GrantSchema = "matawaka.local-app-mcp-read-adapter-grant/v0.49";
     public const string StartReceiptSchema = "matawaka.local-app-mcp-read-adapter-start-receipt/v0.49";
     public const string StopReceiptSchema = "matawaka.local-app-mcp-read-adapter-stop-receipt/v0.49";
     public const string ReadResponseSchema = "matawaka.local-app-mcp-read-response/v0.49";
+    public const string ListResponseSchemaV051 = "matawaka.local-app-mcp-list-response/v0.51";
     public const string RuntimeProtocolImplementation = "allowlisted-mcp-jsonrpc-streamable-http-subset-base-dotnet-tcp";
     public const string QualificationClientPackage = "ModelContextProtocol";
     public const string QualificationClientVersion = "2.2.0";
@@ -182,7 +202,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
             PreviewSchema, Version, DateTimeOffset.Now, selectedApplicationId, state.LeaseId, state.Scopes,
             state.ExpiresAt, state.RemainingCalls, state.RemainingBytes, state.MaxBytesPerRead,
             state.BearerSha256, true, false, true, DefaultNonEffects(),
-            "Preview validates the selected app, active v0.48 lease and bearer hash only. It creates no listener, tunnel or file read. Explicit loopback-listener confirmation is still required.");
+            "Preview validates the selected app, active v0.48 lease and bearer hash only. It creates no listener, tunnel, file read or directory listing. Explicit loopback-listener confirmation is still required.");
     }
 
     public async Task<LocalAppMcpAdapterGrantV049> StartAsync(string workspaceRoot, string selectedApplicationId, LocalAppMcpAdapterPreviewV049 confirmedPreview, string grantJson, CancellationToken cancellationToken)
@@ -214,8 +234,8 @@ public sealed class LocalAppMcpReadAdapterV049Service
                 _active = new ActiveAdapter(listener, stop, acceptLoop, session, selectedApplicationId, fresh.LeaseId, endpoint, endpointTokenSha, fresh.ExpiresAt, DateTimeOffset.Now);
                 return new LocalAppMcpAdapterGrantV049(
                     GrantSchema, Version, DateTimeOffset.Now, selectedApplicationId, fresh.LeaseId, endpoint,
-                    endpointTokenSha, fresh.ExpiresAt, new[] { "read_local_app_chunk" }, true, false, false,
-                    "This is a local loopback MCP Streamable HTTP endpoint implemented over base .NET TcpListener only. It is not reachable by ChatGPT directly and no Secure MCP Tunnel was started. Official MCP client interoperability is qualification evidence, not a product runtime package dependency.");
+                    endpointTokenSha, fresh.ExpiresAt, new[] { "read_local_app_chunk", "list_local_app_entries" }, true, false, false,
+                    "This is a local loopback MCP Streamable HTTP endpoint implemented over base .NET TcpListener only. v0.51 extends the tool surface with lease-gated non-recursive directory metadata listing; no new root, lease or tunnel authority is created.");
             }
             catch
             {
@@ -240,7 +260,7 @@ public sealed class LocalAppMcpReadAdapterV049Service
             grant.EndpointTokenSha256, $"{uri.Scheme}://{uri.Host}:{uri.Port}", grant.LeaseExpiresAt,
             grant.Tools, endpointClipboardWritePerformed, false, true, false, false, false,
             DefaultNonEffects(), "MCP_READ_ADAPTER_LOOPBACK_READY_NO_TUNNEL",
-            "The adapter is listening only on IPv4 loopback through base .NET TcpListener and delegates every content read to the active v0.48 lease. Endpoint token plaintext and bearer plaintext are not persisted in this receipt.");
+            "The adapter is listening only on IPv4 loopback and delegates every file read and directory listing to the active v0.48 lease state. Endpoint token plaintext and bearer plaintext are not persisted in this receipt.");
         var path = await WriteArtifactAsync(workspaceRoot, "start", grant.ApplicationId, grant.LeaseId, receipt, cancellationToken);
         return (receipt, path);
     }
@@ -285,13 +305,22 @@ public sealed class LocalAppMcpReadAdapterV049Service
         ("mcp-v049-runtime-protocol", RuntimeProtocolImplementation == "allowlisted-mcp-jsonrpc-streamable-http-subset-base-dotnet-tcp", RuntimeProtocolImplementation, "base .NET allowlisted subset"),
         ("mcp-v049-official-qualification-client", QualificationClientPackage == "ModelContextProtocol" && QualificationClientVersion == "2.2.0", $"{QualificationClientPackage} {QualificationClientVersion}", "official client 2.2.0"),
         ("mcp-v049-product-nuget", true, "no MCP/AspNetCore product runtime package dependency", "offline-update compatible"),
-        ("mcp-v049-tool-count", true, "read_local_app_chunk only", "1 read-only content tool"),
+        ("mcp-v049-read-tool-preserved", true, "read_local_app_chunk", "read_local_app_chunk"),
         ("mcp-v049-bound-authority", true, "ApplicationId/LeaseId/bearer fixed in runtime session", "not MCP arguments"),
         ("mcp-v049-loopback", true, "TcpListener(IPAddress.Loopback, 0) + random path token", "127.0.0.1 only"),
         ("mcp-v049-http-bounds", MaxHttpHeaderBytes == 16384 && MaxProtocolRequestBytes == 65536 && MaxHttpTrailerBytes == 4096, $"header={MaxHttpHeaderBytes}; body={MaxProtocolRequestBytes}; trailers={MaxHttpTrailerBytes}", "bounded"),
         ("mcp-v049-chunked", true, "bounded decoder required for official Streamable HTTP client", "admitted within same body ceiling"),
         ("mcp-v049-public-exposure", true, "false", "false"),
         ("mcp-v049-tunnel", true, "not started by Workbench", "separate authority")
+    };
+
+    public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunV051BrowseContractChecks() => new[]
+    {
+        ("mcp-v051-tool-surface", true, "read_local_app_chunk + list_local_app_entries", "exactly two read-only tools"),
+        ("mcp-v051-list-caller-authority", true, "role/directory/index/count only", "no app/lease/bearer/root"),
+        ("mcp-v051-list-recursion", true, "not exposed", "no recursion/glob"),
+        ("mcp-v051-list-open-world", true, "false", "false"),
+        ("mcp-v051-tool-surface-version", ToolSurfaceVersionV051 == "0.51.0", ToolSurfaceVersionV051, "0.51.0")
     };
 
     private async Task RunAcceptLoopAsync(TcpListener listener, string endpointPath, int port, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
@@ -391,17 +420,28 @@ public sealed class LocalAppMcpReadAdapterV049Service
         {
             ["protocolVersion"] = requested,
             ["capabilities"] = new Dictionary<string, object?> { ["tools"] = new Dictionary<string, object?> { ["listChanged"] = false } },
-            ["serverInfo"] = new Dictionary<string, object?> { ["name"] = "Matawaka Workbench Lease-Gated Read Adapter", ["version"] = Version }
+            ["serverInfo"] = new Dictionary<string, object?> { ["name"] = "Matawaka Workbench Lease-Gated Read/Browse Adapter", ["version"] = ToolSurfaceVersionV051 }
         });
     }
 
     private async Task<object> ToolCallEnvelopeAsync(JsonElement? id, JsonElement root, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
     {
-        if (!root.TryGetProperty("params", out var parameters) || parameters.ValueKind != JsonValueKind.Object || !parameters.TryGetProperty("name", out var nameElement) || nameElement.GetString() != "read_local_app_chunk")
+        if (!root.TryGetProperty("params", out var parameters) || parameters.ValueKind != JsonValueKind.Object || !parameters.TryGetProperty("name", out var nameElement) || nameElement.ValueKind != JsonValueKind.String)
             return ErrorEnvelope(id, -32602, "Invalid tool call");
+        var name = nameElement.GetString();
         var arguments = parameters.TryGetProperty("arguments", out var args) && args.ValueKind == JsonValueKind.Object ? args : default;
         if (arguments.ValueKind != JsonValueKind.Object) return ToolResultEnvelope(id, true, "REFUSED: arguments object is required");
 
+        return name switch
+        {
+            "read_local_app_chunk" => await ReadToolEnvelopeAsync(id, arguments, session, cancellationToken),
+            "list_local_app_entries" => await ListToolEnvelopeAsync(id, arguments, session, cancellationToken),
+            _ => ErrorEnvelope(id, -32602, "Invalid tool call")
+        };
+    }
+
+    private async Task<object> ReadToolEnvelopeAsync(JsonElement? id, JsonElement arguments, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
+    {
         var allowed = new HashSet<string>(StringComparer.Ordinal) { "role", "relativePath", "offset", "maxBytes", "expectedFileSha256" };
         foreach (var property in arguments.EnumerateObject()) if (!allowed.Contains(property.Name)) return ToolResultEnvelope(id, true, $"REFUSED: unknown tool argument {property.Name}");
 
@@ -436,9 +476,58 @@ public sealed class LocalAppMcpReadAdapterV049Service
         catch (Exception) { return ToolResultEnvelope(id, true, "MCP_ADAPTER_INTERNAL_ERROR"); }
     }
 
+    private async Task<object> ListToolEnvelopeAsync(JsonElement? id, JsonElement arguments, LocalAppMcpAdapterSessionV049 session, CancellationToken cancellationToken)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal) { "role", "relativeDirectory", "startIndex", "maxEntries" };
+        foreach (var property in arguments.EnumerateObject()) if (!allowed.Contains(property.Name)) return ToolResultEnvelope(id, true, $"REFUSED: unknown tool argument {property.Name}");
+
+        try
+        {
+            var role = RequireString(arguments, "role");
+            var relativeDirectory = RequireString(arguments, "relativeDirectory");
+            var startIndex = RequireInt32(arguments, "startIndex");
+            var maxEntries = RequireInt32(arguments, "maxEntries");
+            var request = new LocalAppLeaseListRequestV051(
+                LocalAppReadLeaseV048Service.ListRequestSchemaV051,
+                "mcp-list-" + Guid.NewGuid().ToString("N"),
+                session.LeaseId,
+                session.Bearer,
+                session.ApplicationId,
+                role,
+                relativeDirectory,
+                startIndex,
+                maxEntries);
+            var result = await _leases.AuthorizeAndListAsync(session.WorkspaceRoot, request, cancellationToken);
+            var response = new LocalAppMcpListResponseV051(
+                ListResponseSchemaV051,
+                ToolSurfaceVersionV051,
+                DateTimeOffset.Now,
+                result.Response.ApplicationId,
+                result.Response.Role,
+                result.Response.RelativeDirectory,
+                result.Response.TotalEntries,
+                result.Response.StartIndex,
+                result.Response.ReturnedEntries,
+                result.Response.NextStartIndex,
+                result.Response.DisclosureBytes,
+                result.Response.Entries,
+                result.Response.RemainingCalls,
+                result.Response.RemainingBytes,
+                result.Response.ExpiresAt,
+                "Result came only through the active v0.48 directory-prefix lease. Listing is non-recursive and returns path/kind/size metadata only; file contents remain available only through read_local_app_chunk.");
+            return ToolResultEnvelope(id, false, JsonSerializer.Serialize(response, JsonOptions));
+        }
+        catch (InvalidDataException ex)
+        {
+            var safe = ex.Message.Replace(session.WorkspaceRoot, "<workspace>", StringComparison.OrdinalIgnoreCase);
+            return ToolResultEnvelope(id, true, "REFUSED_BY_ACTIVE_READ_LEASE: " + safe);
+        }
+        catch (Exception) { return ToolResultEnvelope(id, true, "MCP_ADAPTER_INTERNAL_ERROR"); }
+    }
+
     private static Dictionary<string, object?> BuildToolsListResult()
     {
-        var properties = new Dictionary<string, object?>
+        var readProperties = new Dictionary<string, object?>
         {
             ["role"] = new Dictionary<string, object?> { ["type"] = "string", ["enum"] = new[] { "installed", "source" }, ["description"] = "Role admitted by the active v0.48 lease." },
             ["relativePath"] = new Dictionary<string, object?> { ["type"] = "string", ["description"] = "Relative file path under the already-selected application's leased root." },
@@ -446,14 +535,29 @@ public sealed class LocalAppMcpReadAdapterV049Service
             ["maxBytes"] = new Dictionary<string, object?> { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = LocalAppReadToolV046Service.MaxReadBytes },
             ["expectedFileSha256"] = new Dictionary<string, object?> { ["type"] = new[] { "string", "null" }, ["description"] = "Optional exact whole-file SHA-256; mismatch refuses the read." }
         };
-        var tool = new Dictionary<string, object?>
+        var readTool = new Dictionary<string, object?>
         {
             ["name"] = "read_local_app_chunk",
             ["description"] = "Reads one bounded chunk through the already-active v0.48 Matawaka local-app read lease. ApplicationId, LeaseId, bearer and filesystem root are not caller-selectable.",
-            ["inputSchema"] = new Dictionary<string, object?> { ["type"] = "object", ["properties"] = properties, ["required"] = new[] { "role", "relativePath", "offset", "maxBytes" }, ["additionalProperties"] = false },
+            ["inputSchema"] = new Dictionary<string, object?> { ["type"] = "object", ["properties"] = readProperties, ["required"] = new[] { "role", "relativePath", "offset", "maxBytes" }, ["additionalProperties"] = false },
             ["annotations"] = new Dictionary<string, object?> { ["readOnlyHint"] = true, ["destructiveHint"] = false, ["idempotentHint"] = false, ["openWorldHint"] = false }
         };
-        return new Dictionary<string, object?> { ["tools"] = new[] { tool } };
+
+        var listProperties = new Dictionary<string, object?>
+        {
+            ["role"] = new Dictionary<string, object?> { ["type"] = "string", ["enum"] = new[] { "installed", "source" }, ["description"] = "Role admitted by the active v0.48 lease." },
+            ["relativeDirectory"] = new Dictionary<string, object?> { ["type"] = "string", ["description"] = "Relative directory that must be the root of, or nested inside, an explicitly leased directory-prefix scope. Application root is never accepted." },
+            ["startIndex"] = new Dictionary<string, object?> { ["type"] = "integer", ["minimum"] = 0, ["description"] = "Ordinal-sorted immediate-child pagination index." },
+            ["maxEntries"] = new Dictionary<string, object?> { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = LocalAppReadLeaseV048Service.MaxListEntriesV051 }
+        };
+        var listTool = new Dictionary<string, object?>
+        {
+            ["name"] = "list_local_app_entries",
+            ["description"] = "Lists one bounded page of immediate-child path/kind/size metadata inside an active v0.48 directory-prefix lease. Exact-file scopes do not authorize parent/sibling enumeration. No recursive search, file content, hashes, timestamps or filesystem root are exposed.",
+            ["inputSchema"] = new Dictionary<string, object?> { ["type"] = "object", ["properties"] = listProperties, ["required"] = new[] { "role", "relativeDirectory", "startIndex", "maxEntries" }, ["additionalProperties"] = false },
+            ["annotations"] = new Dictionary<string, object?> { ["readOnlyHint"] = true, ["destructiveHint"] = false, ["idempotentHint"] = false, ["openWorldHint"] = false }
+        };
+        return new Dictionary<string, object?> { ["tools"] = new[] { readTool, listTool } };
     }
 
     private static async Task<HttpRequest> ReadHttpRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
