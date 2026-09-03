@@ -144,10 +144,10 @@ public sealed class LocalCheckpointV051Service
     private static (string Path, string Sha256) ValidateBuildSourceManifest(string root, string predecessor, IReadOnlyList<string> changed)
     {
         var dir = Path.Combine(root, "artifacts", "checkpoints");
-        var path = Directory.Exists(dir) ? Directory.GetFiles(dir, "v0.51-source-manifest*.json").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault() : null;
+        var path = Directory.Exists(dir) ? Directory.GetFiles(dir, "v0.51.0-source-manifest*.json").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault() : null;
         if (path is null) throw new InvalidDataException("v0.51 build source manifest is missing.");
         var manifest = JsonSerializer.Deserialize<BuildSourceManifest>(File.ReadAllText(path, Encoding.UTF8), JsonOptions) ?? throw new InvalidDataException("v0.51 build source manifest could not be parsed.");
-        if (manifest.Schema != "matawaka.workbench-build-source-manifest/v0.50" || manifest.Version != Version || !manifest.PredecessorGitSha.Equals(predecessor, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Unexpected v0.51 build source manifest identity/predecessor.");
+        if (manifest.Schema != "matawaka.workbench-build-source-manifest/v0.51" || manifest.Version != Version || !manifest.PredecessorGitSha.Equals(predecessor, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Unexpected v0.51 build source manifest identity/predecessor.");
         var current = changed.OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var bound = manifest.Files.OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
         if (!bound.Select(x => x.Path).SequenceEqual(current, StringComparer.Ordinal)) throw new InvalidDataException("Changed-file set differs from v0.51 build source manifest.");
