@@ -1,0 +1,80 @@
+{
+  "schema_version": "workbench-kontur-artifact-acquisition-intake-v0.52",
+  "status": "PREPARED_NOT_AUTHORIZED",
+  "observed_at": "2026-09-04T20:53:00+05:00",
+  "workbench": {
+    "repository": "Matawaka/workbench",
+    "real_host_accepted_tag": "workbench-v0.51.13-accepted",
+    "real_host_accepted_commit": "46c926221cfaa8be3b68012852c7e8f3e324247f",
+    "qualified_source_head": "92c74293340c91efef34703929f687336ba6cd31",
+    "integration_issue": 69
+  },
+  "kontur": {
+    "repository": "Matawaka/kontur",
+    "observed_main": "15ea10671a8e3ca4533c429092ead3136a79a356",
+    "model_selection_source": "PR #41",
+    "runtime_bundle_selection_source": "PR #43"
+  },
+  "artifact_sets": [
+    {
+      "set_id": "KONTUR_LM1_MODEL",
+      "purpose": "local model artifact acquisition and verification only",
+      "artifacts": [
+        {
+          "repository": "Qwen/Qwen3-8B-GGUF",
+          "revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+          "filename": "Qwen3-8B-Q4_K_M.gguf",
+          "expected_size_bytes": 5027783488,
+          "expected_sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
+        }
+      ]
+    },
+    {
+      "set_id": "KONTUR_LM3A_RUNTIME_BUNDLE",
+      "purpose": "llama.cpp Windows x64 CUDA 12.4 runtime archive acquisition and verification only",
+      "runtime_selection": {
+        "stable_release": "v0.3.0",
+        "linked_build": "b10621",
+        "commit": "c1d0e7a004015f23bc0233470b747b596f29b264"
+      },
+      "artifacts": [
+        {
+          "filename": "llama-b10621-bin-win-cuda-12.4-x64.zip",
+          "expected_size_bytes": 250464283,
+          "expected_sha256": "81c2ff62e14b549cd5c766ccdd5c61f09e821a171655c3047bdccfddc2d1a1e2"
+        },
+        {
+          "filename": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+          "expected_size_bytes": 391443627,
+          "expected_sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
+        }
+      ]
+    }
+  ],
+  "required_distinctions": [
+    "Artifact Selected != Download Authority",
+    "Handoff Valid != Authority Granted",
+    "Download Authorized != Download Started",
+    "Download Started != Bytes Complete",
+    "Bytes Complete != Size Verified",
+    "Size Verified != SHA256 Verified",
+    "Artifact Verified != Extracted != Installed != Executed",
+    "Runtime Bundle Verified != Runtime Ready != Benchmark Authority != Model Request Authority"
+  ],
+  "forbidden_effects": [
+    "archive extraction",
+    "installer or script execution",
+    "process launch",
+    "PATH or environment mutation",
+    "runtime/model start",
+    "benchmark",
+    "model request",
+    "game access",
+    "general network authority",
+    "Git/catalog/Agent Execute/ActionPermit mutation"
+  ],
+  "authority_effect": "NONE",
+  "network_effect": "NONE",
+  "filesystem_effect": "NONE",
+  "note": "Durable integration intake only. This file identifies exact reviewed artifacts but creates no transfer authority. v0.52 must require a fresh explicit bounded acquisition authority before any network or filesystem effect."
+}
