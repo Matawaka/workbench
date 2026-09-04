@@ -1,0 +1,74 @@
+name: Workbench v0.51.11.1 exclusive routing hotfix
+
+on:
+  push:
+    branches: [hotfix/workbench-v0.51.11.1-exclusive-local-app-routing]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify exclusive routing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11.1 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11.1 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV051111Routing()','ConfigureV051111AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup hotfix marker missing: $m"}
+          }
+
+          $route=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V051111.cs' -Raw
+          $configure=$route.IndexOf('ConfigureV051111Routing()',[StringComparison]::Ordinal)
+          $detach18=$route.IndexOf('Click -= LocalAppsV0518Button_Click',[StringComparison]::Ordinal)
+          $detach11=$route.IndexOf('Click -= LocalAppsV05111Button_Click',[StringComparison]::Ordinal)
+          $attach=$route.IndexOf('Click += LocalAppsV051111Button_Click',[StringComparison]::Ordinal)
+          if($configure -lt 0 -or $detach18 -lt 0 -or $detach11 -lt 0 -or $attach -lt 0 -or -not ($configure -lt $detach18 -and $detach18 -lt $attach -and $detach11 -lt $attach)){
+            throw "exclusive routing order invalid configure=$configure detach18=$detach18 detach11=$detach11 attach=$attach"
+          }
+          foreach($m in @('local-app.v051111.dispatch exclusive=true; target=v05111','LocalAppsV05111Button_Click(sender, e)','_v051111ExclusiveLocalAppsRouting = true')){
+            if(-not $route.Contains($m,[StringComparison]::Ordinal)){throw "hotfix route marker missing: $m"}
+          }
+
+          $v18=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0518.cs' -Raw
+          if(-not $v18.Contains('Click += LocalAppsV0518Button_Click',[StringComparison]::Ordinal)){throw 'expected inherited v0.51.8 subscription marker missing'}
+          $v11=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05111.cs' -Raw
+          if(-not $v11.Contains('case LocalAppsActionChoiceV050.ReadSessionLease: await CreateOwnedReadLeaseAndAutoStartMcpV05111Async(appId); break;',[StringComparison]::Ordinal)){
+            throw 'v0.51.11 ReadSessionLease target marker missing'
+          }
+          if(-not $v11.Contains('Status = "OWNER_LEASE_BOUND_INDEXED_READ_LEASE_AND_LOCAL_MCP_READY"',[StringComparison]::Ordinal)){
+            throw 'v0.51.11 intended result marker missing'
+          }
+
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV051111Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.11-accepted','89bb3cc263a9e312df77bef19ee6ab738eb319ca','workbench-v0.51.11.1-accepted','v0.51.11.1-source-manifest*.json')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "hotfix checkpoint marker missing: $m"}
+          }
+
+          Write-Host 'V051111_ROUTING_HOTFIX_PASS exclusive=true inheritedV0518Detached=true wrapperOnly=true readLeaseTarget=v05111 authority=false'
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V051111_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
