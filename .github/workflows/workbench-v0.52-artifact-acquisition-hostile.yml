@@ -1,0 +1,43 @@
+name: Workbench v0.52 artifact acquisition hostile
+
+on:
+  push:
+    branches: [ feat/workbench-v0.52-bounded-artifact-acquisition ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hostile:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Release build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.52 Release build failed'}
+      - name: Run hostile bounded acquisition probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out = dotnet run --project .github/qualification/v052/Probe.csproj -c Release 2>&1 | Out-String
+          Write-Host $out
+          if($LASTEXITCODE -ne 0){throw 'v0.52 hostile probe failed'}
+          if(-not $out.Contains('V052_ARTIFACT_ACQUISITION_RUNTIME_PASS',[StringComparison]::Ordinal)){throw 'v0.52 PASS marker missing'}
+      - name: Verify public publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V052_HOSTILE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
