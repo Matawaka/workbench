@@ -1,0 +1,39 @@
+{
+  "schema_version": "workbench-kontur-integration-anchor-v0.1",
+  "status": "REFERENCE_ONLY_NO_AUTHORITY",
+  "observed_at": "2026-09-04T18:14:00+05:00",
+  "kontur": {
+    "repository": "Matawaka/kontur",
+    "observed_main_before_support_files": "08abe1e4ffbcb3854375960d6992c4711c72b19d",
+    "semantic_runtime_frontier": "f9f3c36048cd13ff257e8f0299626c4113f1b6e5",
+    "workbench_integration_backlog_path": "pilots/kontur-game-companion/WORKBENCH_INTEGRATION_BACKLOG.md",
+    "workbench_integration_support_root": "pilots/kontur-game-companion/workbench-integration/",
+    "selected_local_model": {
+      "selection_token": "LM1",
+      "repository": "Qwen/Qwen3-8B-GGUF",
+      "revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+      "filename": "Qwen3-8B-Q4_K_M.gguf",
+      "expected_size_bytes": 5027783488,
+      "expected_lfs_sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
+    }
+  },
+  "workbench": {
+    "repository": "Matawaka/workbench",
+    "branch": "feat/workbench-v0.51.12-listener-readiness-transaction",
+    "anchor_parent_head": "0bd8f2a9e294f35e85239aa9b56ce441917c3a75",
+    "qualified_v0_51_11_1_source": "33c85bd6d562a4bae4c51cdfd12e0f81c36f6a53",
+    "real_host_accepted_tag_observed": "workbench-v0.51.11.1-accepted",
+    "real_host_accepted_commit_observed": "ab97fea019644f89ce1c846ab5013b1b99245465",
+    "real_host_assurance": "OPERATOR_OBSERVED_LOCAL_FRONTIER_NOT_REMOTE_REF"
+  },
+  "preferred_first_intake": "LM1_EXACT_ARTIFACT_DOWNLOAD_AND_LOCAL_SHA256_VERIFICATION_REVIEW",
+  "later_intakes": [
+    "KONTUR_ONE_SHOT_REQUEST_ENVELOPE_CAPABILITY_LEASE_REVIEW",
+    "KONTUR_COMPONENT_MANIFEST_AFFECTED_CONFORMANCE_REVIEW",
+    "KONTUR_LLAMA_CPP_LOCAL_RUNTIME_ADMISSION_REVIEW"
+  ],
+  "authority_effect": "NONE",
+  "runtime_effect": "NONE",
+  "network_effect": "NONE",
+  "note": "Anchor only. Workbench must re-observe current KONTUR/Workbench frontiers and require fresh human confirmation before any executable integration."
+}
