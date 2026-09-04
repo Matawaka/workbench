@@ -1,0 +1,50 @@
+name: Workbench v0.51.4 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.4-bounded-session-status]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify first-boot acceptance boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0514Routing()','ConfigureV0514AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup acceptance marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0514Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.3-accepted','workbench-v0.51.4-accepted','v0.51.4-source-manifest*.json','PredecessorGitSha','matawaka.workbench-local-checkpoint-receipt/v0.51.4')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "checkpoint marker missing: $m"}
+          }
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0514.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV0514','RunV0514AcceptanceArtifactAsync','AcceptFromBootstrapAsync','PublishAcceptedV0514Button_Click','AutomaticRevocationPerformed = false','HistoricalEvidenceDeletionOrCompaction = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "acceptance marker missing: $m"}
+          }
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0514AcceptanceHarness.cs' -Raw
+          foreach($m in @('LocalAppReadSessionStatusV0514Service.RunOfflineContractChecks','LocalAppHistoryPageChooserV0514.RunOfflineContractChecks','ObserveV0514BoundedStatusContract','acceptance-receipt/v0.51.4')){
+            if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "harness marker missing: $m"}
+          }
+          Write-Host 'V0514_ACCEPTANCE_BOUNDARY_PASS bootstrap=one-shot checkpoint=dual-bound publish=deferred'
