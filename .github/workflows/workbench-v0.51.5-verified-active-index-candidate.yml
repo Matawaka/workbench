@@ -1,0 +1,75 @@
+name: Workbench v0.51.5 verified active lease index candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.5-verified-active-lease-index]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static verified-index checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'Release build failed'}
+
+          $idx=Get-Content 'src/Matawaka.Workbench.App/LocalAppActiveLeaseIndexV0515Service.cs' -Raw
+          foreach($m in @('MaxReconciliationStateFiles = 4096','LiveAuthorityHardLimit = 32','ACTIVE_INDEX_RECONCILIATION_REQUIRED','ACTIVE_INDEX_INCONSISTENT','LIVE_AUTHORITY_OVERFLOW','CanonicalHistoricalScanPerformed','BearerPlaintextStored','BearerHashStored','BeginMutationAsync','CommitMutationAsync','ReadAllCanonicalStatesBounded')){
+            if(-not $idx.Contains($m,[StringComparison]::Ordinal)){throw "index marker missing: $m"}
+          }
+          if($idx.Contains('BearerSha256,',[StringComparison]::Ordinal)){throw 'index DTO must not persist bearer hash'}
+
+          $bridge=Get-Content 'src/Matawaka.Workbench.App/LocalAppReadLeaseIndexedLifecycleV0515Service.cs' -Raw
+          foreach($m in @('BeginMutationAsync','CreateAsync','CommitMutationAsync','RevokeExactAsync','RevokeAllActiveAsync','ReconcileAsync')){
+            if(-not $bridge.Contains($m,[StringComparison]::Ordinal)){throw "lifecycle bridge marker missing: $m"}
+          }
+
+          $dialog=Get-Content 'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs' -Raw
+          foreach($m in @('Read Session Status — verified live authority (fast)','Read Session History Page — bounded canonical evidence scan','Revoke ALL active read leases (recovery + index reconcile)')){
+            if(-not $dialog.Contains($m,[StringComparison]::Ordinal)){throw "chooser marker missing: $m"}
+          }
+
+          $main=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0515.cs' -Raw
+          foreach($m in @('ReadSessionHistoryPage','EnsureVerifiedActiveIndexReadyV0515Async','CreateIndexedAsync','RevokeExactIndexedAsync','CanonicalHistoricalScanPerformed = false','HistoricalEvidenceDeleted = false')){
+            if(-not $main.Contains($m,[StringComparison]::Ordinal)){throw "orchestration marker missing: $m"}
+          }
+
+          $xaml=Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface=[regex]::Match($xaml,'<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if([regex]::Matches($surface,'<Button\b').Count -ne 4){throw 'top-level four-button surface changed'}
+          Write-Host 'V0515_STATIC_PASS reconcileMax=4096 liveHard=32 canonical=true indexDerived=true bearer=false buttons=4'
+
+      - name: Execute migration dirty recovery lazy-prune and overflow controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore .github/qualification/v0515/Probe.csproj
+          if($LASTEXITCODE -ne 0){throw 'probe restore failed'}
+          dotnet run --project .github/qualification/v0515/Probe.csproj -c Release --no-restore
+          if($LASTEXITCODE -ne 0){throw 'v0.51.5 hostile runtime probe failed'}
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0515_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
