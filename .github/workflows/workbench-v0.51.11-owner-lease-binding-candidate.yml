@@ -1,0 +1,75 @@
+name: Workbench v0.51.11 owner lease binding candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.11-owner-lease-binding-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static owner lease binding checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11 Release build failed'}
+
+          $tx=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnerLeaseBindingV05111Service.cs' -Raw
+          foreach($m in @('PREPARED_BINDING','LEASE_CREATED','OWNER_BOUND','OWNER_BOUND_RECOVERED','LIVE_ORPHAN_AFTER_LEASE_CREATE','ABANDONED_BEFORE_LEASE','MCP_OWNER_LEASE_BINDING_TRANSACTION_INCONSISTENT','PreparedLeaseId','CanonicalHistoricalScanPerformed')){
+            if(-not $tx.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 transaction marker missing: $m"}
+          }
+          $prepared=Get-Content 'src/Matawaka.Workbench.App/LocalAppPreparedIndexedLeaseV05111Service.cs' -Raw
+          foreach($m in @('CreatePreparedIndexedAsync','StateSchema','GrantSchema','CreationReceiptSchema','BeginMutationAsync','CommitMutationAsync','PREPARED_LEASE_ID_COLLISION')){
+            if(-not $prepared.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 prepared lease marker missing: $m"}
+          }
+          $owner=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
+          $bindReconcile=$owner.IndexOf('ReconcileBeforeOwnerGenerationAsync(',[StringComparison]::Ordinal)
+          $genReconcile=$owner.IndexOf('ReconcileBeforePrepareAsync(',[StringComparison]::Ordinal)
+          if($bindReconcile -lt 0 -or $genReconcile -lt 0 -or $bindReconcile -ge $genReconcile){throw 'v0.51.11 binding reconciliation is not before v0.51.10 owner-generation reconciliation'}
+          if(-not $owner.Contains('MCP_OWNER_LEASE_BINDING_LIVE_ORPHAN_REQUIRES_EXPLICIT_CLOSURE',[StringComparison]::Ordinal)){throw 'v0.51.11 live orphan block marker missing'}
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05111.cs' -Raw
+          foreach($m in @('PrepareBindingAsync','CreatePreparedIndexedAsync','RecordLeaseCreatedAsync','BindExactLeaseAsync','CommitOwnerBoundAsync','OwnerBoundBeforeListenerStart = true')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 UI ordering marker missing: $m"}
+          }
+          $prepare=$ui.IndexOf('PrepareBindingAsync(',[StringComparison]::Ordinal)
+          $create=$ui.IndexOf('CreatePreparedIndexedAsync(',[StringComparison]::Ordinal)
+          $record=$ui.IndexOf('RecordLeaseCreatedAsync(',[StringComparison]::Ordinal)
+          $bind=$ui.IndexOf('BindExactLeaseAsync(',[StringComparison]::Ordinal)
+          $commit=$ui.IndexOf('CommitOwnerBoundAsync(',[StringComparison]::Ordinal)
+          $listener=$ui.IndexOf('_localAppMcpReadAdapterV049Service.StartAsync(',[StringComparison]::Ordinal)
+          if(-not ($prepare -lt $create -and $create -lt $record -and $record -lt $bind -and $bind -lt $commit -and $commit -lt $listener)){
+            throw "v0.51.11 UI ordering invalid prepare=$prepare create=$create record=$record bind=$bind commit=$commit listener=$listener"
+          }
+          Write-Host 'V05111_OWNER_LEASE_BINDING_STATIC_PASS exactPreparedId=true preparedNotCreated=true createdNotBound=true boundNotListener=true noHistory=true authority=false'
+
+      - name: Execute owner lease binding hostile controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v05111/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11 hostile probe failed'}
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05111_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
