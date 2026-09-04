@@ -1,0 +1,57 @@
+name: Workbench v0.51.8 MCP ownership status candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.8-mcp-ownership-status]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static status checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.8 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.8 Release build failed'}
+
+          $s=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnershipStatusV0518Service.cs' -Raw
+          foreach($m in @('OWNED','FREE_NO_METADATA','FREE_STALE_METADATA','FileMode.Open','FileAccess.Read','FileShare.None','LIVE_ORPHAN','LIVE_OWNER_DOMAIN_BUSY','ABSENT','ResumeAuthorityGranted','RevokeAuthorityGranted')){
+            if(-not $s.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 status marker missing: $m"}
+          }
+          $d=Get-Content 'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs' -Raw
+          foreach($m in @('MCP Ownership Status','Acknowledge stale MCP owner metadata')){
+            if(-not $d.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 chooser marker missing: $m"}
+          }
+          Write-Host 'V0518_STATUS_STATIC_PASS readOnlyProbe=true noLockCreation=true noHistoricalScan=true authority=false secrets=false'
+
+      - name: Execute ownership status hostile controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v0518/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51.8 hostile status probe failed'}
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0518_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
