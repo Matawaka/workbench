@@ -3,36 +3,19 @@ using System.Windows.Controls;
 
 namespace Matawaka.Workbench.App;
 
-public enum LocalAppsActionChoiceV050
-{
-    Cancel,
-    UpdateFromPackage,
-    BuildUpdatePackage,
-    LaunchApp,
-    ExportUpdateContext,
-    BindDevelopmentSource,
-    ExportPrivateDevelopmentContext,
-    ChatReadRelay,
-    ReadSessionLease,
-    RevokeReadLeases,
-    StartReadOnlyMcpAdapter,
-    StopReadOnlyMcpAdapter,
-    StartSecureMcpTunnel,
-    StopSecureMcpTunnel,
-    ReadSessionStatus,
-    EndOrphanedReadSession,
-    ReadSessionHistoryPage
-}
-
-public sealed class LocalAppsActionDialogV050 : Window
+/// <summary>
+/// v0.51.5 separates fast verified live-authority status from explicit canonical
+/// history scanning. The top-level four-button Workbench surface remains unchanged.
+/// </summary>
+public sealed class LocalAppsActionDialogV0515 : Window
 {
     public LocalAppsActionChoiceV050 Choice { get; private set; } = LocalAppsActionChoiceV050.Cancel;
 
-    public LocalAppsActionDialogV050(string applicationId, bool adapterActive, bool tunnelActive)
+    public LocalAppsActionDialogV0515(string applicationId, bool adapterActive, bool tunnelActive)
     {
         Title = "Local apps — choose action";
-        Width = 660;
-        MinWidth = 580;
+        Width = 760;
+        MinWidth = 680;
         SizeToContent = SizeToContent.Height;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.NoResize;
@@ -47,7 +30,7 @@ public sealed class LocalAppsActionDialogV050 : Window
         });
         root.Children.Add(new TextBlock
         {
-            Text = "Choose one explicit action. Secure MCP Tunnel is a separate outbound transport authority above an already-active lease-gated local MCP adapter. It does not create a lease, widen file scope, create/delete a tunnel in OpenAI Platform, or configure ChatGPT automatically.",
+            Text = "Read Session Status now uses a verified active-lease index and revalidates each candidate against exact canonical state; it does not enumerate historical lease files. Historical evidence remains available through a separate bounded canonical History Page action. First use may ask for one explicit bounded reconciliation (max 4096 lease-state files). Bearer plaintext/hash are never indexed.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 16)
         });
@@ -59,10 +42,13 @@ public sealed class LocalAppsActionDialogV050 : Window
         Add(root, "Bind development source", LocalAppsActionChoiceV050.BindDevelopmentSource);
         Add(root, "Export PRIVATE development context", LocalAppsActionChoiceV050.ExportPrivateDevelopmentContext);
         Add(root, "Chat read relay", LocalAppsActionChoiceV050.ChatReadRelay);
-        Add(root, "Read session lease", LocalAppsActionChoiceV050.ReadSessionLease);
-        Add(root, "Revoke active read leases", LocalAppsActionChoiceV050.RevokeReadLeases);
-        Add(root, "Start read-only MCP adapter", LocalAppsActionChoiceV050.StartReadOnlyMcpAdapter, !adapterActive && !tunnelActive);
-        Add(root, "Stop read-only MCP adapter", LocalAppsActionChoiceV050.StopReadOnlyMcpAdapter, adapterActive && !tunnelActive);
+        Add(root, "Read Session Status — verified live authority (fast)", LocalAppsActionChoiceV050.ReadSessionStatus);
+        Add(root, "Read Session History Page — bounded canonical evidence scan", LocalAppsActionChoiceV050.ReadSessionHistoryPage);
+        Add(root, "Read session lease + auto-start local MCP", LocalAppsActionChoiceV050.ReadSessionLease, !adapterActive && !tunnelActive);
+        Add(root, "End Read Session — stop MCP + revoke exact bound lease", LocalAppsActionChoiceV050.StopReadOnlyMcpAdapter, adapterActive && !tunnelActive);
+        Add(root, "End orphaned read session — exact indexed unbound lease", LocalAppsActionChoiceV050.EndOrphanedReadSession);
+        Add(root, "Revoke ALL active read leases (recovery + index reconcile)", LocalAppsActionChoiceV050.RevokeReadLeases);
+        Add(root, "Start read-only MCP adapter manually", LocalAppsActionChoiceV050.StartReadOnlyMcpAdapter, !adapterActive && !tunnelActive);
         Add(root, "Start OpenAI Secure MCP Tunnel", LocalAppsActionChoiceV050.StartSecureMcpTunnel, adapterActive && !tunnelActive);
         Add(root, "Stop OpenAI Secure MCP Tunnel", LocalAppsActionChoiceV050.StopSecureMcpTunnel, tunnelActive);
 
@@ -74,19 +60,19 @@ public sealed class LocalAppsActionDialogV050 : Window
 
     public static LocalAppsActionChoiceV050 ShowChoice(Window owner, string applicationId, bool adapterActive, bool tunnelActive)
     {
-        var dialog = new LocalAppsActionDialogV050(applicationId, adapterActive, tunnelActive) { Owner = owner };
+        var dialog = new LocalAppsActionDialogV0515(applicationId, adapterActive, tunnelActive) { Owner = owner };
         dialog.ShowDialog();
         return dialog.Choice;
     }
 
     public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunOfflineContractChecks() => new[]
     {
-        ("chooser-v050-tunnel-start", true, "Start OpenAI Secure MCP Tunnel", "explicit"),
-        ("chooser-v050-tunnel-stop", true, "Stop OpenAI Secure MCP Tunnel", "explicit"),
-        ("chooser-v050-adapter-before-tunnel", true, "tunnel start enabled only when adapter active", "true"),
-        ("chooser-v050-adapter-stop-while-tunnel", true, "disabled", "tunnel must stop first"),
-        ("chooser-v050-inherits-v049-actions", true, "update/build/launch/context/source/private/relay/lease/revoke/mcp", "preserved"),
-        ("chooser-v050-default-effect", true, "initial Choice=Cancel; no default action", "none")
+        ("chooser-v0515-live-status", true, "verified active index + exact canonical revalidation", "no historical enumeration"),
+        ("chooser-v0515-history", true, "separate bounded canonical evidence scan", "explicit"),
+        ("chooser-v0515-reconcile", true, "prompted only when index missing/dirty", "explicit bounded max 4096"),
+        ("chooser-v0515-orphan", true, "exact indexed unbound lease", "pagination-independent"),
+        ("chooser-v0515-recovery", true, "revoke-all remains explicit recovery", "preserved"),
+        ("chooser-v0515-four-button-surface", true, "dialog-only change", "no top-level button")
     };
 
     private void Add(StackPanel root, string text, LocalAppsActionChoiceV050 choice, bool enabled = true)
