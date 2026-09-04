@@ -95,6 +95,9 @@ public sealed class LocalAppHeldMcpSessionOwnershipV0517 : IAsyncDisposable
 /// reconciles abandoned/recovered transitions before any new lease can be created.
 /// v0.51.11 first reconciles any incomplete prior owner->lease binding under the
 /// same acquired owner.lock, before v0.51.10 may replace prior owner metadata.
+/// v0.51.12 first reconciles any incomplete listener-readiness transaction so a
+/// live exact OWNER_BOUND lease without a current listener blocks silent successor
+/// ownership rather than being mistaken for resumable runtime authority.
 /// </summary>
 public sealed class LocalAppMcpSessionOwnershipV0517Service
 {
@@ -111,6 +114,7 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
     private readonly LocalAppMcpOwnerGenerationV0519Service _generationV0519Service = new();
     private readonly LocalAppMcpOwnerGenerationTransactionV05110Service _generationTransactionV05110Service = new();
     private readonly LocalAppMcpOwnerLeaseBindingV05111Service _ownerLeaseBindingV05111Service = new();
+    private readonly LocalAppMcpListenerReadinessV05112Service _listenerReadinessV05112Service = new();
 
     public async Task<LocalAppHeldMcpSessionOwnershipV0517> AcquireAsync(
         string workspaceRoot,
@@ -166,6 +170,12 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
             Path.GetFullPath(workspaceRoot.Trim()), metadataPath, applicationId, sessionId, started.ElapsedMilliseconds, handle);
         try
         {
+            var priorListener = await _listenerReadinessV05112Service.ReconcileBeforeOwnerGenerationAsync(
+                held.WorkspaceRoot, applicationId, metadataPath, cancellationToken);
+            if (priorListener.BlocksNewOwnerGeneration)
+                throw new InvalidDataException(
+                    $"MCP_LISTENER_READINESS_LIVE_BOUND_REQUIRES_EXPLICIT_CLOSURE: exact prior startup lease {priorListener.ExactLeaseId} remains live while no current listener authority can be resumed; close it explicitly or wait for expiry. Reconciliation performed no listener start/resume/revoke.");
+
             var priorBinding = await _ownerLeaseBindingV05111Service.ReconcileBeforeOwnerGenerationAsync(
                 held.WorkspaceRoot, applicationId, metadataPath, cancellationToken);
             if (priorBinding.BlocksNewOwnerGeneration)
@@ -183,7 +193,7 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
                 !string.IsNullOrWhiteSpace(reconciled.VerifiedReuseArchivePath),
                 cancellationToken);
             await WriteOwnerAsync(held, null, "OWNERSHIP_ACQUIRED_UNBOUND", false, null, null,
-                $"Cross-process MCP ownership acquired for purpose '{purpose}'. Prior owner->lease binding was reconciled first; prior owner evidence was then preserved/reused and v0.51.10 PREPARED was recorded before this successor metadata write. COMMITTED is recorded only after exact successor metadata observation.", cancellationToken);
+                $"Cross-process MCP ownership acquired for purpose '{purpose}'. Prior listener-readiness and owner->lease binding transactions were reconciled first; prior owner evidence was then preserved/reused and v0.51.10 PREPARED was recorded before this successor metadata write. COMMITTED is recorded only after exact successor metadata observation.", cancellationToken);
             await _generationTransactionV05110Service.CommitAfterSuccessorWriteAsync(
                 held.WorkspaceRoot, applicationId, sessionId, metadataPath, cancellationToken);
             return held;
@@ -282,7 +292,9 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
         ("mcp-owner-v0519-generation", true, "prior owner metadata preserved before successor write", "no silent stale overwrite"),
         ("mcp-owner-v05110-transaction", true, "reconcile -> preserve/reuse -> PREPARED -> owner write -> COMMITTED", "prepared != committed"),
         ("mcp-owner-v05111-binding-reconcile", true, "prior owner->lease transaction reconciled before successor owner metadata overwrite", "exact lease only; no history"),
-        ("mcp-owner-v05111-orphan-block", true, "live incomplete startup lease blocks successor owner generation", "no automatic revoke")
+        ("mcp-owner-v05111-orphan-block", true, "live incomplete startup lease blocks successor owner generation", "no automatic revoke"),
+        ("mcp-owner-v05112-listener-reconcile", true, "listener-readiness transaction reconciled before owner->lease/generation successor write", "first under owner.lock"),
+        ("mcp-owner-v05112-live-bound-block", true, "live bound lease without current listener blocks successor generation", "no automatic start/resume/revoke")
     };
 
     private static void RequireHeld(LocalAppHeldMcpSessionOwnershipV0517 held)
