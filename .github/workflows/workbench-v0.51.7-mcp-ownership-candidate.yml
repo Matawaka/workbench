@@ -39,6 +39,12 @@ jobs:
           $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
           if(-not $app.Contains('ConfigureV0517Routing()',[StringComparison]::Ordinal)){throw 'v0.51.7 startup routing missing'}
           Write-Host 'V0517_STATIC_PASS ownerBeforeLease=true releaseAfterStop=true destructiveGuards=true bearer=false endpointSecret=false'
+      - name: Execute cross-process MCP ownership controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v0517/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51.7 hostile runtime probe failed'}
       - name: Verify publication remains deferred
         shell: pwsh
         run: |
