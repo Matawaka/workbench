@@ -23,7 +23,8 @@ public enum LocalAppsActionChoiceV050
     EndOrphanedReadSession,
     ReadSessionHistoryPage,
     McpOwnershipStatus,
-    AcknowledgeStaleMcpOwnershipMetadata
+    AcknowledgeStaleMcpOwnershipMetadata,
+    BoundedArtifactAcquisition
 }
 
 public sealed class LocalAppsActionDialogV050 : Window
