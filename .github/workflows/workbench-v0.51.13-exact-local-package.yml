@@ -1,0 +1,129 @@
+name: Workbench v0.51.13 exact local package
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.13-shutdown-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build exact source candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.13 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.13 build failed'}
+
+          $route=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05113.cs' -Raw
+          foreach($m in @('ConfigureV05113Routing','EndOwnedReadSessionV05113Async','SHUTDOWN_PREPARED','LISTENER_STOPPED','OWNER_RELEASED','CommitCompletedAsync')){
+            if(-not $route.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.13 route marker missing: $m"}
+          }
+          $svc=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpShutdownTransactionV05113Service.cs' -Raw
+          foreach($m in @('OWNER_RELEASED_LEASE_LIVE','LEASE_ALREADY_TERMINAL','SHUTDOWN_COMPLETED','ShutdownTransactionGrantedAuthority')){
+            if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.13 service marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV05113Service.cs' -Raw
+          foreach($m in @('9eb536894dbe16d247e995876facd669121ed8f2','workbench-v0.51.12-accepted','workbench-v0.51.13-accepted')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.13 checkpoint marker missing: $m"}
+          }
+          Write-Host 'V05113_EXACT_PACKAGE_BUILD_PASS'
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05113_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
+      - name: Package exact local predecessor update
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='9eb536894dbe16d247e995876facd669121ed8f2'
+          $stage=Join-Path $env:RUNNER_TEMP 'v05113-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.51.13.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpShutdownTransactionV05113Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpShutdownV05113CompatibilityExtensions.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV05113Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V05113.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V05113.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV05113AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.51.13 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.51.13'
+            PredecessorTag='workbench-v0.51.12-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.51.13-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'source-only Workbench reverse shutdown transaction update',
+              'exact local v0.51.12 predecessor only',
+              'canonical v0.48 lease authority remains source of truth',
+              'v0.51.12 listener readiness and earlier owner/binding/generation semantics remain preserved',
+              'shutdown transaction grants no read/revoke/resume authority',
+              'exact revoke remains a separate inherited authority-bearing operation',
+              'shutdown recovery performs no automatic listener start/resume or live-lease revoke/renew',
+              'sibling leases are outside the shutdown corridor',
+              'no bearer plaintext/hash or endpoint path token in shutdown transaction',
+              'KONTUR integration anchors remain planning/contracts only; no download/model/runtime/game authority',
+              'no private app bytes or runtime lease/index/fence/MCP state',
+              'no automatic Secure MCP Tunnel',
+              'no OpenAI bridge dependency',
+              'no remote publication authority',
+              'no CI workflow or qualification fixture files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.51.13-shutdown-transaction-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V05113_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.51.13-exact-local-update
+          path: ${{ steps.pack.outputs.zip }}
+          if-no-files-found: error
