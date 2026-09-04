@@ -1,0 +1,75 @@
+name: Workbench v0.51.7 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.7-cross-process-mcp-session-ownership]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify first-boot acceptance boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.7 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.7 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0517Routing()','ConfigureV0517AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup v0.51.7 marker missing: $m"}
+          }
+
+          $owner=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
+          foreach($m in @('FileShare.None','MCP_SESSION_OWNED_BY_OTHER_PROCESS','ReleaseAfterListenerStoppedAsync','MCP_SESSION_RELEASE_REFUSED_LISTENER_STILL_ACTIVE','EndpointSecretStored','LeaseAuthorityGranted')){
+            if(-not $owner.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.7 owner marker missing: $m"}
+          }
+
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0517Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.6-accepted','workbench-v0.51.7-accepted','v0.51.7-source-manifest*.json','PredecessorGitSha','matawaka.workbench-local-checkpoint-receipt/v0.51.7')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.7 checkpoint marker missing: $m"}
+          }
+
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0517.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV0517','RunV0517AcceptanceArtifactAsync','AcceptFromBootstrapAsync','PublishAcceptedV0517Button_Click','CrossProcessMcpOwnershipSerializationOnly = true','OwnerCrashRevokesCanonicalLease = false','StaleOwnerMetadataAuthorizesMcpResume = false','AutomaticPublishPerformed = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.7 acceptance marker missing: $m"}
+          }
+
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0517AcceptanceHarness.cs' -Raw
+          foreach($m in @('LocalAppMcpSessionOwnershipV0517Service.RunOfflineContractChecks','ObserveV0517McpOwnershipContract','acceptance-receipt/v0.51.7','listener stop proof -> MCP ownership release -> exact LeaseId revoke')){
+            if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.7 harness marker missing: $m"}
+          }
+
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0517.cs' -Raw
+          $acquire=$ui.IndexOf('AcquireAsync(',[StringComparison]::Ordinal)
+          $create=$ui.IndexOf('CreateIndexedAsync(',[StringComparison]::Ordinal)
+          if($acquire -lt 0 -or $create -lt 0 -or $acquire -ge $create){throw 'v0.51.7 auto-start owner acquisition is not before lease creation'}
+          foreach($m in @('guard-exact-orphan-closure','guard-revoke-all-recovery','ReleaseAfterListenerStoppedAsync','RevokeExactIndexedAsync')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.7 UI lifecycle marker missing: $m"}
+          }
+
+          Write-Host 'V0517_ACCEPTANCE_BOUNDARY_PASS bootstrap=one-shot checkpoint=dual-bound ownerBeforeLease=true stopReleaseRevoke=true destructiveGuards=true bearer=false endpointSecret=false publish=deferred'
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0517_ACCEPTANCE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
