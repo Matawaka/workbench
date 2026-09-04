@@ -1,0 +1,47 @@
+name: Workbench v0.51.3 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.3-read-session-status]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build and verify first-boot acceptance boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0513Routing()','ConfigureV0513AcceptanceRouting()')){if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup marker missing: $m"}}
+
+          $accept=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0513.Acceptance.cs' -Raw
+          foreach($m in @('TryClaimFirstBootAsync','LocalCheckpointV0513Service.Version','LocalCheckpointV0513Service.TargetTag','RunV0513AcceptanceArtifactAsync','AcceptFromBootstrapAsync','FinalizeAcceptedAsync','v0.51.3 validation PASS + automatic local Accept','AutomaticOrphanRevocationPerformed = false','PublishAcceptedV0513Button_Click')){if(-not $accept.Contains($m,[StringComparison]::Ordinal)){throw "acceptance marker missing: $m"}}
+
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0513Service.cs' -Raw
+          foreach($m in @('Version = "0.51.3"','ExpectedPredecessorTag = "workbench-v0.51.2-accepted"','TargetTag = "workbench-v0.51.3-accepted"','v0.51.3-source-manifest*.json','matawaka.workbench-build-source-manifest/v0.51','AcceptFromBootstrapAsync','no bearer plaintext/hash')){if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "checkpoint marker missing: $m"}}
+          if($cp.Contains('ExpectedPredecessorCommit',[StringComparison]::Ordinal)){throw 'v0.51.3 checkpoint must not hardcode local predecessor commit'}
+
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0513AcceptanceHarness.cs' -Raw
+          foreach($m in @('LocalAppReadSessionStatusV0513Service.RunOfflineContractChecks','LocalAppsActionDialogV0513.RunOfflineContractChecks','ObserveV0513ReadSessionStatusContract','matawaka.workbench-acceptance-receipt/v0.51.3')){if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "harness marker missing: $m"}}
+
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0513_ACCEPTANCE_BOUNDARY_PASS main=$remote predecessorTag=workbench-v0.51.2-accepted targetTag=workbench-v0.51.3-accepted publicationDeferred=True"
