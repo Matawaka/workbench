@@ -14,7 +14,7 @@ public sealed class LocalCheckpointV052Service
     public const string ExpectedPredecessorCommit = "46c926221cfaa8be3b68012852c7e8f3e324247f";
     public const string TargetTag = "workbench-v0.52-accepted";
     public const string CommitMessage = "Checkpoint Workbench v0.52 bounded artifact acquisition";
-    public const string BuildManifestSchema = "matawaka.workbench-build-source-manifest/v0.51";
+    public const string BuildManifestSchema = "matawaka.workbench-build-source-manifest/v0.52";
 
     private static readonly TimeSpan GitTimeout = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -172,6 +172,7 @@ public sealed class LocalCheckpointV052Service
         ("checkpoint-v052-exact-predecessor", ExpectedPredecessorCommit == "46c926221cfaa8be3b68012852c7e8f3e324247f", ExpectedPredecessorCommit, "46c926221cfaa8be3b68012852c7e8f3e324247f"),
         ("checkpoint-v052-predecessor-tag", ExpectedPredecessorTag == "workbench-v0.51.13-accepted", ExpectedPredecessorTag, "workbench-v0.51.13-accepted"),
         ("checkpoint-v052-target-tag", TargetTag == "workbench-v0.52-accepted", TargetTag, "workbench-v0.52-accepted"),
+        ("checkpoint-v052-build-manifest-schema", BuildManifestSchema == "matawaka.workbench-build-source-manifest/v0.52", BuildManifestSchema, "matawaka.workbench-build-source-manifest/v0.52"),
         ("checkpoint-v052-bootstrap-only", true, "AcceptFromBootstrapAsync only", "no manual visible Accept path"),
         ("checkpoint-v052-runtime-state", true, "acquisition/read/MCP runtime artifacts excluded", "source only"),
         ("checkpoint-v052-publication", true, "no remote mutation", "deferred")
