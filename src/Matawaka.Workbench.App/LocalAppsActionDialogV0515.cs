@@ -7,8 +7,9 @@ namespace Matawaka.Workbench.App;
 /// v0.51.5 separates fast verified live-authority status from explicit canonical
 /// history scanning. v0.51.8 additionally exposes MCP ownership status/recovery.
 /// v0.52 adds one generic artifact-acquisition entry point without changing the
-/// top-level four-button Workbench surface. The selected app is navigation context
-/// only; artifact acquisition authority is not app-scoped.
+/// top-level four-button Workbench surface. v0.53 adds a separate generic bounded
+/// runtime-execution entry point and exact-owned-process stop action. The selected
+/// app remains navigation context only; acquisition/runtime authority is not app-scoped.
 /// </summary>
 public sealed class LocalAppsActionDialogV0515 : Window
 {
@@ -33,7 +34,7 @@ public sealed class LocalAppsActionDialogV0515 : Window
         });
         root.Children.Add(new TextBlock
         {
-            Text = "Read Session Status uses the verified active-lease index and exact canonical revalidation without historical enumeration. MCP Ownership Status separately reports runtime ownership. The v0.52 artifact-acquisition action is generic: this app selection is navigation context only; a separate exact JSON request and explicit confirmation are required before any network/filesystem effect.",
+            Text = "Read Session Status uses the verified active-lease index and exact canonical revalidation without historical enumeration. MCP Ownership Status separately reports runtime ownership. Artifact acquisition and runtime execution are generic: this app selection is navigation context only. Each requires its own exact JSON evidence/request and explicit confirmation. Verified Artifact ≠ Materialized Runtime ≠ Execution Authority.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 16)
         });
@@ -45,6 +46,8 @@ public sealed class LocalAppsActionDialogV0515 : Window
         Add(root, "Bind development source", LocalAppsActionChoiceV050.BindDevelopmentSource);
         Add(root, "Export PRIVATE development context", LocalAppsActionChoiceV050.ExportPrivateDevelopmentContext);
         Add(root, "Bounded artifact acquisition from exact JSON — generic", LocalAppsActionChoiceV050.BoundedArtifactAcquisition);
+        Add(root, "Bounded runtime execution from exact JSON — generic", LocalAppsActionChoiceV050.BoundedRuntimeExecution);
+        Add(root, "Stop active bounded runtime — exact owned process tree only", LocalAppsActionChoiceV050.StopBoundedRuntimeExecution);
         Add(root, "Chat read relay", LocalAppsActionChoiceV050.ChatReadRelay);
         Add(root, "Read Session Status — verified live authority (fast)", LocalAppsActionChoiceV050.ReadSessionStatus);
         Add(root, "Read Session History Page — bounded canonical evidence scan", LocalAppsActionChoiceV050.ReadSessionHistoryPage);
@@ -82,6 +85,9 @@ public sealed class LocalAppsActionDialogV0515 : Window
         ("chooser-v0518-stale-ack", true, "stale metadata acknowledgement", "evidence only; no lease authority"),
         ("chooser-v052-artifact-acquisition", true, "generic exact JSON acquisition entry point", "explicit request + confirmation"),
         ("chooser-v052-artifact-navigation", true, "selected app is navigation context only", "not acquisition authority"),
+        ("chooser-v053-runtime-execution", true, "generic exact JSON execution entry point", "materialized runtime evidence + explicit confirmation"),
+        ("chooser-v053-runtime-stop", true, "exact owned runtime stop entry point", "no arbitrary PID"),
+        ("chooser-v053-runtime-navigation", true, "selected app is navigation context only", "not execution authority"),
         ("chooser-v0515-four-button-surface", true, "dialog-only change", "no top-level button")
     };
 
