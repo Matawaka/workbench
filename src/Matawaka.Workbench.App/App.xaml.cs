@@ -8,8 +8,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var window = new MainWindow();
-        window.ConfigureV052Routing();
-        window.ConfigureV052AcceptanceRouting();
+        window.ConfigureV0521Routing();
+        window.ConfigureV0521AcceptanceRouting();
         MainWindow = window;
         window.Show();
     }

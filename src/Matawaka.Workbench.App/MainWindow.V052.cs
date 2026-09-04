@@ -120,12 +120,30 @@ public partial class MainWindow
         }
         catch (ArtifactAcquisitionExceptionV052 ex)
         {
+            var diagnostic = NetworkFailureDiagnosticsV0521.TryCreate(ex);
+            string? diagnosticPath = null;
+            if (diagnostic is not null)
+            {
+                try
+                {
+                    diagnosticPath = await NetworkFailureDiagnosticsV0521.WriteReceiptAsync(
+                        WorkspaceRootBox.Text, preview.RequestId, diagnostic, CancellationToken.None);
+                }
+                catch
+                {
+                    diagnosticPath = null;
+                }
+            }
+
             LocalAppsTextBox.Text = CommandCodec.Serialize(new
             {
                 Status = "ARTIFACT_ACQUISITION_TERMINAL_FAIL_CLOSED",
                 RequestId = preview.RequestId,
                 Classification = ex.Classification,
                 Message = ex.Message,
+                TransportDiagnostic = diagnostic,
+                TransportDiagnosticReceiptPath = diagnosticPath,
+                RawTransportExceptionMessagePersisted = false,
                 AutomaticRetryPerformed = false,
                 AutomaticResumePerformed = false,
                 ExtractionPerformed = false,
@@ -137,9 +155,11 @@ public partial class MainWindow
             });
             OutputTabs.SelectedItem = LocalAppsTab;
             _currentTerminalState = CommandTerminalState.Failed;
-            StatusText.Text = $"INVALID: {ex.Classification}: {ex.Message}";
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  artifact-acquisition.v052 refused class={ex.Classification}; retry=false; resume=false");
-            MessageBox.Show(this, $"{ex.Classification}\n\n{ex.Message}", "Bounded Artifact Acquisition v0.52", MessageBoxButton.OK, MessageBoxImage.Warning);
+            var displayedClass = diagnostic?.Classification ?? ex.Classification;
+            var displayedDetail = diagnostic is null ? ex.Message : NetworkFailureDiagnosticsV0521.OperatorSummary(diagnostic);
+            StatusText.Text = $"INVALID: {displayedClass}: {displayedDetail}";
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  artifact-acquisition.v052 refused class={ex.Classification}; transport={displayedClass}; retry=false; resume=false");
+            MessageBox.Show(this, $"{displayedClass}\n\n{displayedDetail}", "Bounded Artifact Acquisition v0.52", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (OperationCanceledException)
         {
@@ -167,6 +187,7 @@ public partial class MainWindow
         ("v052-network-policy", true, "credential-free HTTPS + exact route/redirect/byte/time/TTL bounds", "bounded"),
         ("v052-filesystem-policy", true, ".partial + size + SHA256 + atomic promote; reparse refused", "bounded"),
         ("v052-no-post-download-authority", true, "extract/install/execute/runtime/benchmark/model/game all false", "true"),
-        ("v052-kontur-generic", true, "KONTUR may supply a request but primitive contains no KONTUR-specific runtime behavior", "provider-neutral")
+        ("v052-kontur-generic", true, "KONTUR may supply a request but primitive contains no KONTUR-specific runtime behavior", "provider-neutral"),
+        ("v0521-network-diagnostic", true, "HttpRequestException -> bounded category; raw inner message omitted", "diagnostic only")
     };
 }
