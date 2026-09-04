@@ -1,0 +1,102 @@
+name: Workbench v0.51.4 bounded session status candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.4-bounded-session-status]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static bounded-status checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'Release build failed'}
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0514Routing()','ConfigureV0514AcceptanceRouting()')){if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup marker missing: $m"}}
+          $svc=Get-Content 'src/Matawaka.Workbench.App/LocalAppReadSessionStatusV0514Service.cs' -Raw
+          foreach($m in @('DefaultHistoryLimit = 16','MaxHistoryLimit = 64','LiveAuthorityHardLimit = 32','LIVE_AUTHORITY_OVERFLOW','ObserveExactLease','no historical lease-state deletion or compaction')){if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "status marker missing: $m"}}
+          foreach($bad in @('File.WriteAllText','File.Delete(','RevokeAllActiveAsync')){if($svc.Contains($bad,[StringComparison]::Ordinal)){throw "status mutation marker forbidden: $bad"}}
+          $xaml=Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface=[regex]::Match($xaml,'<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if([regex]::Matches($surface,'<Button\b').Count -ne 4){throw 'top-level four-button surface changed'}
+          Write-Host 'V0514_STATIC_PASS historyDefault=16 historyMax=64 liveHard=32 stateMutation=false buttons=4'
+
+      - name: Execute bounded-history and live-overflow hostile controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Join-Path $env:RUNNER_TEMP 'v0514-probe'
+          if(Test-Path $p){Remove-Item $p -Recurse -Force}
+          New-Item -ItemType Directory -Path $p|Out-Null
+          $proj=[Security.SecurityElement]::Escape((Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup><ItemGroup><ProjectReference Include="$proj" /></ItemGroup></Project>
+          "@ | Set-Content (Join-Path $p 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.IO;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              static string Sha(string p){using var s=File.OpenRead(p);return Convert.ToHexString(SHA256.HashData(s)).ToLowerInvariant();}
+              public static async Task Main()
+              {
+                  var w=Path.Combine(Path.GetTempPath(),"matawaka-v0514-"+Guid.NewGuid().ToString("N"));
+                  Directory.CreateDirectory(Path.Combine(w,"Workbench","artifacts"));
+                  var app=Path.Combine(w,"Apps","alpha"); Directory.CreateDirectory(Path.Combine(app,"data"));
+                  File.WriteAllText(Path.Combine(app,".matawaka-app.json"),JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema,"alpha","1.0.0")),new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(app,"data","state.json"),"{}",new UTF8Encoding(false));
+                  var leases=new LocalAppReadLeaseV048Service(); var close=new LocalAppReadLeaseExactRevokeV0512Service(); var secrets=new List<string>();
+                  async Task<(LocalAppReadLeaseGrantV048 Grant,LocalAppReadLeaseCreationReceiptV048 Receipt)> Create(string id){var q=new LocalAppReadLeaseRequestV048(LocalAppReadLeaseV048Service.RequestSchema,id,"alpha",new[]{new LocalAppReadLeaseScopeV048("installed","data/")},65536,262144,8,900);var p=leases.Preview(w,"alpha",q,default);var m=await leases.CreateAsync(w,"alpha",p,false,default);secrets.Add(m.Grant.Bearer);secrets.Add(m.Receipt.BearerSha256);return(m.Grant,m.Receipt);}
+                  for(var i=0;i<65;i++){var h=await Create($"lease:v0514:h:{i:D3}");await close.RevokeExactAsync(w,"alpha",h.Grant.LeaseId,default);}
+                  var a=await Create("lease:v0514:a");var b=await Create("lease:v0514:b");var c=await Create("lease:v0514:c");
+                  var mcp=new LocalAppMcpReadAdapterV049Service();var json=LocalAppReadLeaseV048Service.SerializeGrant(a.Grant);var pv=mcp.PreviewFromGrantJson(w,"alpha",json,default);await mcp.StartAsync(w,"alpha",pv,json,default);
+                  var stateDir=Path.Combine(w,"Workbench",".workbench","read-leases","alpha");
+                  Dictionary<string,string> Snap()=>Directory.EnumerateFiles(stateDir,"lease-*.json").ToDictionary(x=>Path.GetFileName(x),Sha,StringComparer.OrdinalIgnoreCase);
+                  void Same(Dictionary<string,string>x,Dictionary<string,string>y,string role){if(x.Count!=y.Count)throw new Exception(role+" count changed");foreach(var k in x)if(!y.TryGetValue(k.Key,out var v)||v!=k.Value)throw new Exception(role+" bytes changed");}
+                  var svc=new LocalAppReadSessionStatusV0514Service();var before=Snap();
+                  var p0=svc.Observe(w,"alpha","alpha",a.Grant.LeaseId,0,16);var p1=svc.Observe(w,"alpha","alpha",a.Grant.LeaseId,16,16);Same(before,Snap(),"pagination");
+                  if(p0.TotalLeaseRecords!=68||p0.LiveLeaseCount!=3||p0.HistoricalLeaseCount!=65||p0.LiveAuthorities.Count!=3||p0.OrphanClosureEligibleCount!=2)throw new Exception("aggregate/live counts mismatch");
+                  if(p0.HistoricalReturned!=16||p0.NextHistoryOffset!=16||p1.HistoryOffset!=16||p1.HistoricalReturned!=16||p1.NextHistoryOffset!=32)throw new Exception("page boundary mismatch");
+                  var l0=p0.LiveAuthorities.Select(x=>x.LeaseId).OrderBy(x=>x,StringComparer.Ordinal).ToArray();var l1=p1.LiveAuthorities.Select(x=>x.LeaseId).OrderBy(x=>x,StringComparer.Ordinal).ToArray();if(!l0.SequenceEqual(l1,StringComparer.Ordinal))throw new Exception("live authority differed across pages");
+                  if(p0.HistoricalLeases.Select(x=>x.LeaseId).Intersect(p1.HistoricalLeases.Select(x=>x.LeaseId),StringComparer.Ordinal).Any())throw new Exception("history pages overlap");
+                  var combined=p0.HistoricalLeases.Concat(p1.HistoricalLeases).ToArray();var ordered=combined.OrderByDescending(x=>x.IssuedAt).ThenByDescending(x=>x.ExpiresAt).ThenBy(x=>x.LeaseId,StringComparer.Ordinal).Select(x=>x.LeaseId);if(!combined.Select(x=>x.LeaseId).SequenceEqual(ordered,StringComparer.Ordinal))throw new Exception("history order mismatch");
+                  var sj=JsonSerializer.Serialize(new[]{p0,p1});foreach(var s in secrets)if(sj.Contains(s,StringComparison.OrdinalIgnoreCase))throw new Exception("secret leaked");
+                  var bound=p0.LiveAuthorities.Single(x=>x.LeaseId==a.Grant.LeaseId);var sib=p0.LiveAuthorities.Single(x=>x.LeaseId==c.Grant.LeaseId);var r=await close.RevokeExactAsync(w,"alpha",b.Grant.LeaseId,default);if(r.Receipt.SiblingLeasesRevoked!=0)throw new Exception("sibling revoke");
+                  var xb=svc.ObserveExactLease(w,"alpha",b.Grant.LeaseId,"alpha",a.Grant.LeaseId);if(!xb.Revoked||xb.OrphanClosureEligible)throw new Exception("exact lookup after revoke mismatch");var aft=svc.Observe(w,"alpha","alpha",a.Grant.LeaseId,0,16);var ba=aft.LiveAuthorities.Single(x=>x.LeaseId==a.Grant.LeaseId);var ca=aft.LiveAuthorities.Single(x=>x.LeaseId==c.Grant.LeaseId);if(ba.StateRevision!=bound.StateRevision||ba.RemainingCalls!=bound.RemainingCalls||ba.RemainingBytes!=bound.RemainingBytes||ca.StateRevision!=sib.StateRevision||ca.RemainingCalls!=sib.RemainingCalls||ca.RemainingBytes!=sib.RemainingBytes)throw new Exception("sibling state changed");if(!mcp.IsActiveFor("alpha"))throw new Exception("MCP changed");
+                  for(var i=0;i<31;i++)await Create($"lease:v0514:o:{i:D2}");var bo=Snap();var overflow=false;try{_=svc.Observe(w,"alpha","alpha",a.Grant.LeaseId,0,16);}catch(InvalidDataException ex)when(ex.Message.StartsWith("LIVE_AUTHORITY_OVERFLOW:",StringComparison.Ordinal)){overflow=true;}if(!overflow)throw new Exception("33 live did not overflow");Same(bo,Snap(),"overflow");
+                  await mcp.StopAsync(w,default);Console.WriteLine("V0514_RUNTIME_PASS history=65 pages=bounded live=all exactOrphan=true overflow=33 stateMutation=false bearer=false");
+              }
+          }
+          '@ | Set-Content (Join-Path $p 'Program.cs') -Encoding UTF8
+          Push-Location $p
+          try {dotnet restore Probe.csproj;if($LASTEXITCODE -ne 0){throw 'probe restore failed'};dotnet run --project Probe.csproj -c Release --no-restore;if($LASTEXITCODE -ne 0){throw 'probe failed'}} finally {Pop-Location}
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0514_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
