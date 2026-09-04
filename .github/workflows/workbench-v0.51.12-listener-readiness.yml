@@ -1,0 +1,70 @@
+name: Workbench v0.51.12 listener readiness
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.12-listener-readiness-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify listener-readiness ordering
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.12 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.12 Release build failed'}
+
+          $svc=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpListenerReadinessV05112Service.cs' -Raw
+          foreach($m in @('PREPARED_LISTENER_START','LISTENER_STARTED','LISTENER_READY','LIVE_BOUND_NO_LISTENER','ReconcileBeforeOwnerGenerationAsync','RecordListenerStartedAsync','CommitReadyAsync','CanonicalHistoricalScanPerformed','BearerHashDisclosed','EndpointSecretDisclosed')){
+            if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "listener service marker missing: $m"}
+          }
+
+          $owner=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
+          $listener=$owner.IndexOf('_listenerReadinessV05112Service.ReconcileBeforeOwnerGenerationAsync',[StringComparison]::Ordinal)
+          $binding=$owner.IndexOf('_ownerLeaseBindingV05111Service.ReconcileBeforeOwnerGenerationAsync',[StringComparison]::Ordinal)
+          $generation=$owner.IndexOf('_generationTransactionV05110Service.ReconcileBeforePrepareAsync',[StringComparison]::Ordinal)
+          if($listener -lt 0 -or $binding -lt 0 -or $generation -lt 0 -or -not ($listener -lt $binding -and $binding -lt $generation)){
+            throw "recovery ordering invalid listener=$listener binding=$binding generation=$generation"
+          }
+
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05112.cs' -Raw
+          $bound=$ui.IndexOf('CommitOwnerBoundAsync',[StringComparison]::Ordinal)
+          $prepared=$ui.IndexOf('_listenerReadinessV05112Service.PrepareAsync',[StringComparison]::Ordinal)
+          $start=$ui.IndexOf('_localAppMcpReadAdapterV049Service.StartAsync',[StringComparison]::Ordinal)
+          $started=$ui.IndexOf('_listenerReadinessV05112Service.RecordListenerStartedAsync',[StringComparison]::Ordinal)
+          $ready=$ui.IndexOf('_listenerReadinessV05112Service.CommitReadyAsync',[StringComparison]::Ordinal)
+          $ownerReady=$ui.IndexOf('_mcpSessionOwnershipV0517Service.MarkListenerReadyAsync',[StringComparison]::Ordinal)
+          if(@($bound,$prepared,$start,$started,$ready,$ownerReady)|Where-Object{$_ -lt 0}){throw 'v0.51.12 startup marker missing'}
+          if(-not ($bound -lt $prepared -and $prepared -lt $start -and $start -lt $started -and $started -lt $ready -and $ready -lt $ownerReady)){
+            throw "startup order invalid bound=$bound prepared=$prepared start=$start started=$started ready=$ready ownerReady=$ownerReady"
+          }
+          foreach($m in @('OWNER_LEASE_BOUND_LISTENER_READY_INDEXED_READ_LEASE_AND_LOCAL_MCP_READY','listener=LISTENER_READY','EndpointPathSecretStoredInListenerTransaction = false','HistoricalCanonicalScanPerformed = false')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.12 UI marker missing: $m"}
+          }
+
+          Write-Host 'V05112_LISTENER_READINESS_PASS ownerBound!=prepared!=started!=ready recoveryFirst=true authority=false secrets=false history=false'
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05112_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
