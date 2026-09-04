@@ -36,7 +36,7 @@ jobs:
             if(-not $route.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.12 route marker missing: $m"}
           }
           $svc=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpListenerReadinessV05112Service.cs' -Raw
-          foreach($m in @('LIVE_BOUND_NO_LISTENER','no listener exists','ListenerStartedOrResumed','CanonicalHistoricalScanPerformed','EndpointSecretDisclosed')){
+          foreach($m in @('LIVE_BOUND_NO_LISTENER','PREPARED_LISTENER_START is not evidence that a listener exists','ListenerStartedOrResumed','CanonicalHistoricalScanPerformed','EndpointSecretDisclosed')){
             if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.12 service marker missing: $m"}
           }
           $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV05112Service.cs' -Raw
