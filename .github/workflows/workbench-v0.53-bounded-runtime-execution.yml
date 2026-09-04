@@ -1,0 +1,161 @@
+name: Workbench v0.53 bounded runtime execution
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.53-bounded-runtime-execution-lease
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-package:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.53 solution restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.53 Release build failed'}
+          Write-Host 'V053_RELEASE_BUILD_PASS'
+
+      - name: Hostile offline execution-lease qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore .github/qualification/v053runtime/Probe.csproj
+          if($LASTEXITCODE -ne 0){throw 'v0.53 probe restore failed'}
+          dotnet run --project .github/qualification/v053runtime/Probe.csproj -c Release --no-restore
+          if($LASTEXITCODE -ne 0){throw 'v0.53 hostile/offline probe failed'}
+
+      - name: Verify authority boundary markers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $svc=Get-Content 'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs' -Raw
+          foreach($m in @(
+            'EXECUTION_AUTHORITY_CONSUMED',
+            'ProcessStartInfo',
+            'UseShellExecute = false',
+            'ArgumentList.Add',
+            'QueryFullProcessImageName',
+            'EXECUTABLE_HASH_DRIFT',
+            'PROCESS_IMAGE_HASH_MISMATCH',
+            'StopActiveOwnedRuntimeAsync',
+            'Kill(entireProcessTree: true)',
+            'Runtime Ready != Model Request Authority',
+            'no archive extraction/materialization performed by v0.53 execution layer'
+          )){
+            if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "v0.53 boundary marker missing: $m"}
+          }
+          if($svc.Contains('UseShellExecute = true',[StringComparison]::Ordinal)){throw 'shell execution unexpectedly enabled'}
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV053Service.cs' -Raw
+          foreach($m in @(
+            'c1ec1c744e4f5fa0e5a6056d0230d4cb98e70b7f',
+            'workbench-v0.52.1-accepted',
+            'workbench-v0.53-accepted',
+            'matawaka.workbench-build-source-manifest/v0.53'
+          )){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.53 checkpoint marker missing: $m"}
+          }
+          Write-Host 'V053_AUTHORITY_BOUNDARY_PASS'
+
+      - name: Verify public frontier remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          $v0521=git ls-remote origin refs/tags/workbench-v0.52.1-accepted
+          if(-not [string]::IsNullOrWhiteSpace(($v0521 -join ''))){throw 'workbench-v0.52.1-accepted unexpectedly published remotely'}
+          Write-Host "V053_REMOTE_BOUNDARY_PASS main=$remote localAcceptedV0521NotRemote=True"
+
+      - name: Package exact local v0.52.1 predecessor update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='c1ec1c744e4f5fa0e5a6056d0230d4cb98e70b7f'
+          $stage=Join-Path $env:RUNNER_TEMP 'v053-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.53.md',
+            'integrations/runtime-execution/README.md',
+            'integrations/runtime-execution/runtime-execution-request.v053.schema.json',
+            'integrations/runtime-execution/runtime-tree-manifest.v053.schema.json',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV053Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V053.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V053.Acceptance.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV053AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.53 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.53'
+            PredecessorTag='workbench-v0.52.1-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.53-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'exact local v0.52.1 accepted predecessor only',
+              'update package itself performs no network access',
+              'update package itself grants no runtime execution lease',
+              'runtime execution primitive requires separate exact JSON + explicit confirmation',
+              'no archive extraction/materialization authority',
+              'no benchmark/model/game authority',
+              'no KONTUR-specific runtime behavior',
+              'no remote publication authority',
+              'no CI workflow files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.53-bounded-runtime-execution-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V053_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.53-exact-local-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
