@@ -79,7 +79,8 @@ jobs:
 
           $xaml=Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
           foreach($name in @('UpdateCandidateButton','UpdateLocalAppButton','PublishAcceptedButton','LifecycleReceiptButton')){
-            if(-not $xaml.Contains("x:Name=\"$name\"",[StringComparison]::Ordinal)){throw "top-level button missing: $name"}
+            $marker='x:Name="' + $name + '"'
+            if(-not $xaml.Contains($marker,[StringComparison]::Ordinal)){throw "top-level button missing: $name"}
           }
           Write-Host 'V052_ACCEPTANCE_BOUNDARY_PASS exactPredecessor=46c926221cfaa8be3b68012852c7e8f3e324247f primitive=provider-neutral oneShot=true postDownloadAuthority=false konturIntake=non-authoritative publish=deferred'
       - name: Verify publication remains deferred
