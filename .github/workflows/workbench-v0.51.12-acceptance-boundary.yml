@@ -60,8 +60,12 @@ jobs:
             if(-not (Test-Path $path -PathType Leaf)){throw "KONTUR planning anchor missing: $path"}
           }
           $anchor=Get-Content 'integrations/kontur/KONTUR_ANCHOR.json' -Raw
-          foreach($m in @('HANDOFF_IS_NOT_AUTHORITY','DOWNLOAD_IS_NOT_AUTHORIZED','MODEL_RUNTIME_IS_NOT_AUTHORIZED')){
+          foreach($m in @('REFERENCE_ONLY_NO_AUTHORITY','"authority_effect": "NONE"','"runtime_effect": "NONE"','"network_effect": "NONE"')){
             if(-not $anchor.Contains($m,[StringComparison]::Ordinal)){throw "KONTUR anchor boundary missing: $m"}
+          }
+          $handoff=Get-Content 'integrations/kontur/CAPABILITY_HANDOFF.schema.json' -Raw
+          foreach($m in @('PREPARED_NOT_AUTHORIZED','handoff_is_authority','runtime_activation_authorized')){
+            if(-not $handoff.Contains($m,[StringComparison]::Ordinal)){throw "KONTUR handoff boundary missing: $m"}
           }
 
           Write-Host 'V05112_ACCEPTANCE_BOUNDARY_PASS exactPredecessor=ab97fea019644f89ce1c846ab5013b1b99245465 listenerReadiness=true konturPlanningOnly=true publish=deferred'
