@@ -1,0 +1,43 @@
+name: Workbench v0.51.13 shutdown hostile
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.13-shutdown-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hostile:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Release build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'Release build failed'}
+      - name: Run hostile shutdown runtime probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v05113/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51.13 hostile runtime probe failed'}
+      - name: Verify public publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05113_HOSTILE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
