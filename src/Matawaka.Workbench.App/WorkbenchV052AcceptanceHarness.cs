@@ -23,6 +23,8 @@ public sealed class WorkbenchV052AcceptanceHarness
 
         successorChecks.AddRange(BoundedArtifactAcquisitionV052Service.RunOfflineContractChecks()
             .Select(x => new WorkbenchAcceptanceCheck("v052-acquisition-" + x.Id, x.Passed, x.Observed, x.Expected)));
+        successorChecks.AddRange(LocalCheckpointV052Service.RunOfflineContractChecks()
+            .Select(x => new WorkbenchAcceptanceCheck("v052-checkpoint-" + x.Id, x.Passed, x.Observed, x.Expected)));
         successorChecks.AddRange(LocalAppsActionDialogV0515.RunOfflineContractChecks()
             .Where(x => x.Id.StartsWith("chooser-v052-", StringComparison.Ordinal))
             .Select(x => new WorkbenchAcceptanceCheck("v052-ui-" + x.Id, x.Passed, x.Observed, x.Expected)));
