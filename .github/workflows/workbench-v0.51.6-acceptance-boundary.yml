@@ -1,0 +1,50 @@
+name: Workbench v0.51.6 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.6-cross-process-active-index-fence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify first-boot acceptance boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.6 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.6 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0516Routing()','ConfigureV0516AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup v0.51.6 marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0516Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.5-accepted','workbench-v0.51.6-accepted','v0.51.6-source-manifest*.json','PredecessorGitSha','matawaka.workbench-local-checkpoint-receipt/v0.51.6')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.6 checkpoint marker missing: $m"}
+          }
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0516.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV0516','RunV0516AcceptanceArtifactAsync','AcceptFromBootstrapAsync','PublishAcceptedV0516Button_Click','AutomaticFenceReconciliationPerformedAtFirstBoot = false','CrossProcessFenceSerializationOnly = true')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.6 acceptance marker missing: $m"}
+          }
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0516AcceptanceHarness.cs' -Raw
+          foreach($m in @('LocalAppActiveIndexFenceV0516Service.RunOfflineContractChecks','ObserveV0516FenceContract','acceptance-receipt/v0.51.6','ACTIVE_INDEX_FENCE_BUSY')){
+            if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.6 harness marker missing: $m"}
+          }
+          Write-Host 'V0516_ACCEPTANCE_BOUNDARY_PASS bootstrap=one-shot checkpoint=dual-bound fence=serialization-only publish=deferred'
