@@ -1,0 +1,152 @@
+name: Workbench v0.51.3 read session status candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.3-read-session-status]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static status-authority checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV0513Routing()', [StringComparison]::Ordinal)){throw 'v0.51.3 startup routing missing'}
+
+          $status=Get-Content 'src/Matawaka.Workbench.App/LocalAppReadSessionStatusV0513Service.cs' -Raw
+          foreach($m in @('BearerPlaintextDisclosed','BearerHashDisclosed','OrphanClosureEligible','BoundToActiveLocalMcp','no bearer plaintext or bearer hash disclosure','no application file content read','no lease creation, renewal, scope widening or automatic revocation')){
+            if(-not $status.Contains($m,[StringComparison]::Ordinal)){throw "status marker missing: $m"}
+          }
+          if($status.Contains('BearerSha256,',[StringComparison]::Ordinal)){throw 'status DTO must not surface persisted bearer hash'}
+
+          $main=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0513.cs' -Raw
+          foreach($m in @('ReadSessionStatus','EndOrphanedReadSession','OrphanClosureEligible','BoundToActiveLocalMcp','RevokeExactAsync','ORPHAN_READ_SESSION_ENDED_EXACT_LEASE_REVOKED','BearerPlaintextUsedOrDisclosed = false','SiblingLeasesRevoked','ActiveLocalMcpChanged = false','AutomaticRetryPerformed = false')){
+            if(-not $main.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.3 UI marker missing: $m"}
+          }
+          $orphan=[regex]::Match($main,'private async Task EndOrphanedReadSessionV0513Async[\s\S]*?internal IReadOnlyList').Value
+          if([string]::IsNullOrWhiteSpace($orphan)){throw 'orphan closure method missing'}
+          if($orphan.Contains('RevokeAllActiveAsync',[StringComparison]::Ordinal)){throw 'orphan closure must not use revoke-all'}
+          if($orphan.Contains('StopAsync(',[StringComparison]::Ordinal) -or $orphan.Contains('StopBestEffortAsync(',[StringComparison]::Ordinal)){throw 'orphan closure must not mutate active MCP adapter'}
+          if($orphan.Contains('StartSecureMcpTunnel',[StringComparison]::Ordinal)){throw 'orphan closure gained tunnel authority'}
+
+          $xaml=Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml' -Raw
+          $surface=[regex]::Match($xaml,'<WrapPanel x:Name="PrimaryMaintenanceSurface"[\s\S]*?</WrapPanel>').Value
+          if([regex]::Matches($surface,'<Button\b').Count -ne 4){throw 'top-level four-button surface changed'}
+          Write-Host 'V0513_STATIC_PASS status=read-only bearer=omitted orphan=exact revokeAll=false mcpMutation=false buttons=4'
+
+      - name: Execute bound-vs-orphan hostile runtime control
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Join-Path $env:RUNNER_TEMP 'v0513-probe'
+          if(Test-Path $p){Remove-Item $p -Recurse -Force}
+          New-Item -ItemType Directory -Path $p|Out-Null
+          $appProject=(Resolve-Path 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj').Path
+          $escaped=[Security.SecurityElement]::Escape($appProject)
+          @"
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup><ItemGroup><ProjectReference Include="$escaped" /></ItemGroup></Project>
+          "@ | Set-Content (Join-Path $p 'Probe.csproj') -Encoding UTF8
+          @'
+          using System.IO;
+          using System.Text;
+          using System.Text.Json;
+          using Matawaka.Workbench.App;
+
+          internal static class Program
+          {
+              public static async Task Main()
+              {
+                  var workspace=Path.Combine(Path.GetTempPath(),"matawaka-v0513-"+Guid.NewGuid().ToString("N"));
+                  Directory.CreateDirectory(Path.Combine(workspace,"Workbench","artifacts"));
+                  var appRoot=Path.Combine(workspace,"Apps","alpha");
+                  var data=Path.Combine(appRoot,"data");
+                  Directory.CreateDirectory(data);
+                  File.WriteAllText(Path.Combine(appRoot,".matawaka-app.json"),JsonSerializer.Serialize(new LocalApplicationIdentity(LocalApplicationMaintenanceService.IdentitySchema,"alpha","1.0.0")),new UTF8Encoding(false));
+                  File.WriteAllText(Path.Combine(data,"state.json"),"{\"v0513\":true}",new UTF8Encoding(false));
+
+                  var leases=new LocalAppReadLeaseV048Service();
+                  async Task<(LocalAppReadLeaseGrantV048 Grant,LocalAppReadLeaseCreationReceiptV048 Receipt)> Create(string id)
+                  {
+                      var request=new LocalAppReadLeaseRequestV048(LocalAppReadLeaseV048Service.RequestSchema,id,"alpha",new[]{new LocalAppReadLeaseScopeV048("installed","data/")},65536,262144,8,600);
+                      var preview=leases.Preview(workspace,"alpha",request,default);
+                      var made=await leases.CreateAsync(workspace,"alpha",preview,false,default);
+                      return (made.Grant,made.Receipt);
+                  }
+
+                  var a=await Create("lease:v0513:bound");
+                  var b=await Create("lease:v0513:orphan");
+                  var aBefore=leases.ListActive(workspace,"alpha").Single(x=>x.LeaseId==a.Grant.LeaseId);
+                  var bBefore=leases.ListActive(workspace,"alpha").Single(x=>x.LeaseId==b.Grant.LeaseId);
+
+                  var adapter=new LocalAppMcpReadAdapterV049Service();
+                  var aJson=LocalAppReadLeaseV048Service.SerializeGrant(a.Grant);
+                  var ap=adapter.PreviewFromGrantJson(workspace,"alpha",aJson,default);
+                  var ag=await adapter.StartAsync(workspace,"alpha",ap,aJson,default);
+                  if(!ag.LoopbackOnly)throw new Exception("bound adapter not loopback-only");
+
+                  var statusSvc=new LocalAppReadSessionStatusV0513Service();
+                  var status=statusSvc.Observe(workspace,"alpha","alpha",a.Grant.LeaseId);
+                  var sa=status.Leases.Single(x=>x.LeaseId==a.Grant.LeaseId);
+                  var sb=status.Leases.Single(x=>x.LeaseId==b.Grant.LeaseId);
+                  if(!sa.BoundToActiveLocalMcp||sa.OrphanClosureEligible)throw new Exception("bound lease misclassified as orphan");
+                  if(sb.BoundToActiveLocalMcp||!sb.OrphanClosureEligible)throw new Exception("unbound live lease not classified as orphan");
+                  if(status.LiveLeaseCount!=2||status.OrphanClosureEligibleCount!=1)throw new Exception("status counts mismatch");
+                  var statusJson=JsonSerializer.Serialize(status);
+                  if(statusJson.Contains(a.Grant.Bearer,StringComparison.Ordinal)||statusJson.Contains(b.Grant.Bearer,StringComparison.Ordinal))throw new Exception("bearer plaintext leaked in status");
+                  if(statusJson.Contains(a.Receipt.BearerSha256,StringComparison.OrdinalIgnoreCase)||statusJson.Contains(b.Receipt.BearerSha256,StringComparison.OrdinalIgnoreCase))throw new Exception("bearer hash leaked in status");
+
+                  var closure=new LocalAppReadLeaseExactRevokeV0512Service();
+                  var closed=await closure.RevokeExactAsync(workspace,"alpha",b.Grant.LeaseId,default);
+                  if(!closed.Receipt.ExactLeaseRevoked||closed.Receipt.SiblingLeasesRevoked!=0)throw new Exception("exact orphan closure receipt mismatch");
+
+                  var aAfter=leases.ListActive(workspace,"alpha").Single(x=>x.LeaseId==a.Grant.LeaseId);
+                  if(aAfter.StateRevision!=aBefore.StateRevision||aAfter.RemainingCalls!=aBefore.RemainingCalls||aAfter.RemainingBytes!=aBefore.RemainingBytes)throw new Exception("bound sibling lease changed during orphan closure");
+                  if(leases.ListActive(workspace,"alpha").Any(x=>x.LeaseId==b.Grant.LeaseId))throw new Exception("orphan lease still active after exact revoke");
+                  if(!adapter.IsActiveFor("alpha"))throw new Exception("active MCP changed during orphan closure");
+
+                  var afterStatus=statusSvc.Observe(workspace,"alpha","alpha",a.Grant.LeaseId);
+                  var sbAfter=afterStatus.Leases.Single(x=>x.LeaseId==b.Grant.LeaseId);
+                  if(!sbAfter.Revoked||sbAfter.OrphanClosureEligible)throw new Exception("revoked orphan still eligible");
+                  if(afterStatus.OrphanClosureEligibleCount!=0)throw new Exception("orphan count not cleared");
+
+                  await adapter.StopAsync(workspace,default);
+                  Console.WriteLine($"V0513_RUNTIME_PASS bound={a.Grant.LeaseId} orphan={b.Grant.LeaseId} siblingRevision={aAfter.StateRevision} siblingCalls={aAfter.RemainingCalls} siblingBytes={aAfter.RemainingBytes} bearerDisclosed=false mcpChanged=false");
+              }
+          }
+          '@ | Set-Content (Join-Path $p 'Program.cs') -Encoding UTF8
+          Push-Location $p
+          try {
+            dotnet restore Probe.csproj
+            if($LASTEXITCODE -ne 0){throw 'probe restore failed'}
+            dotnet run --project Probe.csproj -c Release --no-restore
+            if($LASTEXITCODE -ne 0){throw 'v0.51.3 hostile runtime probe failed'}
+          } finally { Pop-Location }
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0513_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
