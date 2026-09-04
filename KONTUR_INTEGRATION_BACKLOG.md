@@ -51,6 +51,17 @@ Near-term preferred sequence:
 2. one-shot request envelope + cross-process Workbench capability lease;
 3. component manifest / affected-conformance bridge.
 
+## Prepared intake scaffold
+
+Workbench now has a durable inert landing zone under `integrations/kontur/`:
+
+- `integrations/kontur/README.md` — ownership split, intended first integration and non-effects;
+- `integrations/kontur/KONTUR_ANCHOR.json` — exact observed KONTUR/Workbench frontier reference;
+- `integrations/kontur/CAPABILITY_HANDOFF.schema.json` — mirrored machine-readable KONTUR → Workbench handoff schema; validation is not authority;
+- `integrations/kontur/LM1_ARTIFACT_INTAKE.template.json` — exact LM1 model-artifact intake template for a future bounded transfer/hash-verification review.
+
+This scaffold is deliberately non-executable and does not modify v0.51.12 runtime semantics.
+
 ## Ownership boundary
 
 - Workbench remains generic local capability/runtime infrastructure.
