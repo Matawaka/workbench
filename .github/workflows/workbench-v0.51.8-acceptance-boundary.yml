@@ -1,0 +1,70 @@
+name: Workbench v0.51.8 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.8-mcp-ownership-status]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify first-boot acceptance boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.8 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.8 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0518Routing()','ConfigureV0518AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup v0.51.8 marker missing: $m"}
+          }
+          $status=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnershipStatusV0518Service.cs' -Raw
+          foreach($m in @('OWNED','FREE_NO_METADATA','FREE_STALE_METADATA','LIVE_ORPHAN','ResumeAuthorityGranted','RevokeAuthorityGranted','FileMode.Open')){
+            if(-not $status.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 status marker missing: $m"}
+          }
+          $recovery=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnershipRecoveryV0518Service.cs' -Raw
+          foreach($m in @('MCP_STALE_METADATA_ACK_REFUSED_OWNER_BUSY','stale-evidence-v0518','OwnerHandleFreeProvenDuringRotation','CanonicalLeaseMutated','ActiveIndexMutated','ResumeAuthorityGranted','RevokeAuthorityGranted')){
+            if(-not $recovery.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 recovery marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0518Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.7-accepted','workbench-v0.51.8-accepted','v0.51.8-source-manifest*.json','PredecessorGitSha','matawaka.workbench-local-checkpoint-receipt/v0.51.8')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 checkpoint marker missing: $m"}
+          }
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0518.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV0518','RunV0518AcceptanceArtifactAsync','AcceptFromBootstrapAsync','PublishAcceptedV0518Button_Click','OwnerMetadataRemainsNonAuthoritative = true','StaleMetadataAcknowledgementRevokesLease = false','StaleMetadataAcknowledgementResumesMcp = false','AutomaticPublishPerformed = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 acceptance marker missing: $m"}
+          }
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV0518AcceptanceHarness.cs' -Raw
+          foreach($m in @('LocalAppMcpOwnershipStatusV0518Service.RunOfflineContractChecks','LocalAppMcpOwnershipRecoveryV0518Service.RunOfflineContractChecks','ObserveV0518OwnershipStatusContract','acceptance-receipt/v0.51.8')){
+            if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 harness marker missing: $m"}
+          }
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0518.cs' -Raw
+          foreach($m in @('McpOwnershipStatus','AcknowledgeStaleMcpOwnershipMetadata','ShowMcpOwnershipStatusV0518','AcknowledgeStaleMcpOwnershipMetadataV0518Async','LiveOrphanClosurePerformed = false')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 UI marker missing: $m"}
+          }
+          Write-Host 'V0518_ACCEPTANCE_BOUNDARY_PASS bootstrap=one-shot checkpoint=dual-bound status=observational staleAck=evidence-only authority=false publish=deferred'
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0518_ACCEPTANCE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
