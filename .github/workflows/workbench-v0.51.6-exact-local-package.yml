@@ -1,0 +1,131 @@
+name: Workbench v0.51.6 exact local predecessor package
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.6-cross-process-active-index-fence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build exact source candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.6 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.6 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0516Routing()','ConfigureV0516AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.6 routing marker missing: $m"}
+          }
+          $f=Get-Content 'src/Matawaka.Workbench.App/LocalAppActiveIndexFenceV0516Service.cs' -Raw
+          foreach($m in @('FileShare.None','ACTIVE_INDEX_FENCE_BUSY','LeaseAuthorityGranted','RejectReparse')){
+            if(-not $f.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.6 fence marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0516Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.5-accepted','workbench-v0.51.6-accepted','v0.51.6-source-manifest*.json','PredecessorGitSha')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.6 checkpoint marker missing: $m"}
+          }
+          Write-Host 'V0516_EXACT_PACKAGE_BUILD_PASS'
+
+      - name: Verify public publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0516_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
+
+      - name: Package exact local predecessor update
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='2790b139b40aaf8da5b16f18bd638a60f76075f6'
+          $stage=Join-Path $env:RUNNER_TEMP 'v0516-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.51.6.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalAppActiveIndexFenceV0516Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppReadLeaseIndexedLifecycleV0515Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0516Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0516.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0516.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0516AcceptanceHarness.cs'
+          )
+
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.51.6 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.51.6'
+            PredecessorTag='workbench-v0.51.5-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.51.6-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'source only',
+              'exact local v0.51.5 predecessor only',
+              'cross-process fence is serialization-only and stores no bearer/plaintext/hash authority material',
+              'canonical v0.48 lease state remains authority source of truth',
+              'v0.51.5 active index remains derived only',
+              'no historical evidence deletion or compaction',
+              'no private app bytes',
+              'no lease bearer clipboard endpoint MCP runtime or fence runtime bytes',
+              'no automatic Secure MCP Tunnel',
+              'no OpenAI bridge dependency',
+              'no remote publication authority',
+              'no CI workflow files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.51.6-cross-process-active-index-fence-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0516_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.51.6-exact-local-update
+          path: ${{ steps.pack.outputs.zip }}
+          if-no-files-found: error
