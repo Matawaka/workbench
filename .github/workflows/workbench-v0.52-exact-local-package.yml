@@ -1,0 +1,135 @@
+name: Workbench v0.52 exact local package
+
+on:
+  push:
+    branches: [feat/workbench-v0.52-bounded-artifact-acquisition]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build exact source candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.52 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.52 build failed'}
+
+          $svc=Get-Content 'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs' -Raw
+          foreach($m in @('ACQUISITION_PREPARED','DOWNLOAD_STARTED','BYTES_COMPLETE','SIZE_VERIFIED','SHA256_VERIFIED','RemainingCalls = 0','AllowAutoRedirect = false')){
+            if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "v0.52 service marker missing: $m"}
+          }
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV052Routing()','ConfigureV052AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "v0.52 app marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV052Service.cs' -Raw
+          foreach($m in @('46c926221cfaa8be3b68012852c7e8f3e324247f','workbench-v0.51.13-accepted','workbench-v0.52-accepted')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.52 checkpoint marker missing: $m"}
+          }
+          Write-Host 'V052_EXACT_PACKAGE_BUILD_PASS'
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V052_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
+      - name: Package exact local predecessor update
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='46c926221cfaa8be3b68012852c7e8f3e324247f'
+          $stage=Join-Path $env:RUNNER_TEMP 'v052-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.52.md',
+            'integrations/artifact-acquisition/README.md',
+            'integrations/artifact-acquisition/artifact-acquisition-request.v052.schema.json',
+            'integrations/kontur/ARTIFACT_ACQUISITION_INTAKE.v052.json',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV052Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V05113.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V052.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V052.cs',
+            'src/Matawaka.Workbench.App/V052StringCompatibilityExtensions.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV052AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.52 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.52'
+            PredecessorTag='workbench-v0.51.13-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.52-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'source/planning-only Workbench v0.52 update package application',
+              'exact local v0.51.13 predecessor only',
+              'applying this source update performs no artifact download',
+              'v0.52 future download requires a separate explicit one-shot acquisition authority',
+              'request/preview/selection are not acquisition authority',
+              'no bearer plaintext is persisted in source package',
+              'no archive extraction or installation',
+              'no process/runtime/model start',
+              'no benchmark/model request/game access',
+              'KONTUR intake remains PREPARED_NOT_AUTHORIZED',
+              'v0.51.13 MCP lifecycle remains preserved',
+              'no private app bytes or runtime lease/index/fence/MCP/acquisition state',
+              'no automatic Secure MCP Tunnel',
+              'no OpenAI bridge dependency',
+              'no remote publication authority',
+              'no CI workflow or qualification fixture files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.52-bounded-artifact-acquisition-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V052_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.52-exact-local-update
+          path: ${{ steps.pack.outputs.zip }}
+          if-no-files-found: error
