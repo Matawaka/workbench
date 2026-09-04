@@ -5,7 +5,8 @@ namespace Matawaka.Workbench.App;
 
 /// <summary>
 /// v0.51.5 separates fast verified live-authority status from explicit canonical
-/// history scanning. The top-level four-button Workbench surface remains unchanged.
+/// history scanning. v0.51.8 additionally exposes MCP ownership status/recovery
+/// without changing the top-level four-button Workbench surface.
 /// </summary>
 public sealed class LocalAppsActionDialogV0515 : Window
 {
@@ -30,7 +31,7 @@ public sealed class LocalAppsActionDialogV0515 : Window
         });
         root.Children.Add(new TextBlock
         {
-            Text = "Read Session Status now uses a verified active-lease index and revalidates each candidate against exact canonical state; it does not enumerate historical lease files. Historical evidence remains available through a separate bounded canonical History Page action. First use may ask for one explicit bounded reconciliation (max 4096 lease-state files). Bearer plaintext/hash are never indexed.",
+            Text = "Read Session Status uses the verified active-lease index and exact canonical revalidation without historical enumeration. MCP Ownership Status separately reports whether another Workbench owns the local MCP runtime domain or whether only stale non-authoritative owner metadata remains. Owner metadata never grants lease/read/resume authority. Bearer plaintext/hash and endpoint path token remain omitted.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 16)
         });
@@ -44,6 +45,8 @@ public sealed class LocalAppsActionDialogV0515 : Window
         Add(root, "Chat read relay", LocalAppsActionChoiceV050.ChatReadRelay);
         Add(root, "Read Session Status — verified live authority (fast)", LocalAppsActionChoiceV050.ReadSessionStatus);
         Add(root, "Read Session History Page — bounded canonical evidence scan", LocalAppsActionChoiceV050.ReadSessionHistoryPage);
+        Add(root, "MCP Ownership Status — cross-process runtime / stale metadata", LocalAppsActionChoiceV050.McpOwnershipStatus);
+        Add(root, "Acknowledge stale MCP owner metadata — evidence only", LocalAppsActionChoiceV050.AcknowledgeStaleMcpOwnershipMetadata);
         Add(root, "Read session lease + auto-start local MCP", LocalAppsActionChoiceV050.ReadSessionLease, !adapterActive && !tunnelActive);
         Add(root, "End Read Session — stop MCP + revoke exact bound lease", LocalAppsActionChoiceV050.StopReadOnlyMcpAdapter, adapterActive && !tunnelActive);
         Add(root, "End orphaned read session — exact indexed unbound lease", LocalAppsActionChoiceV050.EndOrphanedReadSession);
@@ -72,6 +75,8 @@ public sealed class LocalAppsActionDialogV0515 : Window
         ("chooser-v0515-reconcile", true, "prompted only when index missing/dirty", "explicit bounded max 4096"),
         ("chooser-v0515-orphan", true, "exact indexed unbound lease", "pagination-independent"),
         ("chooser-v0515-recovery", true, "revoke-all remains explicit recovery", "preserved"),
+        ("chooser-v0518-owner-status", true, "MCP Ownership Status", "read-only cross-process runtime status"),
+        ("chooser-v0518-stale-ack", true, "stale metadata acknowledgement", "evidence only; no lease authority"),
         ("chooser-v0515-four-button-surface", true, "dialog-only change", "no top-level button")
     };
 
