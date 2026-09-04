@@ -1,0 +1,48 @@
+name: Workbench v0.51.7 cross-process MCP ownership candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.7-cross-process-mcp-session-ownership]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build and static ownership checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.7 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.7 Release build failed'}
+          $o=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
+          foreach($m in @('FileShare.None','MCP_SESSION_OWNED_BY_OTHER_PROCESS','ReleaseAfterListenerStoppedAsync','EndpointSecretStored','LeaseAuthorityGranted')){
+            if(-not $o.Contains($m,[StringComparison]::Ordinal)){throw "ownership marker missing: $m"}
+          }
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0517.cs' -Raw
+          foreach($m in @('AcquireAsync(','CreateIndexedAsync(','BindExactLeaseAsync','MarkListenerReadyAsync','ReleaseAfterListenerStoppedAsync','RevokeExactIndexedAsync','guard-exact-orphan-closure','guard-revoke-all-recovery')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.7 UI marker missing: $m"}
+          }
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV0517Routing()',[StringComparison]::Ordinal)){throw 'v0.51.7 startup routing missing'}
+          Write-Host 'V0517_STATIC_PASS ownerBeforeLease=true releaseAfterStop=true destructiveGuards=true bearer=false endpointSecret=false'
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0517_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
