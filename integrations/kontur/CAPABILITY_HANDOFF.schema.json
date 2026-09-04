@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:matawaka:kontur-workbench-capability-handoff:v0.1",
+  "title": "KONTUR to Workbench capability handoff v0.1",
+  "description": "Workbench-side mirror of the KONTUR handoff validation contract. Validation does not grant authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "handoff_id",
+    "kind",
+    "source",
+    "subject",
+    "requested_corridor",
+    "effect_ceiling",
+    "fresh_human_confirmation_required",
+    "authority_effect",
+    "non_effects"
+  ],
+  "properties": {
+    "schema_version": {"const": "kontur-workbench-capability-handoff-v0.1"},
+    "handoff_id": {"type": "string", "pattern": "^kgc-wb-[a-z0-9-]{8,96}$"},
+    "kind": {
+      "enum": [
+        "READ_CAPABILITY_REVIEW",
+        "ARTIFACT_DOWNLOAD_VERIFICATION_REVIEW",
+        "LOCAL_RUNTIME_ADMISSION_REVIEW",
+        "COMPONENT_CONFORMANCE_PLAN_REVIEW",
+        "DISPLAY_EFFECT_REVIEW"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "artifact_digest"],
+      "properties": {
+        "repository": {"const": "Matawaka/kontur"},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "artifact_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["application_id", "class"],
+      "properties": {
+        "application_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "class": {"enum": ["LOCAL_APP", "MODEL_ARTIFACT", "LOCAL_RUNTIME", "COMPONENT_GRAPH", "DISPLAY_CANDIDATE"]},
+        "exact_ref": {"type": ["string", "null"], "maxLength": 512}
+      }
+    },
+    "requested_corridor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "one_shot"],
+      "properties": {
+        "operation": {"type": "string", "minLength": 1, "maxLength": 128},
+        "one_shot": {"type": "boolean"},
+        "ttl_seconds": {"type": ["integer", "null"], "minimum": 1, "maximum": 86400},
+        "max_calls": {"type": ["integer", "null"], "minimum": 1, "maximum": 10000},
+        "max_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "allowed_source": {"type": ["string", "null"], "maxLength": 1024},
+        "allowed_destination": {"type": ["string", "null"], "maxLength": 1024}
+      }
+    },
+    "effect_ceiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem", "network", "process", "model", "game", "display"],
+      "properties": {
+        "filesystem": {"enum": ["NONE", "READ_ONLY", "EXACT_ARTIFACT_WRITE"]},
+        "network": {"enum": ["NONE", "EXACT_ARTIFACT_SOURCE_ONLY"]},
+        "process": {"enum": ["NONE", "EXACT_RUNTIME_ONLY"]},
+        "model": {"enum": ["NONE", "BENCHMARK_ONLY", "ONE_REQUEST_ONLY"]},
+        "game": {"const": "NONE"},
+        "display": {"enum": ["NONE", "EXACT_ONE_USE_LOCAL_DISPLAY"]}
+      }
+    },
+    "fresh_human_confirmation_required": {"const": true},
+    "authority_effect": {"const": "NONE_BY_HANDOFF_RECORD"},
+    "non_effects": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 256}
+    },
+    "expected_receipt": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"type": "string"},
+        "must_bind_handoff_id": {"type": "boolean"},
+        "must_report_effects": {"type": "boolean"},
+        "must_report_authority": {"type": "boolean"}
+      }
+    }
+  }
+}
