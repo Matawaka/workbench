@@ -1,0 +1,131 @@
+name: Workbench v0.52.1 real-host HTTPS diagnostics
+
+on:
+  push:
+    branches: [feat/workbench-v0.52.1-realhost-https-diagnostics]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-package:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build Release and verify bounded diagnostic markers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.52.1 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.52.1 build failed'}
+
+          $diag=Get-Content 'src/Matawaka.Workbench.App/NetworkFailureDiagnosticsV0521.cs' -Raw
+          foreach($m in @('NETWORK_DNS_FAILED','NETWORK_TLS_FAILED','NETWORK_PROXY_TUNNEL_FAILED','NETWORK_CONNECTION_REFUSED','NETWORK_UNREACHABLE','RawExceptionMessagePersisted','RequestHeadersPersisted','ProxyCredentialPersisted','BearerPersisted')){
+            if(-not $diag.Contains($m,[StringComparison]::Ordinal)){throw "diagnostic marker missing: $m"}
+          }
+          if($diag.Contains('.Message',[StringComparison]::Ordinal)){throw 'diagnostic helper must not persist or format raw exception Message text'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV0521Routing()','ConfigureV0521AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "v0.52.1 app routing marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0521Service.cs' -Raw
+          foreach($m in @('87f98f33bde5b9c2e5de92855a62c3fc12d8fe9f','workbench-v0.52-accepted','workbench-v0.52.1-accepted','matawaka.workbench-build-source-manifest/v0.52')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.52.1 checkpoint marker missing: $m"}
+          }
+          $v052Blob=(git hash-object 'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs').Trim()
+          if($v052Blob -ne '624846a956807eaa35d5d8cdef144be196295561'){throw "accepted v0.52 acquisition primitive drifted: $v052Blob"}
+          Write-Host 'V0521_RELEASE_DIAGNOSTIC_BOUNDARY_PASS'
+
+      - name: Verify public publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          $remoteV052=(git ls-remote origin refs/tags/workbench-v0.52-accepted)
+          if(-not [string]::IsNullOrWhiteSpace(($remoteV052 -join ''))){throw 'workbench-v0.52-accepted unexpectedly published remotely'}
+          Write-Host "V0521_REMOTE_BOUNDARY_PASS main=$remote v052Published=False"
+
+      - name: Package exact local v0.52 predecessor update
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='87f98f33bde5b9c2e5de92855a62c3fc12d8fe9f'
+          $stage=Join-Path $env:RUNNER_TEMP 'v0521-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.52.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0521Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V052.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0521.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0521.Acceptance.cs',
+            'src/Matawaka.Workbench.App/NetworkFailureDiagnosticsV0521.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0521AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.52.1 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.52.1'
+            PredecessorTag='workbench-v0.52-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.52.1-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'exact local v0.52 predecessor only',
+              'diagnostic source update performs no network access',
+              'raw transport exception messages/request headers/proxy credentials/bearer are not persisted by diagnostic receipt',
+              'no automatic acquisition retry or resume',
+              'no archive extraction/install/process/runtime/model/game authority',
+              'no KONTUR LM1/LM3-A acquisition authority',
+              'no remote publication authority',
+              'no CI workflow files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.52.1-realhost-https-diagnostics-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0521_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.52.1-exact-local-update
+          path: ${{ steps.pack.outputs.zip }}
+          if-no-files-found: error
