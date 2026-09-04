@@ -1,0 +1,63 @@
+name: Workbench v0.51.6 cross-process active-index fence candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.6-cross-process-active-index-fence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static fence checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.6 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.6 Release build failed'}
+
+          $f=Get-Content 'src/Matawaka.Workbench.App/LocalAppActiveIndexFenceV0516Service.cs' -Raw
+          foreach($m in @('FileShare.None','ACTIVE_INDEX_FENCE_BUSY','DefaultTimeoutMilliseconds = 3000','RejectReparse','LeaseAuthorityGranted','BearerPlaintextUsedOrDisclosed')){
+            if(-not $f.Contains($m,[StringComparison]::Ordinal)){throw "fence marker missing: $m"}
+          }
+          $l=Get-Content 'src/Matawaka.Workbench.App/LocalAppReadLeaseIndexedLifecycleV0515Service.cs' -Raw
+          foreach($m in @('ObserveCoherentLiveAuthorityV0516Async','ACTIVE_INDEX_SNAPSHOT_CHANGED','IndexRevisionBeforeObservation','DirtyMarkerAbsentAfterObservation','CreateIndexedAsync','RevokeExactIndexedAsync')){
+            if(-not $l.Contains($m,[StringComparison]::Ordinal)){throw "coherent lifecycle marker missing: $m"}
+          }
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0516.cs' -Raw
+          foreach($m in @('ConfigureV0516Routing','ShowCoherentLiveReadSessionStatusV0516Async','fence=true','coherent=true')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.6 UI marker missing: $m"}
+          }
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV0516Routing()',[StringComparison]::Ordinal)){throw 'startup v0.51.6 routing missing'}
+          Write-Host 'V0516_STATIC_PASS fence=file-handle snapshot=revision+dirty canonical=v048 index=v0515'
+
+      - name: Execute two-process fence and snapshot controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v0516/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51.6 hostile runtime probe failed'}
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0516_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
