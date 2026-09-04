@@ -1,0 +1,54 @@
+name: Workbench v0.51.11.1 acceptance boundary
+
+on:
+  push:
+    branches: [hotfix/workbench-v0.51.11.1-exclusive-local-app-routing]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build and verify hotfix admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11.1 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11.1 build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV051111Routing()','ConfigureV051111AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup marker missing: $m"}
+          }
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V051111.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV051111','RunV051111AcceptanceArtifactAsync','AcceptFromBootstrapAsync','ExclusiveLocalAppsRouting = true','ReadSessionLeaseTarget = "CreateOwnedReadLeaseAndAutoStartMcpV05111Async"','AutomaticPublishPerformed = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "acceptance marker missing: $m"}
+          }
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV051111AcceptanceHarness.cs' -Raw
+          foreach($m in @('ObserveV051111ExclusiveRoutingContract','acceptance-receipt/v0.51.11.1','0.51.11.1')){
+            if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "harness marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV051111Service.cs' -Raw
+          foreach($m in @('ExpectedPredecessorCommit = "89bb3cc263a9e312df77bef19ee6ab738eb319ca"','workbench-v0.51.11-accepted','workbench-v0.51.11.1-accepted','v0.51.11.1-source-manifest*.json')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "checkpoint marker missing: $m"}
+          }
+          Write-Host 'V051111_ACCEPTANCE_BOUNDARY_PASS exactLocalPredecessor=true exclusiveRoute=true ownerLeaseV05111Preserved=true publish=deferred'
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V051111_ACCEPTANCE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
