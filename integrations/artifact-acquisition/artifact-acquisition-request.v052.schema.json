@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:matawaka:workbench:artifact-acquisition-request:v0.52",
+  "title": "Matawaka Workbench Bounded Artifact Acquisition Request v0.52",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "Schema",
+    "RequestId",
+    "Artifacts",
+    "DestinationRoot",
+    "MaxTotalNetworkBytes",
+    "MaxRedirects",
+    "TimeoutSeconds",
+    "TtlSeconds"
+  ],
+  "properties": {
+    "Schema": {
+      "const": "matawaka.artifact-acquisition-request/v0.52"
+    },
+    "RequestId": {
+      "type": "string",
+      "pattern": "^acqreq-[A-Za-z0-9_-]+$",
+      "maxLength": 96
+    },
+    "Artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "DestinationRoot": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Existing absolute local directory. Runtime additionally requires it to be outside the Workbench Git root and rejects reparse/junction/symlink paths."
+    },
+    "MaxTotalNetworkBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 34359738368
+    },
+    "MaxRedirects": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "TimeoutSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1800
+    },
+    "TtlSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1800
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ArtifactId",
+        "SourceUri",
+        "FileName",
+        "ExpectedBytes",
+        "ExpectedSha256",
+        "AllowedRoutes"
+      ],
+      "properties": {
+        "ArtifactId": {
+          "type": "string",
+          "pattern": "^artifact-[A-Za-z0-9_-]+$",
+          "maxLength": 96
+        },
+        "SourceUri": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Exact initial HTTPS URI. Userinfo and fragments are rejected by runtime."
+        },
+        "FileName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Single filename only; no relative or absolute path components."
+        },
+        "ExpectedBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 17179869184
+        },
+        "ExpectedSha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "AllowedRoutes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/route"
+          }
+        }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Host", "PathPrefix"],
+      "properties": {
+        "Host": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact hostname; wildcard hosts are forbidden."
+        },
+        "PathPrefix": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Reviewed absolute non-traversing path prefix. Every redirect is revalidated against this policy."
+        }
+      }
+    }
+  },
+  "x-matawaka-authority-semantics": {
+    "schema_validity_is_authority": false,
+    "preview_is_authority": false,
+    "selection_is_authority": false,
+    "explicit_grant_required": true,
+    "one_shot_call_budget": 1,
+    "bearer_plaintext_persisted": false,
+    "automatic_retry_or_resume": false
+  },
+  "x-matawaka-forbidden-effects": [
+    "archive extraction",
+    "installation",
+    "script or process execution",
+    "PATH or environment mutation",
+    "runtime or model server start",
+    "benchmark",
+    "model request",
+    "game access",
+    "general browser/network authority",
+    "Git/catalog/Agent Execute/ActionPermit mutation"
+  ]
+}
