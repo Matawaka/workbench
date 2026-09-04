@@ -1,0 +1,75 @@
+name: Workbench v0.51.12 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.12-listener-readiness-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify v0.51.12 admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.12 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.12 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV05112Routing()','ConfigureV05112AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup v0.51.12 marker missing: $m"}
+          }
+
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05112.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV05112','RunV05112AcceptanceArtifactAsync','AcceptFromBootstrapAsync','PublishAcceptedV05112Button_Click','LiveBoundNoListenerBlocksSilentSuccessor = true','ListenerRecoveryAutoStartsOrResumes = false','ListenerRecoveryAutoRevokesLease = false','KONTURIntegrationAnchorsArePlanningOnly = true','AutomaticPublishPerformed = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.12 acceptance marker missing: $m"}
+          }
+
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV05112AcceptanceHarness.cs' -Raw
+          foreach($m in @('LocalAppMcpListenerReadinessV05112Service.RunOfflineContractChecks','ObserveV05112ListenerReadinessContract','acceptance-receipt/v0.51.12','PREPARED_LISTENER_START','LIVE_BOUND_NO_LISTENER')){
+            if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.12 harness marker missing: $m"}
+          }
+
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV05112Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.11.1-accepted','ab97fea019644f89ce1c846ab5013b1b99245465','workbench-v0.51.12-accepted','v0.51.12-source-manifest*.json','matawaka.workbench-local-checkpoint-receipt/v0.51.12')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.12 checkpoint marker missing: $m"}
+          }
+
+          foreach($path in @(
+            'integrations/kontur/README.md',
+            'integrations/kontur/FUTURE_WORK_START_HERE.md',
+            'integrations/kontur/KONTUR_ANCHOR.json',
+            'integrations/kontur/CAPABILITY_HANDOFF.schema.json',
+            'integrations/kontur/LM1_ARTIFACT_INTAKE.template.json')){
+            if(-not (Test-Path $path -PathType Leaf)){throw "KONTUR planning anchor missing: $path"}
+          }
+          $anchor=Get-Content 'integrations/kontur/KONTUR_ANCHOR.json' -Raw
+          foreach($m in @('HANDOFF_IS_NOT_AUTHORITY','DOWNLOAD_IS_NOT_AUTHORIZED','MODEL_RUNTIME_IS_NOT_AUTHORIZED')){
+            if(-not $anchor.Contains($m,[StringComparison]::Ordinal)){throw "KONTUR anchor boundary missing: $m"}
+          }
+
+          Write-Host 'V05112_ACCEPTANCE_BOUNDARY_PASS exactPredecessor=ab97fea019644f89ce1c846ab5013b1b99245465 listenerReadiness=true konturPlanningOnly=true publish=deferred'
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05112_ACCEPTANCE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
