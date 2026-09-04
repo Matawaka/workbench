@@ -1,0 +1,112 @@
+name: Workbench v0.51.11.1 exact local package
+
+on:
+  push:
+    branches: [hotfix/workbench-v0.51.11.1-exclusive-local-app-routing]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build exact source candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11.1 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11.1 build failed'}
+
+          $route=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V051111.cs' -Raw
+          foreach($m in @('Click -= LocalAppsV0518Button_Click','Click -= LocalAppsV05111Button_Click','Click += LocalAppsV051111Button_Click','local-app.v051111.dispatch exclusive=true; target=v05111')){
+            if(-not $route.Contains($m,[StringComparison]::Ordinal)){throw "routing marker missing: $m"}
+          }
+          $v11=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05111.cs' -Raw
+          if(-not $v11.Contains('case LocalAppsActionChoiceV050.ReadSessionLease: await CreateOwnedReadLeaseAndAutoStartMcpV05111Async(appId); break;',[StringComparison]::Ordinal)){throw 'v0.51.11 transaction target missing'}
+          Write-Host 'V051111_EXACT_PACKAGE_BUILD_PASS'
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V051111_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
+      - name: Package exact local predecessor update
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='89bb3cc263a9e312df77bef19ee6ab738eb319ca'
+          $stage=Join-Path $env:RUNNER_TEMP 'v051111-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.51.11.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV051111Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V051111.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V051111.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV051111AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing hotfix payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.51.11.1'
+            PredecessorTag='workbench-v0.51.11-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.51.11.1-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'source-only routing/admission hotfix',
+              'exact local v0.51.11 predecessor only',
+              'no canonical lease/index/owner/generation/binding semantics changed',
+              'no bearer plaintext/hash or endpoint path token introduced',
+              'no private app bytes',
+              'no runtime lease/index/fence/MCP owner/generation/binding/evidence state',
+              'no automatic Secure MCP Tunnel',
+              'no OpenAI bridge dependency',
+              'no remote publication authority',
+              'no CI workflow files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.51.11.1-exclusive-local-app-routing-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V051111_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.51.11.1-exact-local-update
+          path: ${{ steps.pack.outputs.zip }}
+          if-no-files-found: error
