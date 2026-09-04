@@ -1,0 +1,50 @@
+name: Workbench v0.51.13 shutdown transaction build
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.13-shutdown-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Release build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.13 Release build failed'}
+      - name: Verify shutdown ordering markers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $svc=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpShutdownTransactionV05113Service.cs' -Raw
+          foreach($m in @('SHUTDOWN_PREPARED','LISTENER_STOPPED','OWNER_RELEASED','LEASE_REVOKED','SHUTDOWN_COMPLETED','OWNER_RELEASED_LEASE_LIVE','reconciliation performs no listener start/resume and no automatic revoke')){
+            if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "shutdown service marker missing: $m"}
+          }
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05113.cs' -Raw
+          foreach($m in @('PrepareAsync(owner','StopAsync','RecordListenerStoppedAsync','ReleaseAfterListenerStoppedAsync','RecordOwnerReleasedAsync','RevokeExactIndexedAsync','RecordLeaseTerminalAsync','CommitCompletedAsync')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "shutdown UI ordering marker missing: $m"}
+          }
+          Write-Host 'V05113_SHUTDOWN_BUILD_MARKERS_PASS'
+      - name: Verify public publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05113_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
