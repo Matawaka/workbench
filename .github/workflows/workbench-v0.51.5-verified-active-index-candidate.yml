@@ -48,7 +48,7 @@ jobs:
           }
 
           $main=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V0515.cs' -Raw
-          foreach($m in @('ReadSessionHistoryPage','EnsureVerifiedActiveIndexReadyV0515Async','CreateIndexedAsync','RevokeExactIndexedAsync','CanonicalHistoricalScanPerformed = false','HistoricalEvidenceDeleted = false')){
+          foreach($m in @('ReadSessionHistoryPage','EnsureVerifiedActiveIndexReadyV0515Async','CreateIndexedAsync','RevokeExactIndexedAsync','historicalScan=false','HistoricalEvidenceDeleted = false')){
             if(-not $main.Contains($m,[StringComparison]::Ordinal)){throw "orchestration marker missing: $m"}
           }
 
