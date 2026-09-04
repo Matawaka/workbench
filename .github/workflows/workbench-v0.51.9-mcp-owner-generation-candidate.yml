@@ -1,0 +1,57 @@
+name: Workbench v0.51.9 MCP owner generation continuity candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.9-mcp-owner-generation-continuity]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static generation checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.9 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.9 Release build failed'}
+
+          $g=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnerGenerationV0519Service.cs' -Raw
+          foreach($m in @('MaxPriorMetadataBytes = 64 * 1024','PRIOR_OWNER_METADATA_PRESERVED_VALID','PRIOR_OWNER_METADATA_PRESERVED_OPAQUE_UNTRUSTED','NO_PRIOR_OWNER_METADATA','MCP_OWNER_GENERATION_PRIOR_METADATA_OVERSIZE','MCP_OWNER_GENERATION_ARCHIVE_HASH_MISMATCH','LeaseAuthorityGranted','ResumeAuthorityGranted')){
+            if(-not $g.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.9 generation marker missing: $m"}
+          }
+          $o=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
+          $preserve=$o.IndexOf('PreservePriorBeforeSuccessorAsync(',[StringComparison]::Ordinal)
+          $write=$o.IndexOf('WriteOwnerAsync(held, null, "OWNERSHIP_ACQUIRED_UNBOUND"',[StringComparison]::Ordinal)
+          if($preserve -lt 0 -or $write -lt 0 -or $preserve -ge $write){throw 'v0.51.9 prior evidence preservation is not before successor metadata write'}
+          Write-Host 'V0519_GENERATION_STATIC_PASS preserveBeforeSuccessor=true maxPrior=65536 failClosed=true authority=false'
+
+      - name: Execute owner generation hostile controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v0519/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51.9 generation hostile probe failed'}
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V0519_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
