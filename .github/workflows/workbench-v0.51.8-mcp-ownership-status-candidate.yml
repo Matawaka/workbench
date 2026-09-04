@@ -35,11 +35,15 @@ jobs:
           foreach($m in @('OWNED','FREE_NO_METADATA','FREE_STALE_METADATA','FileMode.Open','FileAccess.Read','FileShare.None','LIVE_ORPHAN','LIVE_OWNER_DOMAIN_BUSY','ABSENT','ResumeAuthorityGranted','RevokeAuthorityGranted')){
             if(-not $s.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 status marker missing: $m"}
           }
+          $r=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnershipRecoveryV0518Service.cs' -Raw
+          foreach($m in @('MCP_STALE_METADATA_ACK_NOT_APPLICABLE','MCP_STALE_METADATA_ACK_REFUSED_OWNER_BUSY','stale-evidence-v0518','FileMode.Open','FileShare.None','CanonicalLeaseMutated','ActiveIndexMutated','ResumeAuthorityGranted','RevokeAuthorityGranted')){
+            if(-not $r.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 recovery marker missing: $m"}
+          }
           $d=Get-Content 'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs' -Raw
           foreach($m in @('MCP Ownership Status','Acknowledge stale MCP owner metadata')){
             if(-not $d.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.8 chooser marker missing: $m"}
           }
-          Write-Host 'V0518_STATUS_STATIC_PASS readOnlyProbe=true noLockCreation=true noHistoricalScan=true authority=false secrets=false'
+          Write-Host 'V0518_STATUS_STATIC_PASS readOnlyProbe=true staleAckGuarded=true evidencePreserved=true noHistoricalScan=true authority=false secrets=false'
 
       - name: Execute ownership status hostile controls
         shell: pwsh
