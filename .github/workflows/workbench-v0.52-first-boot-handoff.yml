@@ -1,0 +1,71 @@
+name: Workbench v0.52 first-boot handoff
+
+on:
+  push:
+    branches: [feat/workbench-v0.52-bounded-artifact-acquisition]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  first-boot-handoff:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build exact source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.52 first-boot restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.52 first-boot build failed'}
+      - name: Verify manifest writer/checkpoint parity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $checkpoint=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV052Service.cs' -Raw
+          if(-not $checkpoint.Contains('BuildManifestSchema = "matawaka.workbench-build-source-manifest/v0.52"',[StringComparison]::Ordinal)){
+            throw 'v0.52 checkpoint does not require the exact v0.52 build-source-manifest schema'
+          }
+          if(-not $checkpoint.Contains('checkpoint-v052-build-manifest-schema',[StringComparison]::Ordinal)){
+            throw 'v0.52 checkpoint schema parity is absent from offline contract checks'
+          }
+          $writer=Get-Content 'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs' -Raw
+          foreach($marker in @('ToSchemaVersion(plan.TargetVersion)','matawaka.workbench-build-source-manifest/{versionSuffix}')){
+            if(-not $writer.Contains($marker,[StringComparison]::Ordinal)){throw "dynamic build-source-manifest writer marker missing: $marker"}
+          }
+          $harness=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV052AcceptanceHarness.cs' -Raw
+          if(-not $harness.Contains('LocalCheckpointV052Service.RunOfflineContractChecks()',[StringComparison]::Ordinal)){
+            throw 'v0.52 first-boot checkpoint contract is not part of acceptance'
+          }
+          Write-Host 'V052_BUILD_MANIFEST_PARITY_PASS schema=v0.52 acceptanceBound=true'
+      - name: Verify exclusive first-boot and publication routing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $routing=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V052.Acceptance.cs' -Raw
+          foreach($marker in @(
+            'ConfigureV05113AcceptanceRouting()',
+            'Loaded -= Window_LoadedV0511;',
+            'Loaded -= Window_LoadedV05113;',
+            'Loaded += Window_LoadedV052;',
+            'PublishAcceptedButton.Click -= PublishAcceptedV0511Button_Click;',
+            'PublishAcceptedButton.Click -= PublishAcceptedV05113Button_Click;',
+            'PublishAcceptedButton.Click += PublishAcceptedV052Button_Click;'
+          )){
+            if(-not $routing.Contains($marker,[StringComparison]::Ordinal)){throw "v0.52 exclusive routing marker missing: $marker"}
+          }
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($marker in @('ConfigureV052Routing();','ConfigureV052AcceptanceRouting();')){
+            if(-not $app.Contains($marker,[StringComparison]::Ordinal)){throw "v0.52 startup marker missing: $marker"}
+          }
+          Write-Host 'V052_FIRST_BOOT_ROUTING_PASS staleV0511Detached=true exactV052Installed=true'
