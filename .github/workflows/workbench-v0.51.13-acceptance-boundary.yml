@@ -1,0 +1,72 @@
+name: Workbench v0.51.13 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.13-shutdown-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build and verify v0.51.13 admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.13 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.13 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV05113Routing()','ConfigureV05113AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "startup v0.51.13 marker missing: $m"}
+          }
+
+          $route=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05113.cs' -Raw
+          foreach($m in @('local-app.v05113.dispatch exclusive=true','SHUTDOWN_PREPARED','RecordListenerStoppedAsync','ReleaseAfterListenerStoppedAsync','RecordOwnerReleasedAsync','RevokeExactIndexedAsync','RecordLeaseTerminalAsync','CommitCompletedAsync','SHUTDOWN_TRANSACTION_PARTIAL_FAIL_CLOSED')){
+            if(-not $route.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.13 route marker missing: $m"}
+          }
+
+          $svc=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpShutdownTransactionV05113Service.cs' -Raw
+          foreach($m in @('OWNER_RELEASED_LEASE_LIVE','LEASE_ALREADY_TERMINAL','SHUTDOWN_COMPLETED','reconciliation performs no listener start/resume and no automatic revoke','sibling lease revocation is outside the exact shutdown corridor')){
+            if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.13 shutdown marker missing: $m"}
+          }
+
+          $owner=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
+          $shutdownIndex=$owner.IndexOf('_shutdownTransactionV05113Service.ReconcileBeforeOwnerGenerationAsync',[StringComparison]::Ordinal)
+          $listenerIndex=$owner.IndexOf('_listenerReadinessV05112Service.ReconcileBeforeOwnerGenerationAsync',[StringComparison]::Ordinal)
+          if($shutdownIndex -lt 0 -or $listenerIndex -lt 0 -or $shutdownIndex -gt $listenerIndex){throw 'v0.51.13 shutdown recovery is not first under owner.lock'}
+
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05113.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV05113','RunV05113AcceptanceArtifactAsync','AcceptFromBootstrapAsync','OwnerReleasedLiveLeaseBlocksSilentSuccessor = true','ShutdownRecoveryAutoRevokesLease = false','SiblingLeaseRevocationAllowed = false','AutomaticPublishPerformed = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.13 acceptance marker missing: $m"}
+          }
+
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV05113Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.12-accepted','9eb536894dbe16d247e995876facd669121ed8f2','workbench-v0.51.13-accepted','v0.51.13-source-manifest*.json','matawaka.workbench-local-checkpoint-receipt/v0.51.13')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.13 checkpoint marker missing: $m"}
+          }
+
+          foreach($path in @('integrations/kontur/README.md','integrations/kontur/FUTURE_WORK_START_HERE.md','integrations/kontur/KONTUR_ANCHOR.json','integrations/kontur/CAPABILITY_HANDOFF.schema.json','integrations/kontur/LM1_ARTIFACT_INTAKE.template.json')){
+            if(-not (Test-Path $path -PathType Leaf)){throw "KONTUR planning anchor missing: $path"}
+          }
+          Write-Host 'V05113_ACCEPTANCE_BOUNDARY_PASS exactPredecessor=9eb536894dbe16d247e995876facd669121ed8f2 shutdownTransaction=true konturPlanningOnly=true publish=deferred'
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05113_ACCEPTANCE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
