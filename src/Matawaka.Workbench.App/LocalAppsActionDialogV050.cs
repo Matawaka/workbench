@@ -21,7 +21,9 @@ public enum LocalAppsActionChoiceV050
     StopSecureMcpTunnel,
     ReadSessionStatus,
     EndOrphanedReadSession,
-    ReadSessionHistoryPage
+    ReadSessionHistoryPage,
+    McpOwnershipStatus,
+    AcknowledgeStaleMcpOwnershipMetadata
 }
 
 public sealed class LocalAppsActionDialogV050 : Window
