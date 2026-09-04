@@ -35,7 +35,7 @@ jobs:
           }
 
           $svc=Get-Content 'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs' -Raw
-          foreach($m in @('ACQUISITION_PREPARED','DOWNLOAD_STARTED','BYTES_COMPLETE','SIZE_VERIFIED','SHA256_VERIFIED','RemainingCalls = 0','AllowAutoRedirect = false','Atomic','Artifact Selected != Download Authority')){
+          foreach($m in @('ACQUISITION_PREPARED','DOWNLOAD_STARTED','BYTES_COMPLETE','SIZE_VERIFIED','SHA256_VERIFIED','RemainingCalls = 0','AllowAutoRedirect = false','Atomic','selection/handoff alone is never authority')){
             if(-not $svc.Contains($m,[StringComparison]::Ordinal)){throw "v0.52 service marker missing: $m"}
           }
 
