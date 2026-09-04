@@ -1,0 +1,62 @@
+name: Workbench v0.51.11 acceptance boundary
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.11-owner-lease-binding-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and verify first-boot acceptance boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV05111Routing()','ConfigureV05111AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 startup marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV05111Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.10-accepted','workbench-v0.51.11-accepted','v0.51.11-source-manifest*.json','PredecessorGitSha','matawaka.workbench-local-checkpoint-receipt/v0.51.11')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 checkpoint marker missing: $m"}
+          }
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05111.Acceptance.cs' -Raw
+          foreach($m in @('Window_LoadedV05111','RunV05111AcceptanceArtifactAsync','AcceptFromBootstrapAsync','PublishAcceptedV05111Button_Click','PreparedExactLeaseIdDoesNotMeanCreated = true','LeaseCreatedDoesNotMeanOwnerBound = true','OwnerBoundDoesNotMeanListenerReady = true','LiveIncompleteBindingLeaseAutoRevoked = false','AutomaticPublishPerformed = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 acceptance marker missing: $m"}
+          }
+          $h=Get-Content 'src/Matawaka.Workbench.App/WorkbenchV05111AcceptanceHarness.cs' -Raw
+          foreach($m in @('LocalAppMcpOwnerLeaseBindingV05111Service.RunOfflineContractChecks','LocalAppPreparedIndexedLeaseV05111Service.RunOfflineContractChecks','ObserveV05111OwnerLeaseBindingContract','acceptance-receipt/v0.51.11')){
+            if(-not $h.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 harness marker missing: $m"}
+          }
+          $ui=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05111.cs' -Raw
+          foreach($m in @('PrepareBindingAsync','CreatePreparedIndexedAsync','RecordLeaseCreatedAsync','CommitOwnerBoundAsync','OwnerBoundBeforeListenerStart = true')){
+            if(-not $ui.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 runtime acceptance marker missing: $m"}
+          }
+          Write-Host 'V05111_ACCEPTANCE_BOUNDARY_PASS bootstrap=one-shot checkpoint=dual-bound exactPreparedId=true liveOrphanAutoRevoke=false listenerSeparate=true publish=deferred'
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05111_ACCEPTANCE_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
