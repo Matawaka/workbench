@@ -192,7 +192,7 @@ public sealed record ArtifactAcquisitionExecutionReceiptV052(
     string Status,
     string Note);
 
-public sealed class ArtifactAcquisitionExceptionV052 : InvalidDataException
+public sealed class ArtifactAcquisitionExceptionV052 : IOException
 {
     public string Classification { get; }
 
@@ -203,14 +203,6 @@ public sealed class ArtifactAcquisitionExceptionV052 : InvalidDataException
         => Classification = classification;
 }
 
-/// <summary>
-/// Reusable one-shot artifact acquisition corridor. Selection/handoff is non-authoritative.
-/// Authority binds immutable source routes, filenames, exact sizes/hashes, destination,
-/// redirects, timeout, TTL and total network bytes before any network call. Downloaded
-/// bytes remain .partial until exact size and SHA-256 verification, then are atomically
-/// promoted. No extraction, install, process/runtime start, benchmark, model request,
-/// game access, Git/catalog mutation, general browser/network or MCP-tunnel authority.
-/// </summary>
 public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
 {
     public const string Version = "0.52.0";
@@ -256,10 +248,7 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         _httpClient.Timeout = Timeout.InfiniteTimeSpan;
     }
 
-    public ArtifactAcquisitionPreviewV052 Preview(
-        string workspaceRoot,
-        ArtifactAcquisitionRequestV052 request,
-        CancellationToken cancellationToken)
+    public ArtifactAcquisitionPreviewV052 Preview(string workspaceRoot, ArtifactAcquisitionRequestV052 request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (request is null || request.Schema != RequestSchema)
@@ -277,7 +266,7 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         if (request.MaxTotalNetworkBytes < 1 || request.MaxTotalNetworkBytes > MaxTotalNetworkBytes)
             throw Refused("REQUEST_INVALID", $"MaxTotalNetworkBytes must be within 1..{MaxTotalNetworkBytes}.");
 
-        var destinationRoot = ValidateDestinationRoot(workspaceRoot, request.DestinationRoot, mustExist: true);
+        var destinationRoot = ValidateDestinationRoot(workspaceRoot, request.DestinationRoot, true);
         var normalized = new List<ArtifactAcquisitionItemV052>(request.Artifacts.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -285,10 +274,8 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         foreach (var item in request.Artifacts)
         {
             var normalizedItem = NormalizeItem(item);
-            if (!ids.Add(normalizedItem.ArtifactId))
-                throw Refused("REQUEST_INVALID", $"Duplicate ArtifactId: {normalizedItem.ArtifactId}");
-            if (!names.Add(normalizedItem.FileName))
-                throw Refused("REQUEST_INVALID", $"Duplicate destination filename: {normalizedItem.FileName}");
+            if (!ids.Add(normalizedItem.ArtifactId)) throw Refused("REQUEST_INVALID", $"Duplicate ArtifactId: {normalizedItem.ArtifactId}");
+            if (!names.Add(normalizedItem.FileName)) throw Refused("REQUEST_INVALID", $"Duplicate destination filename: {normalizedItem.FileName}");
             checked { expectedTotal += normalizedItem.ExpectedBytes; }
             normalized.Add(normalizedItem);
         }
@@ -296,8 +283,8 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
             throw Refused("BYTE_CEILING_INVALID", "MaxTotalNetworkBytes is below the exact reviewed artifact byte total.");
 
         var observed = DateTimeOffset.Now;
-        var digest = RequestDigest(request.RequestId, normalized, destinationRoot,
-            request.MaxTotalNetworkBytes, request.MaxRedirects, request.TimeoutSeconds, request.TtlSeconds);
+        var digest = RequestDigest(request.RequestId, normalized, destinationRoot, request.MaxTotalNetworkBytes,
+            request.MaxRedirects, request.TimeoutSeconds, request.TtlSeconds);
         return new ArtifactAcquisitionPreviewV052(
             PreviewSchema, Version, observed, request.RequestId, normalized, destinationRoot,
             expectedTotal, request.MaxTotalNetworkBytes, request.MaxRedirects, request.TimeoutSeconds,
@@ -307,9 +294,7 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
     }
 
     public async Task<(ArtifactAcquisitionGrantV052 Grant, ArtifactAcquisitionAuthorityReceiptV052 Receipt, string ReceiptPath)> GrantAsync(
-        string workspaceRoot,
-        ArtifactAcquisitionPreviewV052 preview,
-        CancellationToken cancellationToken)
+        string workspaceRoot, ArtifactAcquisitionPreviewV052 preview, CancellationToken cancellationToken)
     {
         ValidatePreview(workspaceRoot, preview);
         var leaseId = "acqlease-" + Guid.NewGuid().ToString("N");
@@ -328,32 +313,27 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
             preview.MaxTotalNetworkBytes, preview.MaxTotalNetworkBytes,
             preview.MaxRedirects, preview.TimeoutSeconds, preview.TtlSeconds,
             1, 1, bearerSha, false, false, false, null, null, null, 0,
-            NonEffects(),
-            "Canonical v0.52 one-shot acquisition authority. Bearer plaintext is not persisted; selection/handoff alone is never authority.");
+            NonEffects(), "Canonical v0.52 one-shot acquisition authority. Bearer plaintext is not persisted; selection/handoff alone is never authority.");
         await WriteAtomicAsync(statePath, state, cancellationToken);
 
         var grant = new ArtifactAcquisitionGrantV052(
             GrantSchema, Version, DateTimeOffset.Now, leaseId, bearer, preview.RequestId,
             preview.RequestDigestSha256, preview.Artifacts, preview.DestinationRoot, expires,
             preview.MaxTotalNetworkBytes, preview.MaxRedirects, preview.TimeoutSeconds, 1,
-            false, false,
-            "In-memory bearer is bounded by exact canonical state, expiry, one call, routes, redirect/timeout limits, exact size/hash and fixed destination. No post-download authority is granted.");
+            false, false, "In-memory bearer is bounded by exact canonical state, expiry, one call, routes, redirect/timeout limits, exact size/hash and fixed destination. No post-download authority is granted.");
         var receipt = new ArtifactAcquisitionAuthorityReceiptV052(
             AuthorityReceiptSchema, Version, DateTimeOffset.Now, leaseId, preview.RequestId,
             preview.RequestDigestSha256, bearerSha, statePath, HashFile(statePath), expires,
             preview.MaxTotalNetworkBytes, preview.MaxRedirects, preview.TimeoutSeconds, 1,
-            false, false, false, false, false, NonEffects(),
-            "ACQUISITION_AUTHORITY_GRANTED_NOT_USED",
+            false, false, false, false, false, NonEffects(), "ACQUISITION_AUTHORITY_GRANTED_NOT_USED",
             "One-shot local acquisition authority was materialized. Grant creation performed no network or artifact-byte write.");
-        var receiptPath = await WriteArtifactReceiptAsync(
-            workspaceRoot, $"authority-{leaseId}-{DateTime.Now:yyyyMMdd-HHmmssfff}.json", receipt, cancellationToken);
+        var receiptPath = await WriteArtifactReceiptAsync(workspaceRoot,
+            $"authority-{leaseId}-{DateTime.Now:yyyyMMdd-HHmmssfff}.json", receipt, cancellationToken);
         return (grant, receipt, receiptPath);
     }
 
     public async Task<(ArtifactAcquisitionExecutionReceiptV052 Receipt, string ReceiptPath)> AcquireAsync(
-        string workspaceRoot,
-        ArtifactAcquisitionGrantV052 grant,
-        CancellationToken cancellationToken)
+        string workspaceRoot, ArtifactAcquisitionGrantV052 grant, CancellationToken cancellationToken)
     {
         if (grant is null || grant.Schema != GrantSchema || grant.Version != Version || !SafeToken(grant.LeaseId, "acqlease-"))
             throw Refused("AUTHORITY_INVALID", "Invalid v0.52 acquisition grant identity.");
@@ -369,23 +349,16 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         if (!Sha256Text(grant.Bearer).Equals(state.BearerSha256, StringComparison.OrdinalIgnoreCase))
             throw Refused("AUTHORITY_BEARER_MISMATCH", "Acquisition bearer mismatch.");
 
-        state = state with
-        {
-            RemainingCalls = 0,
-            StartedAt = DateTimeOffset.Now,
-            StateRevision = state.StateRevision + 1,
-            Note = "One-shot acquisition authority consumed before network. Crash/failure cannot silently retry or resume."
-        };
+        state = state with { RemainingCalls = 0, StartedAt = DateTimeOffset.Now, StateRevision = state.StateRevision + 1,
+            Note = "One-shot acquisition authority consumed before network. Crash/failure cannot silently retry or resume." };
         await WriteAtomicAsync(paths.StatePath, state, cancellationToken);
 
         var tx = new ArtifactAcquisitionTransactionV052(
-            TransactionSchema, Version, DateTimeOffset.Now,
-            "acqtx-" + Guid.NewGuid().ToString("N"), state.LeaseId, state.RequestId,
-            state.RequestDigestSha256, "ACQUISITION_PREPARED", null, 0,
+            TransactionSchema, Version, DateTimeOffset.Now, "acqtx-" + Guid.NewGuid().ToString("N"),
+            state.LeaseId, state.RequestId, state.RequestDigestSha256, "ACQUISITION_PREPARED", null, 0,
             state.Artifacts.Select(x => NewItemEvidence(x, state.DestinationRoot)).ToArray(),
-            true, true, false, false, false, false, false, false, false, false, false,
-            false, null, NonEffects(),
-            "Authority is consumed, but DOWNLOAD_STARTED is not yet observed. Prepared does not prove network access or artifact existence.");
+            true, true, false, false, false, false, false, false, false, false, false, false,
+            null, NonEffects(), "Authority is consumed, but DOWNLOAD_STARTED is not yet observed. Prepared does not prove network access or artifact existence.");
         await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
 
         long networkBytes = 0;
@@ -406,22 +379,10 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
                     var sha = bytes == item.ExpectedBytes ? HashFile(evidence.FinalPath) : null;
                     if (bytes == item.ExpectedBytes && sha is not null && sha.Equals(item.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
                     {
-                        evidence = evidence with
-                        {
-                            State = "SHA256_VERIFIED",
-                            ObservedFileBytes = bytes,
-                            ObservedSha256 = sha,
-                            ExpectedSizeMatched = true,
-                            ExpectedSha256Matched = true,
-                            ExistingVerifiedReused = true
-                        };
-                        tx = ReplaceItem(tx, index, evidence) with
-                        {
-                            ObservedAt = DateTimeOffset.Now,
-                            State = "SHA256_VERIFIED",
-                            CurrentArtifactId = item.ArtifactId,
-                            Note = "Existing final artifact matched exact size and SHA-256; classified verified without network or overwrite."
-                        };
+                        evidence = evidence with { State = "SHA256_VERIFIED", ObservedFileBytes = bytes, ObservedSha256 = sha,
+                            ExpectedSizeMatched = true, ExpectedSha256Matched = true, ExistingVerifiedReused = true };
+                        tx = ReplaceItem(tx, index, evidence) with { ObservedAt = DateTimeOffset.Now, State = "SHA256_VERIFIED",
+                            CurrentArtifactId = item.ArtifactId, Note = "Existing final artifact matched exact size and SHA-256; classified verified without network or overwrite." };
                         await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
                         continue;
                     }
@@ -431,97 +392,51 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
                 var partial = evidence.FinalPath + "." + state.LeaseId + ".partial";
                 if (File.Exists(partial)) throw Refused("PARTIAL_ALREADY_EXISTS", $"Unverified partial already exists: {partial}");
                 evidence = evidence with { PartialPath = partial, State = "DOWNLOAD_STARTED", NetworkAccessPerformed = true };
-                tx = ReplaceItem(tx, index, evidence) with
-                {
-                    ObservedAt = DateTimeOffset.Now,
-                    State = "DOWNLOAD_STARTED",
-                    CurrentArtifactId = item.ArtifactId,
-                    NetworkAccessPerformed = true,
-                    Note = "Exact HTTPS request is starting under already-consumed one-shot authority. DOWNLOAD_STARTED is not bytes/size/hash completion."
-                };
+                tx = ReplaceItem(tx, index, evidence) with { ObservedAt = DateTimeOffset.Now, State = "DOWNLOAD_STARTED",
+                    CurrentArtifactId = item.ArtifactId, NetworkAccessPerformed = true,
+                    Note = "Exact HTTPS request is starting under already-consumed one-shot authority. DOWNLOAD_STARTED is not bytes/size/hash completion." };
                 await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
 
-                var result = await DownloadOneAsync(item, partial,
-                    state.MaxTotalNetworkBytes - networkBytes, state, cancellationToken);
+                var result = await DownloadOneAsync(item, partial, state.MaxTotalNetworkBytes - networkBytes, state, cancellationToken);
                 networkBytes = checked(networkBytes + result.NetworkBytes);
-                evidence = evidence with
-                {
-                    RedirectsObserved = result.Redirects,
-                    ObservedNetworkBytes = result.NetworkBytes,
-                    ObservedFileBytes = result.FileBytes,
-                    ObservedSha256 = result.Sha256,
-                    State = "BYTES_COMPLETE"
-                };
-                tx = ReplaceItem(tx, index, evidence) with
-                {
-                    ObservedAt = DateTimeOffset.Now,
-                    State = "BYTES_COMPLETE",
-                    CurrentArtifactId = item.ArtifactId,
-                    NetworkBytesObserved = networkBytes,
-                    FilesystemMutationPerformed = true,
-                    Note = "Response body reached EOF within byte ceilings. BYTES_COMPLETE does not imply exact expected size or SHA-256."
-                };
+                evidence = evidence with { RedirectsObserved = result.Redirects, ObservedNetworkBytes = result.NetworkBytes,
+                    ObservedFileBytes = result.FileBytes, ObservedSha256 = result.Sha256, State = "BYTES_COMPLETE" };
+                tx = ReplaceItem(tx, index, evidence) with { ObservedAt = DateTimeOffset.Now, State = "BYTES_COMPLETE",
+                    CurrentArtifactId = item.ArtifactId, NetworkBytesObserved = networkBytes, FilesystemMutationPerformed = true,
+                    Note = "Response body reached EOF within byte ceilings. BYTES_COMPLETE does not imply exact expected size or SHA-256." };
                 await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
 
                 if (result.FileBytes != item.ExpectedBytes)
                     throw Refused("SIZE_MISMATCH", $"{item.ArtifactId}: expected {item.ExpectedBytes} bytes, observed {result.FileBytes}.");
                 evidence = evidence with { State = "SIZE_VERIFIED", ExpectedSizeMatched = true };
-                tx = ReplaceItem(tx, index, evidence) with
-                {
-                    ObservedAt = DateTimeOffset.Now,
-                    State = "SIZE_VERIFIED",
-                    CurrentArtifactId = item.ArtifactId,
-                    Note = "Exact partial-file size matched reviewed artifact identity. SIZE_VERIFIED is not SHA256_VERIFIED."
-                };
+                tx = ReplaceItem(tx, index, evidence) with { ObservedAt = DateTimeOffset.Now, State = "SIZE_VERIFIED",
+                    CurrentArtifactId = item.ArtifactId, Note = "Exact partial-file size matched reviewed artifact identity. SIZE_VERIFIED is not SHA256_VERIFIED." };
                 await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
 
                 if (!result.Sha256.Equals(item.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
                     throw Refused("HASH_MISMATCH", $"{item.ArtifactId}: exact SHA-256 mismatch.");
                 evidence = evidence with { State = "SHA256_VERIFIED", ExpectedSha256Matched = true };
-                tx = ReplaceItem(tx, index, evidence) with
-                {
-                    ObservedAt = DateTimeOffset.Now,
-                    State = "SHA256_VERIFIED",
-                    CurrentArtifactId = item.ArtifactId,
-                    Note = "Expected SHA-256 matched completed partial bytes. Verification grants no extraction/install/execute/runtime authority."
-                };
+                tx = ReplaceItem(tx, index, evidence) with { ObservedAt = DateTimeOffset.Now, State = "SHA256_VERIFIED",
+                    CurrentArtifactId = item.ArtifactId, Note = "Expected SHA-256 matched completed partial bytes. Verification grants no extraction/install/execute/runtime authority." };
                 await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
 
-                if (File.Exists(evidence.FinalPath))
-                    throw Refused("FINAL_PATH_RACE", $"Final path appeared before atomic promotion: {evidence.FinalPath}");
+                if (File.Exists(evidence.FinalPath)) throw Refused("FINAL_PATH_RACE", $"Final path appeared before atomic promotion: {evidence.FinalPath}");
                 File.Move(partial, evidence.FinalPath, overwrite: false);
                 RejectReparse(evidence.FinalPath, "promoted final artifact");
                 evidence = evidence with { FinalPathPromoted = true, PartialPath = null };
-                tx = ReplaceItem(tx, index, evidence) with
-                {
-                    ObservedAt = DateTimeOffset.Now,
-                    FinalArtifactPromotionPerformed = true,
-                    Note = "Verified partial bytes were atomically promoted. Promotion does not extract or execute."
-                };
+                tx = ReplaceItem(tx, index, evidence) with { ObservedAt = DateTimeOffset.Now, FinalArtifactPromotionPerformed = true,
+                    Note = "Verified partial bytes were atomically promoted. Promotion does not extract or execute." };
                 await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
             }
 
-            if (tx.Items.Any(x => !x.ExpectedSha256Matched))
-                throw Refused("SET_INCOMPLETE", "Not every requested artifact reached exact SHA-256 verification.");
-
-            state = state with
-            {
-                RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes),
-                Completed = true,
-                CompletedAt = DateTimeOffset.Now,
-                StateRevision = state.StateRevision + 1,
-                Note = "One-shot acquisition authority completed after every exact artifact reached SHA-256 verification. No later-use authority is implied."
-            };
+            if (tx.Items.Any(x => !x.ExpectedSha256Matched)) throw Refused("SET_INCOMPLETE", "Not every requested artifact reached exact SHA-256 verification.");
+            state = state with { RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes), Completed = true,
+                CompletedAt = DateTimeOffset.Now, StateRevision = state.StateRevision + 1,
+                Note = "One-shot acquisition authority completed after every exact artifact reached SHA-256 verification. No later-use authority is implied." };
             await WriteAtomicAsync(paths.StatePath, state, cancellationToken);
-            tx = tx with
-            {
-                ObservedAt = DateTimeOffset.Now,
-                State = "ACQUISITION_VERIFIED",
-                CurrentArtifactId = null,
-                NetworkBytesObserved = networkBytes,
-                FailureClassification = null,
-                Note = "Every artifact in the reviewed set is locally SHA-256 verified. Extraction/install/runtime/benchmark/model/game authority remains absent."
-            };
+            tx = tx with { ObservedAt = DateTimeOffset.Now, State = "ACQUISITION_VERIFIED", CurrentArtifactId = null,
+                NetworkBytesObserved = networkBytes, FailureClassification = null,
+                Note = "Every artifact in the reviewed set is locally SHA-256 verified. Extraction/install/runtime/benchmark/model/game authority remains absent." };
             await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, cancellationToken);
             var receipt = BuildExecutionReceipt(paths, tx, true);
             var receiptPath = await WriteArtifactReceiptAsync(workspaceRoot,
@@ -532,24 +447,12 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         {
             tx = MaterializeFailureEvidence(tx, ex.Classification);
             networkBytes = tx.Items.Sum(x => x.ObservedNetworkBytes);
-            state = state with
-            {
-                RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes),
-                Failed = true,
-                FailureClassification = ex.Classification,
-                CompletedAt = DateTimeOffset.Now,
-                StateRevision = state.StateRevision + 1,
-                Note = "One-shot acquisition failed terminally. No automatic retry/resume; any .partial bytes remain unverified evidence only."
-            };
+            state = state with { RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes), Failed = true,
+                FailureClassification = ex.Classification, CompletedAt = DateTimeOffset.Now, StateRevision = state.StateRevision + 1,
+                Note = "One-shot acquisition failed terminally. No automatic retry/resume; any .partial bytes remain unverified evidence only." };
             await WriteAtomicAsync(paths.StatePath, state, CancellationToken.None);
-            tx = tx with
-            {
-                ObservedAt = DateTimeOffset.Now,
-                State = ex.Classification,
-                NetworkBytesObserved = networkBytes,
-                FailureClassification = ex.Classification,
-                Note = ex.Message + " Partial bytes, if present, are non-authoritative and never auto-promoted."
-            };
+            tx = tx with { ObservedAt = DateTimeOffset.Now, State = ex.Classification, NetworkBytesObserved = networkBytes,
+                FailureClassification = ex.Classification, Note = ex.Message + " Partial bytes, if present, are non-authoritative and never auto-promoted." };
             await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, CancellationToken.None);
             throw;
         }
@@ -557,24 +460,12 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         {
             tx = MaterializeFailureEvidence(tx, "CANCELLED_PARTIAL_UNVERIFIED");
             networkBytes = tx.Items.Sum(x => x.ObservedNetworkBytes);
-            state = state with
-            {
-                RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes),
-                Failed = true,
-                FailureClassification = "CANCELLED_PARTIAL_UNVERIFIED",
-                CompletedAt = DateTimeOffset.Now,
-                StateRevision = state.StateRevision + 1,
-                Note = "One-shot acquisition cancelled; no automatic retry/resume authority."
-            };
+            state = state with { RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes), Failed = true,
+                FailureClassification = "CANCELLED_PARTIAL_UNVERIFIED", CompletedAt = DateTimeOffset.Now, StateRevision = state.StateRevision + 1,
+                Note = "One-shot acquisition cancelled; no automatic retry/resume authority." };
             await WriteAtomicAsync(paths.StatePath, state, CancellationToken.None);
-            tx = tx with
-            {
-                ObservedAt = DateTimeOffset.Now,
-                State = "CANCELLED_PARTIAL_UNVERIFIED",
-                NetworkBytesObserved = networkBytes,
-                FailureClassification = "CANCELLED_PARTIAL_UNVERIFIED",
-                Note = "Cancellation leaves any partial bytes non-authoritative; no automatic retry/resume/promotion."
-            };
+            tx = tx with { ObservedAt = DateTimeOffset.Now, State = "CANCELLED_PARTIAL_UNVERIFIED", NetworkBytesObserved = networkBytes,
+                FailureClassification = "CANCELLED_PARTIAL_UNVERIFIED", Note = "Cancellation leaves any partial bytes non-authoritative; no automatic retry/resume/promotion." };
             await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, CancellationToken.None);
             throw;
         }
@@ -582,32 +473,18 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         {
             tx = MaterializeFailureEvidence(tx, "NETWORK_OR_IO_FAILED");
             networkBytes = tx.Items.Sum(x => x.ObservedNetworkBytes);
-            state = state with
-            {
-                RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes),
-                Failed = true,
-                FailureClassification = "NETWORK_OR_IO_FAILED",
-                CompletedAt = DateTimeOffset.Now,
-                StateRevision = state.StateRevision + 1,
-                Note = "One-shot acquisition failed terminally from unexpected network/filesystem error."
-            };
+            state = state with { RemainingNetworkBytes = Math.Max(0, state.MaxTotalNetworkBytes - networkBytes), Failed = true,
+                FailureClassification = "NETWORK_OR_IO_FAILED", CompletedAt = DateTimeOffset.Now, StateRevision = state.StateRevision + 1,
+                Note = "One-shot acquisition failed terminally from unexpected network/filesystem error." };
             await WriteAtomicAsync(paths.StatePath, state, CancellationToken.None);
-            tx = tx with
-            {
-                ObservedAt = DateTimeOffset.Now,
-                State = "NETWORK_OR_IO_FAILED",
-                NetworkBytesObserved = networkBytes,
-                FailureClassification = "NETWORK_OR_IO_FAILED",
-                Note = "Unexpected transfer/storage failure: " + ex.GetType().Name + ". No automatic retry/resume/promotion."
-            };
+            tx = tx with { ObservedAt = DateTimeOffset.Now, State = "NETWORK_OR_IO_FAILED", NetworkBytesObserved = networkBytes,
+                FailureClassification = "NETWORK_OR_IO_FAILED", Note = "Unexpected transfer/storage failure: " + ex.GetType().Name + ". No automatic retry/resume/promotion." };
             await PersistTransitionAsync(workspaceRoot, paths.TransactionPath, tx, CancellationToken.None);
-            throw new ArtifactAcquisitionExceptionV052("NETWORK_OR_IO_FAILED",
-                "Bounded acquisition failed from unexpected network/filesystem error.", ex);
+            throw new ArtifactAcquisitionExceptionV052("NETWORK_OR_IO_FAILED", "Bounded acquisition failed from unexpected network/filesystem error.", ex);
         }
     }
 
-    public async Task<ArtifactAcquisitionLeaseStateV052> ReadLeaseStateAsync(
-        string workspaceRoot, string leaseId, CancellationToken cancellationToken)
+    public async Task<ArtifactAcquisitionLeaseStateV052> ReadLeaseStateAsync(string workspaceRoot, string leaseId, CancellationToken cancellationToken)
         => await ReadStateAsync(ResolveLeasePaths(workspaceRoot, leaseId).StatePath, cancellationToken);
 
     public static IReadOnlyList<(string Id, bool Passed, string Observed, string Expected)> RunOfflineContractChecks() => new[]
@@ -623,21 +500,15 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         ("acquisition-v052-secrets", true, "bearer plaintext not persisted; no auth/cookie state supplied", "omitted")
     };
 
-    private async Task<DownloadResult> DownloadOneAsync(
-        ArtifactAcquisitionItemV052 item,
-        string partialPath,
-        long remainingTotalBudget,
-        ArtifactAcquisitionLeaseStateV052 state,
-        CancellationToken cancellationToken)
+    private async Task<DownloadResult> DownloadOneAsync(ArtifactAcquisitionItemV052 item, string partialPath, long remainingTotalBudget,
+        ArtifactAcquisitionLeaseStateV052 state, CancellationToken cancellationToken)
     {
-        if (remainingTotalBudget < item.ExpectedBytes)
-            throw Refused("BYTE_CEILING_EXCEEDED", "Remaining acquisition byte ceiling is below exact expected artifact size.");
+        if (remainingTotalBudget < item.ExpectedBytes) throw Refused("BYTE_CEILING_EXCEEDED", "Remaining acquisition byte ceiling is below exact expected artifact size.");
         ValidateDestinationPath(state.DestinationRoot, partialPath);
         var leaseRemaining = state.ExpiresAt - DateTimeOffset.Now;
         if (leaseRemaining <= TimeSpan.Zero) throw Refused("AUTHORITY_EXPIRED", "Acquisition lease expired before network start.");
-        var effectiveTimeout = TimeSpan.FromSeconds(state.TimeoutSeconds) < leaseRemaining
-            ? TimeSpan.FromSeconds(state.TimeoutSeconds)
-            : leaseRemaining;
+        var requestTimeout = TimeSpan.FromSeconds(state.TimeoutSeconds);
+        var effectiveTimeout = requestTimeout < leaseRemaining ? requestTimeout : leaseRemaining;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(effectiveTimeout);
 
@@ -650,26 +521,19 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
             request.Headers.AcceptEncoding.Clear();
             request.Headers.Authorization = null;
             HttpResponseMessage response;
-            try
-            {
-                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-            }
+            try { response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 var classification = DateTimeOffset.Now >= state.ExpiresAt ? "AUTHORITY_EXPIRED_DURING_TRANSFER" : "NETWORK_TIMEOUT";
                 throw Refused(classification, $"Bounded transfer timed out/expired for {item.ArtifactId}.");
             }
-            catch (HttpRequestException ex)
-            {
-                throw new ArtifactAcquisitionExceptionV052("NETWORK_FAILED", $"HTTPS request failed for {item.ArtifactId}.", ex);
-            }
+            catch (HttpRequestException ex) { throw new ArtifactAcquisitionExceptionV052("NETWORK_FAILED", $"HTTPS request failed for {item.ArtifactId}.", ex); }
 
             using (response)
             {
                 if (IsRedirect(response.StatusCode))
                 {
-                    if (redirects >= state.MaxRedirects)
-                        throw Refused("REDIRECT_LIMIT_EXCEEDED", $"Redirect count exceeds exact authority MaxRedirects={state.MaxRedirects}.");
+                    if (redirects >= state.MaxRedirects) throw Refused("REDIRECT_LIMIT_EXCEEDED", $"Redirect count exceeds exact authority MaxRedirects={state.MaxRedirects}.");
                     var location = response.Headers.Location;
                     if (location is null) throw Refused("REDIRECT_POLICY_REFUSED", "Redirect response has no Location.");
                     var next = location.IsAbsoluteUri ? location : new Uri(current, location);
@@ -678,16 +542,14 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
                     current = next;
                     continue;
                 }
-                if (!response.IsSuccessStatusCode)
-                    throw Refused("NETWORK_FAILED", $"Unexpected HTTP status {(int)response.StatusCode} for {item.ArtifactId}.");
-                if (response.Content.Headers.ContentLength is long declared &&
-                    (declared > item.ExpectedBytes || declared > remainingTotalBudget))
+                if (!response.IsSuccessStatusCode) throw Refused("NETWORK_FAILED", $"Unexpected HTTP status {(int)response.StatusCode} for {item.ArtifactId}.");
+                if (response.Content.Headers.ContentLength is long declared && (declared > item.ExpectedBytes || declared > remainingTotalBudget))
                     throw Refused("BYTE_CEILING_EXCEEDED", $"Declared Content-Length exceeds exact authority for {item.ArtifactId}.");
 
                 Directory.CreateDirectory(Path.GetDirectoryName(partialPath)!);
                 RejectReparseChain(Path.GetDirectoryName(partialPath)!);
-                await using var target = new FileStream(partialPath, FileMode.CreateNew, FileAccess.Write,
-                    FileShare.None, 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.WriteThrough);
+                await using var target = new FileStream(partialPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                    128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.WriteThrough);
                 await using var source = await response.Content.ReadAsStreamAsync(timeout.Token);
                 using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 var buffer = new byte[128 * 1024];
@@ -695,10 +557,7 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
                 while (true)
                 {
                     int read;
-                    try
-                    {
-                        read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), timeout.Token);
-                    }
+                    try { read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), timeout.Token); }
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                     {
                         var classification = DateTimeOffset.Now >= state.ExpiresAt ? "AUTHORITY_EXPIRED_DURING_TRANSFER" : "NETWORK_TIMEOUT";
@@ -720,18 +579,13 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
 
     private static ArtifactAcquisitionItemV052 NormalizeItem(ArtifactAcquisitionItemV052 item)
     {
-        if (item is null || !SafeToken(item.ArtifactId, "artifact-"))
-            throw Refused("REQUEST_INVALID", "ArtifactId must be an artifact-* safe token.");
-        if (string.IsNullOrWhiteSpace(item.FileName) || Path.GetFileName(item.FileName) != item.FileName ||
-            item.FileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        if (item is null || !SafeToken(item.ArtifactId, "artifact-")) throw Refused("REQUEST_INVALID", "ArtifactId must be an artifact-* safe token.");
+        if (string.IsNullOrWhiteSpace(item.FileName) || Path.GetFileName(item.FileName) != item.FileName || item.FileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw Refused("REQUEST_INVALID", $"Unsafe artifact filename: {item.FileName}");
-        if (item.ExpectedBytes < 1 || item.ExpectedBytes > MaxArtifactBytes)
-            throw Refused("REQUEST_INVALID", $"ExpectedBytes must be within 1..{MaxArtifactBytes}.");
+        if (item.ExpectedBytes < 1 || item.ExpectedBytes > MaxArtifactBytes) throw Refused("REQUEST_INVALID", $"ExpectedBytes must be within 1..{MaxArtifactBytes}.");
         var sha = item.ExpectedSha256?.Trim().ToLowerInvariant() ?? "";
-        if (sha.Length != 64 || sha.Any(ch => !Uri.IsHexDigit(ch)))
-            throw Refused("REQUEST_INVALID", $"ExpectedSha256 for {item.ArtifactId} is invalid.");
-        if (!Uri.TryCreate(item.SourceUri, UriKind.Absolute, out var uri) ||
-            !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+        if (sha.Length != 64 || sha.Any(ch => !Uri.IsHexDigit(ch))) throw Refused("REQUEST_INVALID", $"ExpectedSha256 for {item.ArtifactId} is invalid.");
+        if (!Uri.TryCreate(item.SourceUri, UriKind.Absolute, out var uri) || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
             !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment))
             throw Refused("SOURCE_POLICY_REFUSED", $"SourceUri for {item.ArtifactId} must be credential-free HTTPS without fragment.");
         if (item.AllowedRoutes is null || item.AllowedRoutes.Count < 1 || item.AllowedRoutes.Count > 16)
@@ -747,82 +601,61 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         if (rule is null || string.IsNullOrWhiteSpace(rule.Host) || rule.Host.Contains('*') || rule.Host.Contains('/') || rule.Host.Contains('\\'))
             throw Refused("SOURCE_POLICY_REFUSED", "Route host must be exact, without wildcard/path.");
         var host = rule.Host.Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(rule.PathPrefix) || !rule.PathPrefix.StartsWith('/', StringComparison.Ordinal) ||
-            rule.PathPrefix.Contains("..", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(rule.PathPrefix) || !rule.PathPrefix.StartsWith('/', StringComparison.Ordinal) || rule.PathPrefix.Contains("..", StringComparison.Ordinal))
             throw Refused("SOURCE_POLICY_REFUSED", "Route PathPrefix must be absolute and non-traversing.");
         return new ArtifactAcquisitionRouteRuleV052(host, rule.PathPrefix);
     }
 
     private static void ValidateRoute(Uri uri, ArtifactAcquisitionItemV052 item, bool isInitial)
     {
-        if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment))
-            throw Refused(isInitial ? "SOURCE_POLICY_REFUSED" : "REDIRECT_POLICY_REFUSED",
-                "Every acquisition route must remain credential-free HTTPS without fragment.");
-        if (isInitial && !uri.AbsoluteUri.Equals(item.SourceUri, StringComparison.Ordinal))
-            throw Refused("SOURCE_POLICY_REFUSED", "Initial URI drifted from exact reviewed source.");
+        if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment))
+            throw Refused(isInitial ? "SOURCE_POLICY_REFUSED" : "REDIRECT_POLICY_REFUSED", "Every acquisition route must remain credential-free HTTPS without fragment.");
+        if (isInitial && !uri.AbsoluteUri.Equals(item.SourceUri, StringComparison.Ordinal)) throw Refused("SOURCE_POLICY_REFUSED", "Initial URI drifted from exact reviewed source.");
         var host = uri.IdnHost.ToLowerInvariant();
         var path = uri.AbsolutePath;
-        if (!item.AllowedRoutes.Any(rule => host.Equals(rule.Host, StringComparison.OrdinalIgnoreCase) &&
-                                            path.StartsWith(rule.PathPrefix, StringComparison.Ordinal)))
-            throw Refused(isInitial ? "SOURCE_POLICY_REFUSED" : "REDIRECT_POLICY_REFUSED",
-                $"Route {host}{path} is outside reviewed policy for {item.ArtifactId}.");
+        if (!item.AllowedRoutes.Any(rule => host.Equals(rule.Host, StringComparison.OrdinalIgnoreCase) && path.StartsWith(rule.PathPrefix, StringComparison.Ordinal)))
+            throw Refused(isInitial ? "SOURCE_POLICY_REFUSED" : "REDIRECT_POLICY_REFUSED", $"Route {host}{path} is outside reviewed policy for {item.ArtifactId}.");
     }
 
     private static bool IsRedirect(HttpStatusCode code)
-        => code is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect or HttpStatusCode.RedirectMethod or
-            HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect or HttpStatusCode.SeeOther;
+        => code is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect or HttpStatusCode.RedirectMethod or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect or HttpStatusCode.SeeOther;
 
     private static void ValidatePreview(string workspaceRoot, ArtifactAcquisitionPreviewV052 preview)
     {
-        if (preview is null || preview.Schema != PreviewSchema || preview.Version != Version ||
-            !preview.ReadyForExplicitAcquisitionAuthority || preview.NetworkAccessPerformed ||
-            preview.FilesystemMutationPerformed || preview.ContainsArtifactBytes)
+        if (preview is null || preview.Schema != PreviewSchema || preview.Version != Version || !preview.ReadyForExplicitAcquisitionAuthority ||
+            preview.NetworkAccessPerformed || preview.FilesystemMutationPerformed || preview.ContainsArtifactBytes)
             throw Refused("PREVIEW_INVALID", "Preview violates v0.52 no-effect boundary.");
         var destination = ValidateDestinationRoot(workspaceRoot, preview.DestinationRoot, true);
         var normalized = preview.Artifacts.Select(NormalizeItem).ToArray();
-        var digest = RequestDigest(preview.RequestId, normalized, destination, preview.MaxTotalNetworkBytes,
-            preview.MaxRedirects, preview.TimeoutSeconds, preview.TtlSeconds);
-        if (!digest.Equals(preview.RequestDigestSha256, StringComparison.OrdinalIgnoreCase))
-            throw Refused("PREVIEW_INVALID", "Preview request digest mismatch.");
+        var digest = RequestDigest(preview.RequestId, normalized, destination, preview.MaxTotalNetworkBytes, preview.MaxRedirects, preview.TimeoutSeconds, preview.TtlSeconds);
+        if (!digest.Equals(preview.RequestDigestSha256, StringComparison.OrdinalIgnoreCase)) throw Refused("PREVIEW_INVALID", "Preview request digest mismatch.");
     }
 
     private static void ValidateGrantAgainstState(ArtifactAcquisitionGrantV052 grant, ArtifactAcquisitionLeaseStateV052 state)
     {
-        if (state.Schema != StateSchema || state.Version != Version ||
-            !state.LeaseId.Equals(grant.LeaseId, StringComparison.Ordinal) ||
-            !state.RequestId.Equals(grant.RequestId, StringComparison.Ordinal) ||
-            !state.RequestDigestSha256.Equals(grant.RequestDigestSha256, StringComparison.OrdinalIgnoreCase) ||
-            !state.DestinationRoot.Equals(grant.DestinationRoot, StringComparison.OrdinalIgnoreCase) ||
-            state.MaxTotalNetworkBytes != grant.MaxTotalNetworkBytes ||
-            state.MaxRedirects != grant.MaxRedirects || state.TimeoutSeconds != grant.TimeoutSeconds ||
-            state.MaxCalls != grant.MaxCalls || state.Artifacts.Count != grant.Artifacts.Count)
+        if (state.Schema != StateSchema || state.Version != Version || !state.LeaseId.Equals(grant.LeaseId, StringComparison.Ordinal) ||
+            !state.RequestId.Equals(grant.RequestId, StringComparison.Ordinal) || !state.RequestDigestSha256.Equals(grant.RequestDigestSha256, StringComparison.OrdinalIgnoreCase) ||
+            !state.DestinationRoot.Equals(grant.DestinationRoot, StringComparison.OrdinalIgnoreCase) || state.MaxTotalNetworkBytes != grant.MaxTotalNetworkBytes ||
+            state.MaxRedirects != grant.MaxRedirects || state.TimeoutSeconds != grant.TimeoutSeconds || state.MaxCalls != grant.MaxCalls || state.Artifacts.Count != grant.Artifacts.Count)
             throw Refused("AUTHORITY_INVALID", "Grant is not exact-bound to canonical acquisition state.");
         for (var i = 0; i < state.Artifacts.Count; i++)
-        {
             if (JsonSerializer.Serialize(state.Artifacts[i], JsonOptions) != JsonSerializer.Serialize(grant.Artifacts[i], JsonOptions))
                 throw Refused("AUTHORITY_INVALID", "Artifact identity/route policy drifted between grant and canonical state.");
-        }
     }
 
     private static ArtifactAcquisitionItemEvidenceV052 NewItemEvidence(ArtifactAcquisitionItemV052 item, string destinationRoot)
     {
         var final = Path.GetFullPath(Path.Combine(destinationRoot, item.FileName));
         ValidateDestinationPath(destinationRoot, final);
-        return new ArtifactAcquisitionItemEvidenceV052(item.ArtifactId, item.SourceUri, item.FileName,
-            final, null, "NOT_STARTED", 0, 0, null, null, false, false, false, false, false, null);
+        return new ArtifactAcquisitionItemEvidenceV052(item.ArtifactId, item.SourceUri, item.FileName, final, null, "NOT_STARTED", 0, 0, null, null, false, false, false, false, false, null);
     }
 
-    private static ArtifactAcquisitionTransactionV052 ReplaceItem(
-        ArtifactAcquisitionTransactionV052 tx, int index, ArtifactAcquisitionItemEvidenceV052 item)
+    private static ArtifactAcquisitionTransactionV052 ReplaceItem(ArtifactAcquisitionTransactionV052 tx, int index, ArtifactAcquisitionItemEvidenceV052 item)
     {
-        var items = tx.Items.ToArray();
-        items[index] = item;
-        return tx with { Items = items };
+        var items = tx.Items.ToArray(); items[index] = item; return tx with { Items = items };
     }
 
-    private static ArtifactAcquisitionTransactionV052 MaterializeFailureEvidence(
-        ArtifactAcquisitionTransactionV052 tx, string classification)
+    private static ArtifactAcquisitionTransactionV052 MaterializeFailureEvidence(ArtifactAcquisitionTransactionV052 tx, string classification)
     {
         if (tx.CurrentArtifactId is null) return tx;
         var index = tx.Items.ToList().FindIndex(x => x.ArtifactId == tx.CurrentArtifactId);
@@ -832,33 +665,18 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         long? fileBytes = item.ObservedFileBytes;
         if (!string.IsNullOrWhiteSpace(item.PartialPath) && File.Exists(item.PartialPath))
         {
-            var info = new FileInfo(item.PartialPath);
-            fileBytes = info.Length;
-            observed = Math.Max(observed, info.Length);
+            var info = new FileInfo(item.PartialPath); fileBytes = info.Length; observed = Math.Max(observed, info.Length);
         }
-        item = item with
-        {
-            State = classification,
-            FailureClassification = classification,
-            ObservedNetworkBytes = observed,
-            ObservedFileBytes = fileBytes
-        };
+        item = item with { State = classification, FailureClassification = classification, ObservedNetworkBytes = observed, ObservedFileBytes = fileBytes };
         var updated = ReplaceItem(tx, index, item);
-        return updated with
-        {
-            FilesystemMutationPerformed = updated.FilesystemMutationPerformed ||
-                (!string.IsNullOrWhiteSpace(item.PartialPath) && File.Exists(item.PartialPath))
-        };
+        return updated with { FilesystemMutationPerformed = updated.FilesystemMutationPerformed || (!string.IsNullOrWhiteSpace(item.PartialPath) && File.Exists(item.PartialPath)) };
     }
 
-    private static ArtifactAcquisitionExecutionReceiptV052 BuildExecutionReceipt(
-        LeasePaths paths, ArtifactAcquisitionTransactionV052 tx, bool allVerified)
-        => new(ExecutionReceiptSchema, Version, DateTimeOffset.Now, tx.TransactionId, tx.LeaseId, tx.RequestId,
-            tx.State, tx.NetworkBytesObserved, tx.Items, paths.TransactionPath, HashFile(paths.TransactionPath),
-            paths.StatePath, HashFile(paths.StatePath), allVerified, tx.NetworkAccessPerformed,
-            tx.FilesystemMutationPerformed, tx.ExtractionPerformed, tx.ProcessExecutionPerformed,
-            tx.RuntimeStartPerformed, tx.BenchmarkPerformed, tx.ModelRequestPerformed, tx.GameAccessPerformed,
-            NonEffects(), allVerified ? "ACQUISITION_VERIFIED" : tx.State,
+    private static ArtifactAcquisitionExecutionReceiptV052 BuildExecutionReceipt(LeasePaths paths, ArtifactAcquisitionTransactionV052 tx, bool allVerified)
+        => new(ExecutionReceiptSchema, Version, DateTimeOffset.Now, tx.TransactionId, tx.LeaseId, tx.RequestId, tx.State, tx.NetworkBytesObserved,
+            tx.Items, paths.TransactionPath, HashFile(paths.TransactionPath), paths.StatePath, HashFile(paths.StatePath), allVerified,
+            tx.NetworkAccessPerformed, tx.FilesystemMutationPerformed, tx.ExtractionPerformed, tx.ProcessExecutionPerformed, tx.RuntimeStartPerformed,
+            tx.BenchmarkPerformed, tx.ModelRequestPerformed, tx.GameAccessPerformed, NonEffects(), allVerified ? "ACQUISITION_VERIFIED" : tx.State,
             "Receipt proves bounded acquisition/verification only. Verified bytes remain inert until separate later authority.");
 
     private static string ValidateDestinationRoot(string workspaceRoot, string value, bool mustExist)
@@ -866,10 +684,8 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         if (string.IsNullOrWhiteSpace(value)) throw Refused("DESTINATION_POLICY_REFUSED", "DestinationRoot required.");
         var full = Path.GetFullPath(value.Trim());
         var workbenchRepo = Path.GetFullPath(Path.Combine(Path.GetFullPath(workspaceRoot.Trim()), "Workbench"));
-        if (IsWithin(full, workbenchRepo))
-            throw Refused("DESTINATION_POLICY_REFUSED", "Destination must remain external to Workbench Git root.");
-        if (mustExist && !Directory.Exists(full))
-            throw Refused("DESTINATION_POLICY_REFUSED", "Destination root must already exist before preview.");
+        if (IsWithin(full, workbenchRepo)) throw Refused("DESTINATION_POLICY_REFUSED", "Destination must remain external to Workbench Git root.");
+        if (mustExist && !Directory.Exists(full)) throw Refused("DESTINATION_POLICY_REFUSED", "Destination root must already exist before preview.");
         if (Directory.Exists(full)) RejectReparseChain(full);
         return full;
     }
@@ -878,8 +694,7 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
     {
         var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var full = Path.GetFullPath(path);
-        if (!full.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
-            throw Refused("DESTINATION_POLICY_REFUSED", "Artifact path escaped fixed destination root.");
+        if (!full.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase)) throw Refused("DESTINATION_POLICY_REFUSED", "Artifact path escaped fixed destination root.");
         var parent = Path.GetDirectoryName(full) ?? throw Refused("DESTINATION_POLICY_REFUSED", "Artifact parent missing.");
         if (Directory.Exists(parent)) RejectReparseChain(parent);
         if (File.Exists(full)) RejectReparse(full, "destination artifact");
@@ -888,8 +703,7 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
     private static FileStream AcquireDestinationLock(string workspaceRoot, string finalPath)
     {
         var lockDir = Path.Combine(ResolveLeaseRoot(workspaceRoot), "destination-locks");
-        Directory.CreateDirectory(lockDir);
-        RejectReparseChain(lockDir);
+        Directory.CreateDirectory(lockDir); RejectReparseChain(lockDir);
         var key = Sha256Text(Path.GetFullPath(finalPath).ToLowerInvariant());
         return AcquireExclusiveLock(Path.Combine(lockDir, key + ".lock"), "ACQUISITION_DESTINATION_BUSY");
     }
@@ -901,14 +715,9 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         try
         {
             var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.WriteThrough);
-            RejectReparse(path, "v0.52 acquired lock");
-            return stream;
+            RejectReparse(path, "v0.52 acquired lock"); return stream;
         }
-        catch (IOException ex)
-        {
-            throw new ArtifactAcquisitionExceptionV052(classification,
-                "Another process currently owns the exact acquisition corridor.", ex);
-        }
+        catch (IOException ex) { throw new ArtifactAcquisitionExceptionV052(classification, "Another process currently owns the exact acquisition corridor.", ex); }
     }
 
     private static string ResolveLeaseRoot(string workspaceRoot)
@@ -917,9 +726,7 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         var workbench = Path.GetFullPath(Path.Combine(workspace, "Workbench"));
         if (!Directory.Exists(workbench)) throw Refused("WORKSPACE_INVALID", $"Workbench root missing: {workbench}");
         var root = Path.Combine(workbench, ".workbench", "artifact-acquisition-v052");
-        Directory.CreateDirectory(root);
-        RejectReparseChain(root);
-        return root;
+        Directory.CreateDirectory(root); RejectReparseChain(root); return root;
     }
 
     private static LeasePaths ResolveLeasePaths(string workspaceRoot, string leaseId)
@@ -936,34 +743,22 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         if (!File.Exists(path)) throw Refused("AUTHORITY_INVALID", "Acquisition lease state absent.");
         RejectReparse(path, "v0.52 acquisition state");
         ArtifactAcquisitionLeaseStateV052? state;
-        try
-        {
-            state = JsonSerializer.Deserialize<ArtifactAcquisitionLeaseStateV052>(
-                await File.ReadAllTextAsync(path, Encoding.UTF8, cancellationToken), JsonOptions);
-        }
-        catch (JsonException ex)
-        {
-            throw new ArtifactAcquisitionExceptionV052("AUTHORITY_INVALID", "Acquisition state JSON invalid.", ex);
-        }
-        if (state is null || state.Schema != StateSchema || state.Version != Version ||
-            !SafeToken(state.LeaseId, "acqlease-") || state.BearerSha256.Length != 64 ||
-            state.MaxRedirects < 0 || state.MaxRedirects > MaxRedirects ||
-            state.TimeoutSeconds < 1 || state.TimeoutSeconds > MaxTimeoutSeconds)
+        try { state = JsonSerializer.Deserialize<ArtifactAcquisitionLeaseStateV052>(await File.ReadAllTextAsync(path, Encoding.UTF8, cancellationToken), JsonOptions); }
+        catch (JsonException ex) { throw new ArtifactAcquisitionExceptionV052("AUTHORITY_INVALID", "Acquisition state JSON invalid.", ex); }
+        if (state is null || state.Schema != StateSchema || state.Version != Version || !SafeToken(state.LeaseId, "acqlease-") || state.BearerSha256.Length != 64 ||
+            state.MaxRedirects < 0 || state.MaxRedirects > MaxRedirects || state.TimeoutSeconds < 1 || state.TimeoutSeconds > MaxTimeoutSeconds)
             throw Refused("AUTHORITY_INVALID", "Acquisition state identity/policy contract invalid.");
         return state;
     }
 
-    private static async Task PersistTransitionAsync(
-        string workspaceRoot, string transactionPath, ArtifactAcquisitionTransactionV052 tx, CancellationToken cancellationToken)
+    private static async Task PersistTransitionAsync(string workspaceRoot, string transactionPath, ArtifactAcquisitionTransactionV052 tx, CancellationToken cancellationToken)
     {
         await WriteAtomicAsync(transactionPath, tx, cancellationToken);
         _ = await WriteArtifactReceiptAsync(workspaceRoot,
-            $"transition-{tx.TransactionId}-{LocalAppV046FileBoundary.SafeToken(tx.State)}-{DateTime.Now:yyyyMMdd-HHmmssfff}.json",
-            tx, cancellationToken);
+            $"transition-{tx.TransactionId}-{LocalAppV046FileBoundary.SafeToken(tx.State)}-{DateTime.Now:yyyyMMdd-HHmmssfff}.json", tx, cancellationToken);
     }
 
-    private static async Task<string> WriteArtifactReceiptAsync<T>(
-        string workspaceRoot, string fileName, T value, CancellationToken cancellationToken)
+    private static async Task<string> WriteArtifactReceiptAsync<T>(string workspaceRoot, string fileName, T value, CancellationToken cancellationToken)
     {
         var dir = LocalAppV046FileBoundary.RequireWorkbenchArtifactDirectory(workspaceRoot, "artifact-acquisition-v052");
         var path = Path.Combine(dir, fileName);
@@ -973,48 +768,31 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
 
     private static async Task WriteAtomicAsync<T>(string path, T value, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        RejectReparseChain(Path.GetDirectoryName(path)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!); RejectReparseChain(Path.GetDirectoryName(path)!);
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(value, JsonOptions), new UTF8Encoding(false), cancellationToken);
             RejectReparse(temp, "temporary v0.52 state");
             if (File.Exists(path)) RejectReparse(path, "pre-replace v0.52 state");
-            File.Move(temp, path, overwrite: true);
-            RejectReparse(path, "v0.52 state");
+            File.Move(temp, path, overwrite: true); RejectReparse(path, "v0.52 state");
         }
-        finally
-        {
-            if (File.Exists(temp)) File.Delete(temp);
-        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
     }
 
-    private static string RequestDigest(
-        string requestId, IReadOnlyList<ArtifactAcquisitionItemV052> artifacts, string destinationRoot,
+    private static string RequestDigest(string requestId, IReadOnlyList<ArtifactAcquisitionItemV052> artifacts, string destinationRoot,
         long maxBytes, int maxRedirects, int timeoutSeconds, int ttlSeconds)
-        => Sha256Text(JsonSerializer.Serialize(new
-        {
-            Schema = RequestSchema,
-            RequestId = requestId,
-            Artifacts = artifacts,
-            DestinationRoot = destinationRoot,
-            MaxTotalNetworkBytes = maxBytes,
-            MaxRedirects = maxRedirects,
-            TimeoutSeconds = timeoutSeconds,
-            TtlSeconds = ttlSeconds
-        }, JsonOptions));
+        => Sha256Text(JsonSerializer.Serialize(new { Schema = RequestSchema, RequestId = requestId, Artifacts = artifacts, DestinationRoot = destinationRoot,
+            MaxTotalNetworkBytes = maxBytes, MaxRedirects = maxRedirects, TimeoutSeconds = timeoutSeconds, TtlSeconds = ttlSeconds }, JsonOptions));
 
     private static bool SafeToken(string? value, string prefix)
-        => !string.IsNullOrWhiteSpace(value) && value.Length <= 96 && value.StartsWith(prefix, StringComparison.Ordinal) &&
-           value.All(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_');
+        => !string.IsNullOrWhiteSpace(value) && value.Length <= 96 && value.StartsWith(prefix, StringComparison.Ordinal) && value.All(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_');
 
     private static bool IsWithin(string path, string root)
     {
         var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return fullPath.Equals(fullRoot, StringComparison.OrdinalIgnoreCase) ||
-               fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        return fullPath.Equals(fullRoot, StringComparison.OrdinalIgnoreCase) || fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void RejectReparseChain(string path)
@@ -1022,29 +800,23 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
         var current = new DirectoryInfo(Path.GetFullPath(path));
         while (current is not null)
         {
-            if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0)
-                throw Refused("DESTINATION_REPARSE_REFUSED", $"Reparse directory refused: {current.FullName}");
+            if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0) throw Refused("DESTINATION_REPARSE_REFUSED", $"Reparse directory refused: {current.FullName}");
             current = current.Parent;
         }
     }
 
     private static void RejectReparse(string path, string role)
     {
-        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-            throw Refused("DESTINATION_REPARSE_REFUSED", $"Reparse path refused for {role}: {path}");
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw Refused("DESTINATION_REPARSE_REFUSED", $"Reparse path refused for {role}: {path}");
     }
 
     private static string HashFile(string path)
     {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
-    private static string Sha256Text(string value)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-
-    private static ArtifactAcquisitionExceptionV052 Refused(string classification, string message)
-        => new(classification, message);
+    private static string Sha256Text(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    private static ArtifactAcquisitionExceptionV052 Refused(string classification, string message) => new(classification, message);
 
     private static string[] NonEffects() => new[]
     {
@@ -1064,7 +836,6 @@ public sealed class BoundedArtifactAcquisitionV052Service : IDisposable
     };
 
     public void Dispose() => _httpClient.Dispose();
-
     private sealed record LeasePaths(string LeaseDirectory, string StatePath, string TransactionPath, string LockPath);
     private sealed record DownloadResult(int Redirects, long NetworkBytes, long FileBytes, string Sha256);
 }
