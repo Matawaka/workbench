@@ -90,8 +90,9 @@ public sealed class LocalAppHeldMcpSessionOwnershipV0517 : IAsyncDisposable
 /// file handle serializes MCP session ownership across Workbench processes for
 /// the full listener lifetime. Metadata is non-authoritative and contains no
 /// bearer/hash/endpoint secret. Canonical read authority remains v0.48 lease state.
-/// v0.51.9 additionally preserves any prior active owner metadata evidence under
-/// the acquired handle before the successor owner generation is written.
+/// v0.51.9 preserves prior active owner metadata evidence before successor write.
+/// v0.51.10 additionally records PREPARED vs COMMITTED owner-generation state and
+/// reconciles abandoned/recovered transitions before any new lease can be created.
 /// </summary>
 public sealed class LocalAppMcpSessionOwnershipV0517Service
 {
@@ -106,6 +107,7 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
         WriteIndented = true
     };
     private readonly LocalAppMcpOwnerGenerationV0519Service _generationV0519Service = new();
+    private readonly LocalAppMcpOwnerGenerationTransactionV05110Service _generationTransactionV05110Service = new();
 
     public async Task<LocalAppHeldMcpSessionOwnershipV0517> AcquireAsync(
         string workspaceRoot,
@@ -161,10 +163,20 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
             Path.GetFullPath(workspaceRoot.Trim()), metadataPath, applicationId, sessionId, started.ElapsedMilliseconds, handle);
         try
         {
-            await _generationV0519Service.PreservePriorBeforeSuccessorAsync(
-                held.WorkspaceRoot, applicationId, sessionId, metadataPath, cancellationToken);
+            var reconciled = await _generationTransactionV05110Service.ReconcileBeforePrepareAsync(
+                held.WorkspaceRoot, applicationId, metadataPath, cancellationToken);
+            var generationEvidence = await _generationV0519Service.PreservePriorBeforeSuccessorAsync(
+                held.WorkspaceRoot, applicationId, sessionId, metadataPath, cancellationToken,
+                reconciled.VerifiedReuseArchivePath);
+            await _generationTransactionV05110Service.PrepareAsync(
+                held.WorkspaceRoot, applicationId, sessionId, metadataPath,
+                generationEvidence.Receipt,
+                !string.IsNullOrWhiteSpace(reconciled.VerifiedReuseArchivePath),
+                cancellationToken);
             await WriteOwnerAsync(held, null, "OWNERSHIP_ACQUIRED_UNBOUND", false, null, null,
-                $"Cross-process MCP ownership acquired for purpose '{purpose}'. Any prior active owner metadata was preserved as v0.51.9 generation evidence before this successor metadata write; prior metadata grants no authority.", cancellationToken);
+                $"Cross-process MCP ownership acquired for purpose '{purpose}'. Prior owner evidence was preserved/reused and v0.51.10 PREPARED was recorded before this successor metadata write; COMMITTED is recorded only after exact successor metadata observation.", cancellationToken);
+            await _generationTransactionV05110Service.CommitAfterSuccessorWriteAsync(
+                held.WorkspaceRoot, applicationId, sessionId, metadataPath, cancellationToken);
             return held;
         }
         catch
@@ -258,7 +270,8 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
         ("mcp-owner-v0517-release", true, "listener inactivity required", "fail closed"),
         ("mcp-owner-v0517-crash", true, "OS handle releases; stale metadata non-authoritative", "lease not auto-revoked"),
         ("mcp-owner-v0517-authority", true, "ownership grants no lease authority", "false"),
-        ("mcp-owner-v0519-generation", true, "prior owner metadata preserved before successor write", "no silent stale overwrite")
+        ("mcp-owner-v0519-generation", true, "prior owner metadata preserved before successor write", "no silent stale overwrite"),
+        ("mcp-owner-v05110-transaction", true, "reconcile -> preserve/reuse -> PREPARED -> owner write -> COMMITTED", "prepared != committed")
     };
 
     private static void RequireHeld(LocalAppHeldMcpSessionOwnershipV0517 held)
