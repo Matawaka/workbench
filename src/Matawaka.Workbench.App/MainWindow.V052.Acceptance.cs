@@ -12,8 +12,17 @@ public partial class MainWindow
     internal void ConfigureV052AcceptanceRouting()
     {
         ConfigureV05113AcceptanceRouting();
+
+        // ConfigureV0511Routing is reached by the normal predecessor UI chain and
+        // installs its own first-boot/publication handlers. The historical
+        // acceptance-routing chain intentionally starts later, so v0.52 must
+        // explicitly remove that oldest remaining handler pair before installing
+        // the exact successor routes. This keeps one first-boot consumer and one
+        // publication handler active for the v0.52 surface.
+        Loaded -= Window_LoadedV0511;
         Loaded -= Window_LoadedV05113;
         Loaded += Window_LoadedV052;
+        PublishAcceptedButton.Click -= PublishAcceptedV0511Button_Click;
         PublishAcceptedButton.Click -= PublishAcceptedV05113Button_Click;
         PublishAcceptedButton.Click += PublishAcceptedV052Button_Click;
     }
