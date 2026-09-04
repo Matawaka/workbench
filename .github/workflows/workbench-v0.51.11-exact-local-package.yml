@@ -1,0 +1,144 @@
+name: Workbench v0.51.11 exact local predecessor package
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.11-owner-lease-binding-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build exact source candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.11 Release build failed'}
+
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          foreach($m in @('ConfigureV05111Routing()','ConfigureV05111AcceptanceRouting()')){
+            if(-not $app.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 routing marker missing: $m"}
+          }
+          $tx=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnerLeaseBindingV05111Service.cs' -Raw
+          foreach($m in @('PREPARED_BINDING','LEASE_CREATED','OWNER_BOUND','OWNER_BOUND_RECOVERED','LIVE_ORPHAN_AFTER_LEASE_CREATE','ABANDONED_BEFORE_LEASE','PreparedLeaseId')){
+            if(-not $tx.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 binding marker missing: $m"}
+          }
+          $prepared=Get-Content 'src/Matawaka.Workbench.App/LocalAppPreparedIndexedLeaseV05111Service.cs' -Raw
+          foreach($m in @('CreatePreparedIndexedAsync','StateSchema','GrantSchema','CreationReceiptSchema','BeginMutationAsync','CommitMutationAsync')){
+            if(-not $prepared.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 prepared lease marker missing: $m"}
+          }
+          $cp=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV05111Service.cs' -Raw
+          foreach($m in @('workbench-v0.51.10-accepted','workbench-v0.51.11-accepted','v0.51.11-source-manifest*.json','PredecessorGitSha')){
+            if(-not $cp.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 checkpoint marker missing: $m"}
+          }
+          $acc=Get-Content 'src/Matawaka.Workbench.App/MainWindow.V05111.Acceptance.cs' -Raw
+          foreach($m in @('RunV05111AcceptanceArtifactAsync','AcceptFromBootstrapAsync','PreparedExactLeaseIdDoesNotMeanCreated = true','LiveIncompleteBindingLeaseAutoRevoked = false','AutomaticPublishPerformed = false')){
+            if(-not $acc.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.11 acceptance marker missing: $m"}
+          }
+          Write-Host 'V05111_EXACT_PACKAGE_BUILD_PASS'
+
+      - name: Verify public publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05111_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
+
+      - name: Package exact local predecessor update
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='a2e4bcb3e7376c6f20e3600be6e07d12adf7f9cb'
+          $stage=Join-Path $env:RUNNER_TEMP 'v05111-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.51.11.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpOwnerLeaseBindingV05111Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppPreparedIndexedLeaseV05111Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV05111Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V05111.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V05111.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV05111AcceptanceHarness.cs'
+          )
+
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.51.11 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.51.11'
+            PredecessorTag='workbench-v0.51.10-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.51.11-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'source only',
+              'exact local v0.51.10 predecessor only',
+              'PREPARED_BINDING exact LeaseId is provenance/name reservation only and grants no lease/read/revoke/resume authority',
+              'canonical v0.48 lease state/grant/creation receipt schemas and bearer-hash-only persistence remain the authority corridor',
+              'v0.51.5 active index remains derived and its dirty protocol plus v0.51.6 cross-process fence are preserved',
+              'LEASE_CREATED is not OWNER_BOUND and OWNER_BOUND is not listener readiness',
+              'live incomplete owner-to-lease binding recovery never auto-revokes canonical authority and blocks silent successor replacement until inherited explicit closure or expiry',
+              'v0.51.10 owner-generation transaction semantics remain preserved',
+              'no historical lease enumeration by owner-to-lease binding transaction',
+              'no bearer plaintext/hash or endpoint path token in binding transaction/evidence state',
+              'no private app bytes',
+              'no runtime lease/index/fence/MCP owner/generation/binding transaction/evidence/clipboard state',
+              'no automatic Secure MCP Tunnel',
+              'no OpenAI bridge dependency',
+              'no remote publication authority',
+              'no CI workflow or qualification fixture files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.51.11-owner-lease-binding-transaction-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V05111_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.51.11-exact-local-update
+          path: ${{ steps.pack.outputs.zip }}
+          if-no-files-found: error
