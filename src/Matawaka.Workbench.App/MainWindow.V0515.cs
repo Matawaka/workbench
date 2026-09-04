@@ -396,7 +396,7 @@ public partial class MainWindow
             }
 
             var revoked = await _indexedLeaseLifecycleV0515Service.RevokeExactIndexedAsync(
-                WorkspaceRootBox.Text, appId, leaseId, _cts.Token);
+                WorkspaceRootBox.Text, appId, leaseId, _cts!.Token);
             LocalAppsTextBox.Text = CommandCodec.Serialize(new
             {
                 Status = "READ_SESSION_ENDED_EXACT_LEASE_REVOKED_INDEX_COMMITTED",
@@ -506,12 +506,13 @@ public partial class MainWindow
     {
         if (!await EnsureVerifiedActiveIndexReadyV0515Async(appId, "manual MCP startup")) return;
         await StartReadOnlyMcpAdapterV050Async(appId);
-        if (!_localAppMcpReadAdapterV049Service.IsActiveFor(appId) || string.IsNullOrWhiteSpace(_v050ActiveMcpLeaseId)) return;
+        var activeLeaseId = _v050ActiveMcpLeaseId;
+        if (!_localAppMcpReadAdapterV049Service.IsActiveFor(appId) || string.IsNullOrWhiteSpace(activeLeaseId)) return;
         try
         {
             _ = await _indexedLeaseLifecycleV0515Service.ObserveIndexedExactLiveLeaseAsync(
-                WorkspaceRootBox.Text, appId, _v050ActiveMcpLeaseId, appId, _v050ActiveMcpLeaseId, CancellationToken.None);
-            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  manual-mcp.v0515.index-verified app={appId}; lease={_v050ActiveMcpLeaseId}");
+                WorkspaceRootBox.Text, appId, activeLeaseId, appId, activeLeaseId, CancellationToken.None);
+            EventList.Items.Add($"{DateTime.Now:HH:mm:ss}  manual-mcp.v0515.index-verified app={appId}; lease={activeLeaseId}");
         }
         catch (InvalidDataException ex)
         {
