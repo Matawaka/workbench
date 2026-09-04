@@ -36,11 +36,11 @@ jobs:
             if(-not $tx.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.10 transaction marker missing: $m"}
           }
           $owner=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
-          $reconcile=$owner.IndexOf('ReconcileBeforePrepareAsync(',[StringComparison]::Ordinal)
-          $preserve=$owner.IndexOf('PreservePriorBeforeSuccessorAsync(',[StringComparison]::Ordinal)
-          $prepare=$owner.IndexOf('PrepareAsync(',[StringComparison]::Ordinal)
+          $reconcile=$owner.IndexOf('_generationTransactionV05110Service.ReconcileBeforePrepareAsync(',[StringComparison]::Ordinal)
+          $preserve=$owner.IndexOf('_generationV0519Service.PreservePriorBeforeSuccessorAsync(',[StringComparison]::Ordinal)
+          $prepare=$owner.IndexOf('_generationTransactionV05110Service.PrepareAsync(',[StringComparison]::Ordinal)
           $write=$owner.IndexOf('WriteOwnerAsync(held, null, "OWNERSHIP_ACQUIRED_UNBOUND"',[StringComparison]::Ordinal)
-          $commit=$owner.IndexOf('CommitAfterSuccessorWriteAsync(',[StringComparison]::Ordinal)
+          $commit=$owner.IndexOf('_generationTransactionV05110Service.CommitAfterSuccessorWriteAsync(',[StringComparison]::Ordinal)
           if(@($reconcile,$preserve,$prepare,$write,$commit)|Where-Object {$_ -lt 0}){throw 'v0.51.10 owner integration marker missing'}
           if(-not ($reconcile -lt $preserve -and $preserve -lt $prepare -and $prepare -lt $write -and $write -lt $commit)){
             throw "v0.51.10 ordering invalid: reconcile=$reconcile preserve=$preserve prepare=$prepare write=$write commit=$commit"
