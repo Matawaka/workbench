@@ -1,0 +1,67 @@
+name: Workbench v0.51.10 MCP owner generation transaction candidate
+
+on:
+  push:
+    branches: [feat/workbench-v0.51.10-mcp-owner-generation-transaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build and static generation transaction checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.51.10 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.51.10 Release build failed'}
+
+          $tx=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnerGenerationTransactionV05110Service.cs' -Raw
+          foreach($m in @('PREPARED','COMMITTED','ABANDONED_BEFORE_SUCCESSOR','COMMITTED_RECOVERED','CLOSED_METADATA_ABSENT','MCP_OWNER_GENERATION_TRANSACTION_INCONSISTENT','PriorArchiveReused','LeaseAuthorityGranted','ResumeAuthorityGranted')){
+            if(-not $tx.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.10 transaction marker missing: $m"}
+          }
+          $owner=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpSessionOwnershipV0517Service.cs' -Raw
+          $reconcile=$owner.IndexOf('ReconcileBeforePrepareAsync(',[StringComparison]::Ordinal)
+          $preserve=$owner.IndexOf('PreservePriorBeforeSuccessorAsync(',[StringComparison]::Ordinal)
+          $prepare=$owner.IndexOf('PrepareAsync(',[StringComparison]::Ordinal)
+          $write=$owner.IndexOf('WriteOwnerAsync(held, null, "OWNERSHIP_ACQUIRED_UNBOUND"',[StringComparison]::Ordinal)
+          $commit=$owner.IndexOf('CommitAfterSuccessorWriteAsync(',[StringComparison]::Ordinal)
+          if(@($reconcile,$preserve,$prepare,$write,$commit)|Where-Object {$_ -lt 0}){throw 'v0.51.10 owner integration marker missing'}
+          if(-not ($reconcile -lt $preserve -and $preserve -lt $prepare -and $prepare -lt $write -and $write -lt $commit)){
+            throw "v0.51.10 ordering invalid: reconcile=$reconcile preserve=$preserve prepare=$prepare write=$write commit=$commit"
+          }
+          $gen=Get-Content 'src/Matawaka.Workbench.App/LocalAppMcpOwnerGenerationV0519Service.cs' -Raw
+          foreach($m in @('owner-prior-sha256-','ValidateReusableArchive','no duplicate prior bytes')){
+            if(-not $gen.Contains($m,[StringComparison]::Ordinal)){throw "v0.51.10 content-addressed evidence marker missing: $m"}
+          }
+          Write-Host 'V05110_GENERATION_TRANSACTION_STATIC_PASS ordering=true preparedNotCommitted=true contentAddressed=true authority=false'
+
+      - name: Execute generation transaction hostile controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v05110/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.51.10 generation transaction hostile probe failed'}
+
+      - name: Verify publication remains deferred
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          Write-Host "V05110_REMOTE_BOUNDARY_PASS main=$remote publicationDeferred=True"
