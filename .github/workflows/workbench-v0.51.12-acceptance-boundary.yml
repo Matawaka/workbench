@@ -64,7 +64,7 @@ jobs:
             if(-not $anchor.Contains($m,[StringComparison]::Ordinal)){throw "KONTUR anchor boundary missing: $m"}
           }
           $handoff=Get-Content 'integrations/kontur/CAPABILITY_HANDOFF.schema.json' -Raw
-          foreach($m in @('PREPARED_NOT_AUTHORIZED','handoff_is_authority','runtime_activation_authorized')){
+          foreach($m in @('fresh_human_confirmation_required','NONE_BY_HANDOFF_RECORD','"game": {"const": "NONE"}')){
             if(-not $handoff.Contains($m,[StringComparison]::Ordinal)){throw "KONTUR handoff boundary missing: $m"}
           }
 
