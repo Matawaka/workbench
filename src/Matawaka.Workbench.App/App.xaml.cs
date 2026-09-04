@@ -9,7 +9,7 @@ public partial class App : Application
         base.OnStartup(e);
         var window = new MainWindow();
         window.ConfigureV0517Routing();
-        window.ConfigureV0516AcceptanceRouting();
+        window.ConfigureV0517AcceptanceRouting();
         MainWindow = window;
         window.Show();
     }
