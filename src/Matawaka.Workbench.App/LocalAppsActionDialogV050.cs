@@ -20,7 +20,8 @@ public enum LocalAppsActionChoiceV050
     StartSecureMcpTunnel,
     StopSecureMcpTunnel,
     ReadSessionStatus,
-    EndOrphanedReadSession
+    EndOrphanedReadSession,
+    ReadSessionHistoryPage
 }
 
 public sealed class LocalAppsActionDialogV050 : Window
