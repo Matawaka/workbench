@@ -90,6 +90,8 @@ public sealed class LocalAppHeldMcpSessionOwnershipV0517 : IAsyncDisposable
 /// file handle serializes MCP session ownership across Workbench processes for
 /// the full listener lifetime. Metadata is non-authoritative and contains no
 /// bearer/hash/endpoint secret. Canonical read authority remains v0.48 lease state.
+/// v0.51.9 additionally preserves any prior active owner metadata evidence under
+/// the acquired handle before the successor owner generation is written.
 /// </summary>
 public sealed class LocalAppMcpSessionOwnershipV0517Service
 {
@@ -103,6 +105,7 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
         PropertyNameCaseInsensitive = false,
         WriteIndented = true
     };
+    private readonly LocalAppMcpOwnerGenerationV0519Service _generationV0519Service = new();
 
     public async Task<LocalAppHeldMcpSessionOwnershipV0517> AcquireAsync(
         string workspaceRoot,
@@ -158,8 +161,10 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
             Path.GetFullPath(workspaceRoot.Trim()), metadataPath, applicationId, sessionId, started.ElapsedMilliseconds, handle);
         try
         {
+            await _generationV0519Service.PreservePriorBeforeSuccessorAsync(
+                held.WorkspaceRoot, applicationId, sessionId, metadataPath, cancellationToken);
             await WriteOwnerAsync(held, null, "OWNERSHIP_ACQUIRED_UNBOUND", false, null, null,
-                $"Cross-process MCP ownership acquired for purpose '{purpose}'. Stale prior metadata, if any, had no authority because the exclusive owner handle was free.", cancellationToken);
+                $"Cross-process MCP ownership acquired for purpose '{purpose}'. Any prior active owner metadata was preserved as v0.51.9 generation evidence before this successor metadata write; prior metadata grants no authority.", cancellationToken);
             return held;
         }
         catch
@@ -252,7 +257,8 @@ public sealed class LocalAppMcpSessionOwnershipV0517Service
         ("mcp-owner-v0517-endpoint-secret", true, "path token omitted; host/port only", "omitted"),
         ("mcp-owner-v0517-release", true, "listener inactivity required", "fail closed"),
         ("mcp-owner-v0517-crash", true, "OS handle releases; stale metadata non-authoritative", "lease not auto-revoked"),
-        ("mcp-owner-v0517-authority", true, "ownership grants no lease authority", "false")
+        ("mcp-owner-v0517-authority", true, "ownership grants no lease authority", "false"),
+        ("mcp-owner-v0519-generation", true, "prior owner metadata preserved before successor write", "no silent stale overwrite")
     };
 
     private static void RequireHeld(LocalAppHeldMcpSessionOwnershipV0517 held)
