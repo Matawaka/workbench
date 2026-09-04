@@ -31,6 +31,7 @@ internal static class Program
         MakeApp(workspace, "alpha");
 
         var statusService = new LocalAppMcpOwnershipStatusV0518Service();
+        var recoveryService = new LocalAppMcpOwnershipRecoveryV0518Service();
         var initial = statusService.Observe(workspace, "alpha");
         if (initial.Status != "FREE_NO_METADATA" || initial.OwnerHandleBusy || initial.OwnerMetadataPresent ||
             initial.ResumeAuthorityGranted || initial.LeaseAuthorityGranted || initial.ReadAuthorityGranted || initial.RevokeAuthorityGranted)
@@ -72,6 +73,12 @@ internal static class Program
             throw new Exception("OWNED status mismatch");
         if (Sha(statePath) != stateBefore) throw new Exception("owned status mutated canonical lease bytes");
 
+        var ackWhileOwnedRefused = false;
+        try { _ = await recoveryService.AcknowledgeAndRotateAsync(workspace, "alpha", default); }
+        catch (InvalidDataException ex) when (ex.Message.StartsWith("MCP_STALE_METADATA_ACK_NOT_APPLICABLE", StringComparison.Ordinal))
+        { ackWhileOwnedRefused = true; }
+        if (!ackWhileOwnedRefused) throw new Exception("stale metadata acknowledgement was not refused while owner handle was live");
+
         var ownedJson = JsonSerializer.Serialize(owned);
         if (ownedJson.Contains(created.Grant.Bearer, StringComparison.OrdinalIgnoreCase) ||
             ownedJson.Contains(created.Receipt.BearerSha256, StringComparison.OrdinalIgnoreCase) ||
@@ -91,6 +98,29 @@ internal static class Program
         var metadataBefore = Sha(metadataPath);
         _ = statusService.Observe(workspace, "alpha");
         if (Sha(metadataPath) != metadataBefore) throw new Exception("status mutated stale owner metadata");
+
+        var acknowledged = await recoveryService.AcknowledgeAndRotateAsync(workspace, "alpha", default);
+        if (acknowledged.Receipt.Status != "MCP_STALE_OWNER_METADATA_ACKNOWLEDGED_EVIDENCE_PRESERVED" ||
+            !acknowledged.Receipt.OwnerHandleFreeProvenDuringRotation || !acknowledged.Receipt.ActiveMetadataSlotCleared ||
+            acknowledged.Receipt.CanonicalLeaseMutated || acknowledged.Receipt.ActiveIndexMutated ||
+            acknowledged.Receipt.ResumeAuthorityGranted || acknowledged.Receipt.LeaseAuthorityGranted ||
+            acknowledged.Receipt.ReadAuthorityGranted || acknowledged.Receipt.RevokeAuthorityGranted ||
+            acknowledged.Receipt.PriorMetadataSha256 != metadataBefore || acknowledged.Receipt.ArchiveSha256 != metadataBefore ||
+            !File.Exists(acknowledged.Receipt.ArchivePath) || File.Exists(metadataPath))
+            throw new Exception("stale metadata acknowledgement receipt/evidence mismatch");
+        if (Sha(acknowledged.Receipt.ArchivePath) != metadataBefore || Sha(statePath) != stateBefore)
+            throw new Exception("stale acknowledgement changed evidence/canonical bytes");
+        var afterAck = statusService.Observe(workspace, "alpha");
+        if (afterAck.Status != "FREE_NO_METADATA" || afterAck.OwnerMetadataPresent)
+            throw new Exception("active stale metadata slot was not cleared after evidence rotation");
+        if (!leases.ListActive(workspace, "alpha").Any(x => x.LeaseId == created.Grant.LeaseId))
+            throw new Exception("stale acknowledgement silently revoked live orphan lease");
+
+        var ackJson = File.ReadAllText(acknowledged.ReceiptPath, Encoding.UTF8);
+        if (ackJson.Contains(created.Grant.Bearer, StringComparison.OrdinalIgnoreCase) ||
+            ackJson.Contains(created.Receipt.BearerSha256, StringComparison.OrdinalIgnoreCase) ||
+            ackJson.Contains(EndpointSecret, StringComparison.Ordinal))
+            throw new Exception("stale acknowledgement receipt leaked bearer/hash/endpoint path token");
 
         // Forge non-secret but non-existent exact LeaseId metadata; it must classify ABSENT and remain non-authoritative.
         var forged = new LocalAppMcpSessionOwnerV0517(
@@ -122,8 +152,16 @@ internal static class Program
             absentJson.Contains(EndpointSecret, StringComparison.Ordinal))
             throw new Exception("stale/absent status leaked secret material");
 
+        var forgedAck = await recoveryService.AcknowledgeAndRotateAsync(workspace, "alpha", default);
+        if (forgedAck.Receipt.LeaseClassificationBefore != "ABSENT" || forgedAck.Receipt.CanonicalLeaseMutated ||
+            forgedAck.Receipt.ResumeAuthorityGranted || forgedAck.Receipt.RevokeAuthorityGranted || File.Exists(metadataPath))
+            throw new Exception("forged ABSENT metadata acknowledgement altered authority semantics");
+        if (Sha(statePath) != stateBefore || !leases.ListActive(workspace, "alpha").Any(x => x.LeaseId == created.Grant.LeaseId))
+            throw new Exception("forged metadata acknowledgement touched unrelated canonical live lease");
+
         Console.WriteLine(
             "V0518_STATUS_RUNTIME_PASS freeNoMetadata=true owned=true freeStaleMetadata=true liveOwnerBusy=true liveOrphan=true absent=true " +
-            "historicalScan=false canonicalMutation=false ownerMetadataMutation=false resumeAuthority=false revokeAuthority=false bearer=false endpointSecret=false");
+            "ackWhileOwnedRefused=true staleAck=true evidencePreserved=true activeSlotCleared=true orphanLeasePreserved=true " +
+            "historicalScan=false canonicalMutation=false indexMutation=false resumeAuthority=false revokeAuthority=false bearer=false endpointSecret=false");
     }
 }
