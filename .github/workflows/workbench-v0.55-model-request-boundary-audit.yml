@@ -1,0 +1,90 @@
+name: Workbench v0.55 model request boundary audit
+
+on:
+  push:
+    branches:
+      - audit/workbench-v0.55-model-request-boundary
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate exact evidence-bound architecture decision
+        run: |
+          set -euo pipefail
+          python architecture/model-request-boundary-audit/v0.1/validate.py
+          python architecture/model-request-boundary-audit/v0.1/test_audit.py
+
+      - name: Verify additive read-only diff boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          mapfile -t changed < <(git diff --name-only "$BASE"...HEAD)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              architecture/model-request-boundary-audit/v0.1/*|.github/workflows/workbench-v0.55-model-request-boundary-audit.yml)
+                ;;
+              *)
+                echo "Unexpected non-audit mutation: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+          git diff --check "$BASE"...HEAD
+          echo "V055_AUDIT_ADDITIVE_BOUNDARY_PASS files=${#changed[@]}"
+
+      - name: Verify admitted primitives are byte-identical to public predecessor
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          for path in \
+            src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs \
+            src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs \
+            src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs \
+            KONTUR_INTEGRATION_BACKLOG.md; do
+            test -z "$(git diff "$BASE" -- "$path")"
+          done
+          echo 'V055_AUDIT_PREDECESSOR_BYTES_PASS'
+
+      - name: Verify public frontier unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED='65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          REMOTE="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$REMOTE" = "$EXPECTED"
+          echo "V055_AUDIT_PUBLIC_FRONTIER_PASS main=$REMOTE"
+
+      - name: Verify audit itself creates no implementation or runtime authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('architecture/model-request-boundary-audit/v0.1/audit.json')
+          a=json.loads(p.read_text(encoding='utf-8'))
+          d=a['decision']
+          assert d['implementation_authority_created_by_audit'] is False
+          assert d['real_model_bytes_authorized'] is False
+          assert d['real_runtime_bytes_authorized'] is False
+          assert d['v053_reinterpreted_as_model_request_authority'] is False
+          assert a['hygiene_dependency']['issue'] == 73
+          print('V055_AUDIT_NON_EFFECTS_PASS')
+          PY
