@@ -10,8 +10,10 @@ namespace Matawaka.Workbench.App;
 /// top-level four-button Workbench surface. v0.53 adds a separate generic bounded
 /// runtime-execution entry point and exact-owned-process stop action. v0.54 adds
 /// the missing generic bounded runtime-tree materialization boundary between exact
-/// verified ZIP artifacts and execution. The selected app remains navigation
-/// context only; acquisition/materialization/runtime authority is not app-scoped.
+/// verified ZIP artifacts and execution. v0.55 adds a separate one-shot local-model
+/// invocation authority above exact runtime + exact model evidence; it is not a
+/// reinterpretation of v0.53 process authority. The selected app remains navigation
+/// context only; acquisition/materialization/runtime/model authority is not app-scoped.
 /// </summary>
 public sealed class LocalAppsActionDialogV0515 : Window
 {
@@ -36,7 +38,7 @@ public sealed class LocalAppsActionDialogV0515 : Window
         });
         root.Children.Add(new TextBlock
         {
-            Text = "Read Session Status uses the verified active-lease index and exact canonical revalidation without historical enumeration. MCP Ownership Status separately reports runtime ownership. Artifact acquisition, runtime-tree materialization and runtime execution are generic: this app selection is navigation context only. Each requires its own exact evidence/request and explicit confirmation. Verified Artifact ≠ Materialized Runtime ≠ Execution Authority.",
+            Text = "Read Session Status uses the verified active-lease index and exact canonical revalidation without historical enumeration. MCP Ownership Status separately reports runtime ownership. Artifact acquisition, runtime-tree materialization, runtime execution and local-model invocation are generic: this app selection is navigation context only. Each requires its own exact evidence/request and explicit confirmation. Verified Artifact ≠ Materialized Runtime ≠ Execution Authority ≠ Model Request Authority ≠ Response Authority.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 16)
         });
@@ -51,6 +53,7 @@ public sealed class LocalAppsActionDialogV0515 : Window
         Add(root, "Bounded runtime-tree materialization from exact v0.52 evidence — generic", LocalAppsActionChoiceV050.BoundedRuntimeMaterialization);
         Add(root, "Bounded runtime execution from exact JSON — generic", LocalAppsActionChoiceV050.BoundedRuntimeExecution);
         Add(root, "Stop active bounded runtime — exact owned process tree only", LocalAppsActionChoiceV050.StopBoundedRuntimeExecution);
+        Add(root, "Bounded one-shot local-model invocation from exact runtime/model evidence — generic", LocalAppsActionChoiceV050.BoundedLocalModelInvocation);
         Add(root, "Chat read relay", LocalAppsActionChoiceV050.ChatReadRelay);
         Add(root, "Read Session Status — verified live authority (fast)", LocalAppsActionChoiceV050.ReadSessionStatus);
         Add(root, "Read Session History Page — bounded canonical evidence scan", LocalAppsActionChoiceV050.ReadSessionHistoryPage);
@@ -93,6 +96,9 @@ public sealed class LocalAppsActionDialogV0515 : Window
         ("chooser-v053-runtime-execution", true, "generic exact JSON execution entry point", "materialized runtime evidence + explicit confirmation"),
         ("chooser-v053-runtime-stop", true, "exact owned runtime stop entry point", "no arbitrary PID"),
         ("chooser-v053-runtime-navigation", true, "selected app is navigation context only", "not execution authority"),
+        ("chooser-v055-model-invocation", true, "exact runtime + exact v0.52 model evidence + bounded request", "separate one-shot model authority"),
+        ("chooser-v055-model-navigation", true, "selected app is navigation context only", "not model request authority"),
+        ("chooser-v055-response-boundary", true, "UNTRUSTED_LOCAL_MODEL_OUTPUT", "not response/display authority"),
         ("chooser-v0515-four-button-surface", true, "dialog-only change", "no top-level button")
     };
 
