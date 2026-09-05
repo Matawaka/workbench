@@ -1,0 +1,1 @@
+Binary blob is added in the next commit using Git data API so its remote bytes can be verified before manifest creation.
