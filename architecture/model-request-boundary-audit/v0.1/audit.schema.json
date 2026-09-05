@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "matawaka.workbench-model-request-boundary-audit/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "origin_main",
+    "origin_tag",
+    "source_bindings",
+    "proven_corridor",
+    "observed_gaps",
+    "options",
+    "decision",
+    "required_v055_invariants",
+    "required_v055_controls",
+    "hygiene_dependency",
+    "non_effects",
+    "audit_digest_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "matawaka.workbench-model-request-boundary-audit/v0.1"},
+    "version": {"const": "0.1"},
+    "origin_main": {"const": "65b0b49a513a6b782760a7626d6b768bf7bb7f91"},
+    "origin_tag": {"const": "workbench-v0.54.2-accepted"},
+    "source_bindings": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "git_blob_sha1", "role"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "git_blob_sha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "role": {"enum": ["EXACT_ARTIFACT_ACQUISITION", "GENERIC_EXACT_PROCESS_EXECUTION", "EXACT_RUNTIME_TREE_MATERIALIZATION", "PUBLIC_FUTURE_CALLER_BOUNDARY"]}
+        }
+      }
+    },
+    "proven_corridor": {"const": ["ACQUISITION_VERIFIED", "MATERIALIZED_VERIFIED", "RUNTIME_READY_OBSERVED"]},
+    "observed_gaps": {"type": "object"},
+    "options": {"type": "array", "minItems": 3, "maxItems": 3},
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["next_component", "first_profile", "loopback_session", "v053_reinterpreted_as_model_request_authority", "real_model_bytes_authorized", "real_runtime_bytes_authorized", "implementation_authority_created_by_audit"],
+      "properties": {
+        "next_component": {"const": "V055_BOUNDED_LOCAL_MODEL_INVOCATION_LEASE"},
+        "first_profile": {"const": "DIRECT_SUBPROCESS_STDIO_ONE_SHOT"},
+        "loopback_session": {"const": "DEFER_SEPARATE_SUCCESSOR"},
+        "v053_reinterpreted_as_model_request_authority": {"const": false},
+        "real_model_bytes_authorized": {"const": false},
+        "real_runtime_bytes_authorized": {"const": false},
+        "implementation_authority_created_by_audit": {"const": false}
+      }
+    },
+    "required_v055_invariants": {"type": "array", "minItems": 10, "uniqueItems": true, "items": {"type": "string"}},
+    "required_v055_controls": {"type": "array", "minItems": 15, "uniqueItems": true, "items": {"type": "string"}},
+    "hygiene_dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "state", "rule"],
+      "properties": {
+        "issue": {"const": 73},
+        "state": {"const": "OPEN_REQUIRED_BEFORE_NEW_REMOTE_SMOKE"},
+        "rule": {"const": "ExpectedBytes and ExpectedSha256 derive only from immutable served bytes re-fetched after upload."}
+      }
+    },
+    "non_effects": {"type": "array", "minItems": 12, "uniqueItems": true, "items": {"type": "string"}},
+    "audit_digest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
