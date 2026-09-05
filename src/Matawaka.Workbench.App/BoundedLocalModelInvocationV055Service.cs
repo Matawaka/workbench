@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -273,6 +274,14 @@ public sealed class BoundedLocalModelInvocationV055Service
         "rundll32.exe", "regsvr32.exe", "bash.exe", "sh.exe", "python.exe", "pythonw.exe"
     };
     private static readonly string[] FixedInheritedEnvironmentNames = { "SystemRoot", "WINDIR", "TEMP", "TMP" };
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageName(
+        IntPtr hProcess,
+        int dwFlags,
+        StringBuilder lpExeName,
+        ref int lpdwSize);
 
     public LocalModelInvocationPreviewV055 Preview(
         string workspaceRoot,
@@ -783,16 +792,39 @@ public sealed class BoundedLocalModelInvocationV055Service
 
     private static string GetObservedProcessImagePath(Process process)
     {
-        try
+        Exception? last = null;
+        for (var attempt = 0; attempt < 40; attempt++)
         {
-            var path = process.MainModule?.FileName;
-            if (string.IsNullOrWhiteSpace(path)) throw new InvalidDataException("Process image path unavailable.");
-            return Path.GetFullPath(path);
+            try
+            {
+                var capacity = 32768;
+                var buffer = new StringBuilder(capacity);
+                var length = capacity;
+                if (QueryFullProcessImageName(process.Handle, 0, buffer, ref length) && length > 0)
+                {
+                    var path = buffer.ToString();
+                    if (!string.IsNullOrWhiteSpace(path)) return Path.GetFullPath(path);
+                }
+                last = new InvalidDataException($"QueryFullProcessImageName failed with Win32 error {Marshal.GetLastWin32Error()}.");
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+            }
+
+            try
+            {
+                var path = process.MainModule?.FileName;
+                if (!string.IsNullOrWhiteSpace(path)) return Path.GetFullPath(path);
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+            }
+
+            if (attempt != 39) Thread.Sleep(10);
         }
-        catch (Exception ex)
-        {
-            throw Refused("PROCESS_IMAGE_QUERY_FAILED", "Could not observe exact process image path.", ex);
-        }
+        throw Refused("PROCESS_IMAGE_QUERY_FAILED", "Could not observe exact process image path after bounded Windows query retries.", last);
     }
 
     private static void ValidateGrantAgainstState(LocalModelInvocationGrantV055 grant, LocalModelInvocationLeaseStateV055 state)
