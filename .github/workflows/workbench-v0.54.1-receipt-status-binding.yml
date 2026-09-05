@@ -43,8 +43,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
+          # The historical v0.54 probe fixture encoded the same stale UI-wrapper label that
+          # real-host evidence exposed. Rebase only that synthetic fixture in the ephemeral
+          # checkout; product source was already corrected and is independently tested above.
+          $probe='.github/qualification/v054materialization/Program.cs'
+          $text=Get-Content $probe -Raw
+          $old='"ARTIFACT_ACQUISITION_VERIFIED",'
+          $new='"ACQUISITION_VERIFIED",'
+          $count=([regex]::Matches($text,[regex]::Escape($old))).Count
+          if($count -ne 1){throw "expected exactly one stale legacy fixture status, observed $count"}
+          Set-Content $probe ($text.Replace($old,$new)) -Encoding UTF8
           dotnet run --project .github/qualification/v054materialization/Probe.csproj -c Release
           if($LASTEXITCODE -ne 0){throw 'v0.54 hostile materialization regression failed'}
+          Write-Host 'V0541_V054_HOSTILE_REBASED_FIXTURE_PASS'
 
       - name: Verify narrow compatibility boundary and first boot
         shell: pwsh
