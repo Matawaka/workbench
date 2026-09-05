@@ -1,0 +1,9 @@
+{
+  "Schema": "matawaka.workbench-v0551-failed-firstboot-recovery-request/v0.1",
+  "RequestId": "recover-v0551-title-harness-failure-50b6af3831c84032bbcd51d5b03dc7eb-v1",
+  "RepositoryRoot": "K:\\Matawaka\\Workbench",
+  "FailedBootstrapLeasePath": "K:\\Matawaka\\Workbench\\artifacts\\transition-bootstrap\\transition-bootstrap-v0.40-50b6af3831c84032bbcd51d5b03dc7eb.json",
+  "ExpectedAcceptedExecutablePath": "K:\\Matawaka\\Workbench\\artifacts\\app-v0.55-gui-update\\Matawaka.Workbench.App.exe",
+  "ExpectedAcceptedExecutableSha256": "eac74afec61019095ef07649704e70e3a63cb289b3f2e86fec7a0fe4723b3872",
+  "ExpectedFailedCandidateSha256": "d836d45c823e8388cb252214af176f2a1b315f2da8bbd3d9418ddd74b8c1fea7e"
+}
