@@ -1,0 +1,75 @@
+name: Workbench v0.54 runtime-tree materialization
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.54-bounded-runtime-tree-materialization
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.54 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.54 Release build failed'}
+          Write-Host 'V054_RELEASE_BUILD_PASS'
+
+      - name: Verify predecessor primitives unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='75f083f7f8383832ff85ecc61dd15ce47ba8d2c9'
+          foreach($file in @(
+            'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs'
+          )){
+            $diff=(git diff $base -- $file)
+            if(-not [string]::IsNullOrWhiteSpace(($diff -join ''))){throw "accepted predecessor primitive changed: $file"}
+          }
+          $mat=Get-Content 'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs' -Raw
+          foreach($marker in @(
+            'matawaka.runtime-materialization-request/v0.54',
+            'matawaka.artifact-acquisition-execution-receipt/v0.52',
+            'MATERIALIZED_VERIFIED',
+            'matawaka.runtime-tree-manifest/v0.53',
+            'MATERIALIZATION_PREPARED',
+            'ARCHIVE_PLAN_VERIFIED',
+            'EXTRACTION_STARTED',
+            'TREE_HASH_VERIFIED',
+            'ROOT_PROMOTED',
+            'RUNTIME_TREE_MATERIALIZATION_VERIFIED',
+            'no network access or artifact acquisition',
+            'no process start/stop'
+          )){
+            if(-not $mat.Contains($marker,[StringComparison]::Ordinal)){throw "v0.54 marker missing: $marker"}
+          }
+          Write-Host 'V054_STATIC_BOUNDARY_PASS'
+
+      - name: Verify public frontier unchanged during qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='75f083f7f8383832ff85ecc61dd15ce47ba8d2c9'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne $expected){throw "remote main moved unexpectedly: $remote"}
+          $tag=git ls-remote origin refs/tags/workbench-v0.54-accepted
+          if(-not [string]::IsNullOrWhiteSpace(($tag -join ''))){throw 'workbench-v0.54-accepted unexpectedly exists remotely'}
+          Write-Host "V054_REMOTE_BOUNDARY_PASS main=$remote targetTagAbsent=True"
