@@ -1,0 +1,164 @@
+name: Workbench v0.54.2 real-host materialization publication closure
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.54.2-realhost-materialization-publication
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-package:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.54.2 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.54.2 Release build failed'}
+          Write-Host 'V0542_RELEASE_BUILD_PASS'
+
+      - name: Run exact materialization admission parser regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v0542publication/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.54.2 admission parser regression failed'}
+
+      - name: Verify predecessor primitives unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $v0541='8b9c4a98cf8cd06636cbaa36a69eb723f5647b06'
+          foreach($file in @(
+            'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs'
+          )){
+            $diff=(git diff $v0541 -- $file)
+            if(-not [string]::IsNullOrWhiteSpace(($diff -join ''))){throw "predecessor primitive changed: $file"}
+          }
+          Write-Host 'V0542_PRIMITIVES_UNCHANGED_PASS'
+
+      - name: Verify fixed publication and first-boot boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $pub=Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0542Service.cs' -Raw
+          foreach($marker in @(
+            'd483ceacc2b490357555794c0403cc16a22e193c',
+            'workbench-v0.54.1-accepted',
+            'workbench-v0.54.2-accepted',
+            '75f083f7f8383832ff85ecc61dd15ce47ba8d2c9',
+            'https://github.com/Matawaka/workbench.git',
+            'PUBLISHED_ACCEPTED_V0542'
+          )){if(-not $pub.Contains($marker,[StringComparison]::Ordinal)){throw "publication marker missing: $marker"}}
+          if($pub.Contains('--force',[StringComparison]::OrdinalIgnoreCase)){throw 'force push marker found'}
+          $checkpoint=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0542Service.cs' -Raw
+          foreach($marker in @(
+            '0.54.2',
+            'd483ceacc2b490357555794c0403cc16a22e193c',
+            'workbench-v0.54.1-accepted',
+            'workbench-v0.54.2-accepted',
+            'matawaka.workbench-build-source-manifest/v0.54',
+            'v0.54.2-source-manifest*.json'
+          )){if(-not $checkpoint.Contains($marker,[StringComparison]::Ordinal)){throw "checkpoint marker missing: $marker"}}
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV054Routing()',[StringComparison]::Ordinal) -or -not $app.Contains('ConfigureV0542AcceptanceRouting()',[StringComparison]::Ordinal)){
+            throw 'v0.54.2 startup routing not bound'
+          }
+          $writer=Get-Content 'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs' -Raw
+          if(-not $writer.Contains('return $"v{parts[0]}.{parts[1]}"',[StringComparison]::Ordinal)){throw 'predecessor build-manifest schema writer shape changed'}
+          Write-Host 'V0542_BOUNDARY_PASS'
+
+      - name: Verify public frontier unchanged during qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='75f083f7f8383832ff85ecc61dd15ce47ba8d2c9'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne $expected){throw "public main moved unexpectedly: $remote"}
+          $tag=git ls-remote origin refs/tags/workbench-v0.54.2-accepted
+          if(-not [string]::IsNullOrWhiteSpace(($tag -join ''))){throw 'workbench-v0.54.2-accepted unexpectedly exists remotely'}
+          Write-Host "V0542_REMOTE_BOUNDARY_PASS main=$remote targetTagAbsent=True"
+
+      - name: Package exact local v0.54.1 predecessor update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='d483ceacc2b490357555794c0403cc16a22e193c'
+          $stage=Join-Path $env:RUNNER_TEMP 'v0542-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+          $files=@(
+            'PATCH-v0.54.2.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/RealHostMaterializationAdmissionV0542.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0542Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0542Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0542.Acceptance.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0542AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.54.2 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.54.2'
+            PredecessorTag='workbench-v0.54.1-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.54.2-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'exact local accepted v0.54.1 predecessor only',
+              'update application itself performs no publication/network access',
+              'publication remains a later separate explicit confirmation',
+              'v0.52/v0.53/v0.54 primitive source files are not in payload',
+              'no acquisition/materialization/process/model/benchmark/game authority',
+              'no CI workflow or qualification files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.54.2-realhost-materialization-publication-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0542_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - name: Upload exact local update
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.54.2-exact-local-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
