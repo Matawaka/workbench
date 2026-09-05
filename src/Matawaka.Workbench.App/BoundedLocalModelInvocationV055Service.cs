@@ -748,7 +748,7 @@ public sealed class BoundedLocalModelInvocationV055Service
             stdout.LongLength, stdout.Length == 0 ? null : HashBytes(stdout),
             stderr.LongLength, stderr.Length == 0 ? null : HashBytes(stderr),
             outputPath, outputSha, outputChars, true,
-            false, false, false, false, false, false, false, false, false, false,
+            false, false, false, false, false, false, false, false, false, false, false,
             failure, NonEffects(), status,
             success
                 ? "Exactly one bounded subprocess request completed. Captured output is untrusted evidence only."
