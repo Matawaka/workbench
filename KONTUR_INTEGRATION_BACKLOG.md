@@ -1,16 +1,18 @@
 # Workbench × KONTUR integration backlog
 
-Status: **planning evidence only / no runtime or publication authority**.
+Status: **planning evidence plus generic substrate tracking / no KONTUR runtime authority**.
 
 This file records reusable integration opportunities discovered from the current KONTUR main frontier while Workbench develops the local read/MCP/runtime transaction substrate. It is intentionally additive and does not change v0.51.12 listener-readiness semantics.
 
 ## Reuse candidates
 
-1. **KONTUR one-shot request envelope → Workbench cross-process capability lease**
+1. **KONTUR one-shot request envelope → Workbench capability lease**
    - KONTUR owns semantic/current human request intent.
    - Workbench owns technical runtime/read authority.
    - Preserve `Player Request != Runtime Authority`.
-   - Candidate benefit: close KONTUR's currently process-local replay boundary with Workbench cross-process lease/ownership primitives.
+   - v0.53 now supplies the provider-neutral one-shot runtime execution lease.
+   - v0.55 candidate adds exact source-frontier, source-artifact and request-envelope provenance binding without exposing the inner bearer.
+   - Still open: KONTUR handoff translation, cross-process runtime ownership proof and a separately authorized one-shot model request/output transaction.
 
 2. **KONTUR LM1 selected artifact → bounded Workbench download/hash-verification lease**
    - Exact artifact currently selected in KONTUR but not downloaded/locally verified.
@@ -60,7 +62,10 @@ Workbench now has a durable inert landing zone under `integrations/kontur/`:
 - `integrations/kontur/CAPABILITY_HANDOFF.schema.json` — mirrored machine-readable KONTUR → Workbench handoff schema; validation is not authority;
 - `integrations/kontur/LM1_ARTIFACT_INTAKE.template.json` — exact LM1 model-artifact intake template for a future bounded transfer/hash-verification review.
 
-This scaffold is deliberately non-executable and does not modify v0.51.12 runtime semantics.
+This scaffold remains non-executable. Generic implementations live outside it:
+v0.52 artifact acquisition, v0.53 runtime execution, v0.54 runtime-tree
+materialization and the v0.55 provenance-bound outer-lease candidate. None of those
+primitives derives KONTUR authority from this backlog or scaffold.
 
 ## Ownership boundary
 
