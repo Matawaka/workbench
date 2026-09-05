@@ -57,6 +57,10 @@ static void write_repeat(FILE *stream, char ch, size_t count) {
 }
 
 int wmain(int argc, wchar_t **argv) {
+    // Qualification-only stabilization: leave the native image observable long
+    // enough for the exact Windows process-image verification gate to complete.
+    Sleep(1000);
+
     const wchar_t *model_path = arg_value(argc, argv, L"--model");
     const wchar_t *token_text = arg_value(argc, argv, L"--max-output-tokens");
     if (!model_path || !token_text || _wtoi(token_text) < 1) return 11;
