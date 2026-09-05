@@ -1,0 +1,16 @@
+{
+  "Schema": "matawaka.runtime-tree-manifest/v0.53",
+  "Version": "0.53",
+  "ManifestId": "workbench-v053-runtime-smoke-v5",
+  "State": "MATERIALIZED_VERIFIED",
+  "RuntimeRoot": "K:\\Matawaka",
+  "Files": [
+    {
+      "RelativePath": "matawaka-v053-runtime-smoke-v4.exe",
+      "Bytes": 988,
+      "Sha256": "61526196039e23d605c0ae90202b449c2170b477e4d2dec250b06c35f789c847",
+      "Role": "executable"
+    }
+  ],
+  "Note": "Corrected from GitHub's server-side exact blob, not pre-upload local assumptions. The immutable PE blob at commit a76fe940f065ee559a040a9288716698f166d2ef is exactly 988 bytes with SHA-256 61526196039e23d605c0ae90202b449c2170b477e4d2dec250b06c35f789c847. MATERIALIZED_VERIFIED is admitted only after v0.52 acquisition verifies those exact remote bytes."
+}
