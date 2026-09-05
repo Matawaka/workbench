@@ -1,0 +1,5 @@
+v0.53 runtime smoke artifact preparation correction
+
+The earlier v3/v4 control metadata was derived from pre-upload local assumptions. The Workbench correctly rejected them on SIZE_MISMATCH.
+
+For v5, all byte counts and SHA-256 values are derived from GitHub server-side content after upload. The v4 remote PE blob is 988 bytes / SHA-256 61526196039e23d605c0ae90202b449c2170b477e4d2dec250b06c35f789c847. This v5 manifest describes that exact remote blob, but a fresh compiler-linked artifact will be used for the execution smoke to avoid relying on a possibly truncated PE payload.
