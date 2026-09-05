@@ -1,0 +1,126 @@
+{
+  "schema": "matawaka.workbench-model-request-boundary-audit/v0.1",
+  "version": "0.1",
+  "origin_main": "65b0b49a513a6b782760a7626d6b768bf7bb7f91",
+  "origin_tag": "workbench-v0.54.2-accepted",
+  "source_bindings": [
+    {
+      "path": "src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs",
+      "git_blob_sha1": "624846a956807eaa35d5d8cdef144be196295561",
+      "role": "EXACT_ARTIFACT_ACQUISITION"
+    },
+    {
+      "path": "src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs",
+      "git_blob_sha1": "eb7854396dc9459ce8925e768191f209803855ba",
+      "role": "GENERIC_EXACT_PROCESS_EXECUTION"
+    },
+    {
+      "path": "src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs",
+      "git_blob_sha1": "0d235e0cc22ffc12eb019c0334cdeb9e83872b28",
+      "role": "EXACT_RUNTIME_TREE_MATERIALIZATION"
+    },
+    {
+      "path": "KONTUR_INTEGRATION_BACKLOG.md",
+      "git_blob_sha1": "da7d6aeb4bc0b20e727f864c4a3eb8ce11966c3a",
+      "role": "PUBLIC_FUTURE_CALLER_BOUNDARY"
+    }
+  ],
+  "proven_corridor": [
+    "ACQUISITION_VERIFIED",
+    "MATERIALIZED_VERIFIED",
+    "RUNTIME_READY_OBSERVED"
+  ],
+  "observed_gaps": {
+    "model_artifact_reverification_at_request": "NOT_IMPLEMENTED",
+    "separate_model_request_authority": "NOT_IMPLEMENTED",
+    "model_request_count_receipt": "NOT_IMPLEMENTED",
+    "stdout_model_output_capture": "NOT_IMPLEMENTED",
+    "request_payload_digest_receipt": "NOT_IMPLEMENTED",
+    "portable_model_result_without_local_paths": "NOT_IMPLEMENTED",
+    "v053_argument_domain_semantics": "STRUCTURALLY_BOUNDED_SEMANTICALLY_UNCLASSIFIED"
+  },
+  "options": [
+    {
+      "id": "DIRECT_SUBPROCESS_STDIO_ONE_SHOT",
+      "classification": "SELECT_FIRST_IMPLEMENTATION_CANDIDATE",
+      "network_required": false,
+      "server_required": false,
+      "separate_model_request_authority": true,
+      "notes": "One exact process and one exact request with bounded stdio; no server/port/network."
+    },
+    {
+      "id": "LOOPBACK_SESSION_SEPARATE_REQUEST",
+      "classification": "DEFER_SEPARATE_SUCCESSOR",
+      "network_required": true,
+      "server_required": true,
+      "separate_model_request_authority": true,
+      "notes": "Cleaner long-lived session/request split but requires explicit loopback endpoint and model-loaded session evidence."
+    },
+    {
+      "id": "REUSE_V053_AS_MODEL_REQUEST",
+      "classification": "REJECT_CURRENT_EVIDENCE",
+      "network_required": false,
+      "server_required": false,
+      "separate_model_request_authority": false,
+      "notes": "v0.53 verifies exact process execution but does not bind/reverify model bytes or capture/model-classify a request result."
+    }
+  ],
+  "decision": {
+    "next_component": "V055_BOUNDED_LOCAL_MODEL_INVOCATION_LEASE",
+    "first_profile": "DIRECT_SUBPROCESS_STDIO_ONE_SHOT",
+    "loopback_session": "DEFER_SEPARATE_SUCCESSOR",
+    "v053_reinterpreted_as_model_request_authority": false,
+    "real_model_bytes_authorized": false,
+    "real_runtime_bytes_authorized": false,
+    "implementation_authority_created_by_audit": false
+  },
+  "required_v055_invariants": [
+    "Runtime Ready != Model Request Authority",
+    "Process Execution Authority != Model Request Authority",
+    "Model Request Authority != Response Authority",
+    "Model Output != Trusted Response",
+    "Validated Output != Display Permit",
+    "Exact Runtime != Exact Model",
+    "Request Digest != Request Intent",
+    "One Successful Request != Successor Permit",
+    "Timeout != Permission To Retry",
+    "Output Capture != Content Review"
+  ],
+  "required_v055_controls": [
+    "exact v0.54 MATERIALIZED_VERIFIED runtime-tree evidence",
+    "exact v0.52 ACQUISITION_VERIFIED model-artifact evidence",
+    "runtime executable rehash immediately before process creation",
+    "model artifact rehash immediately before process creation",
+    "explicit human confirmation before one-shot lease",
+    "authority consumed before process creation/request release",
+    "maximum one process and one model request",
+    "no automatic retry/resume/replay",
+    "no caller-defined arbitrary model-command argument vector",
+    "bounded request bytes and digest-only durable request provenance by default",
+    "independent stdout and stderr byte ceilings",
+    "owned-process-only timeout/overrun termination",
+    "exact output byte/text digest",
+    "no server/port/network in first profile",
+    "no benchmark/game/display/send/action/successor authority"
+  ],
+  "hygiene_dependency": {
+    "issue": 73,
+    "state": "OPEN_REQUIRED_BEFORE_NEW_REMOTE_SMOKE",
+    "rule": "ExpectedBytes and ExpectedSha256 derive only from immutable served bytes re-fetched after upload."
+  },
+  "non_effects": [
+    "no artifact acquisition",
+    "no runtime-tree materialization",
+    "no process start",
+    "no model request",
+    "no server or port bind",
+    "no network access",
+    "no benchmark",
+    "no game access",
+    "no display or response authority",
+    "no Agent Execute or ActionPermit",
+    "no Stable Core or UU-AAP semantic promotion",
+    "no publication authority"
+  ],
+  "audit_digest_sha256": "f964dce7178bf32413a4095bd45c4522dc957e8602526b697258d204a2760f88"
+}
