@@ -25,9 +25,24 @@ jobs:
       - name: Release build
         shell: pwsh
         run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
-      - name: Build deterministic model fixture
+      - name: Build deterministic native model fixture
         shell: pwsh
-        run: dotnet build .\tests\V055ModelFixture\V055ModelFixture.csproj -c Release --nologo
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw 'vswhere.exe is unavailable on windows-2025 runner' }
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if ([string]::IsNullOrWhiteSpace($vs)) { throw 'MSVC x64 toolchain installation was not found' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat missing: $vcvars" }
+          $out = Join-Path $PWD 'tests\V055ModelFixture\bin\Release\net10.0-windows'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $src = Join-Path $PWD 'tests\V055ModelFixture\fixture-native.c'
+          $exe = Join-Path $out 'Matawaka.Workbench.V055.ModelFixture.exe'
+          $compile = "call `"$vcvars`" >nul && cl.exe /nologo /O2 /MT /W4 /WX /DUNICODE /D_UNICODE /Fe:`"$exe`" `"$src`""
+          & cmd.exe /d /s /c $compile
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe -PathType Leaf)) { throw 'native fixture compile failed' }
+          Write-Host "V055_NATIVE_FIXTURE_PASS exe=$exe bytes=$((Get-Item $exe).Length)"
       - name: Run v0.55 hostile qualification
         shell: pwsh
         run: |
