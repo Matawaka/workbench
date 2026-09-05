@@ -1,0 +1,43 @@
+name: Workbench v0.55 bounded local-model invocation
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.55-bounded-local-model-invocation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Release build
+        shell: pwsh
+        run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+      - name: Guard predecessor primitives
+        shell: pwsh
+        run: |
+          $base = '65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          $paths = @(
+            'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs'
+          )
+          foreach ($p in $paths) {
+            $old = git rev-parse "$base`:$p"
+            $new = git rev-parse "HEAD`:$p"
+            if ($old -ne $new) { throw "Primitive drift: $p" }
+          }
+      - name: Guard public main predecessor during qualification
+        shell: pwsh
+        run: |
+          $observed = (git ls-remote https://github.com/Matawaka/workbench.git refs/heads/main).Split("`t")[0]
+          if ($observed -ne '65b0b49a513a6b782760a7626d6b768bf7bb7f91') { throw "Public main drifted: $observed" }
