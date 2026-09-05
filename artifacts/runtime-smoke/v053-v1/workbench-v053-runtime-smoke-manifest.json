@@ -1,0 +1,16 @@
+{
+  "Schema": "matawaka.runtime-tree-manifest/v0.53",
+  "Version": "0.53",
+  "ManifestId": "workbench-v053-runtime-smoke-v1",
+  "State": "MATERIALIZED_VERIFIED",
+  "RuntimeRoot": "K:\\Matawaka",
+  "Files": [
+    {
+      "RelativePath": "matawaka-v053-runtime-smoke-v1.exe",
+      "Bytes": 2048,
+      "Sha256": "3ec2a47a1a177a1715940920101928b42eed5a5b6577bfbc374393f3cd908873",
+      "Role": "executable"
+    }
+  ],
+  "Note": "Single-file non-KONTUR runtime smoke. MATERIALIZED_VERIFIED is admitted only after the v0.52 acquisition receipt verifies the exact 2048-byte executable from this immutable Git commit. No extraction, installer, benchmark, model request or game authority is implied."
+}
