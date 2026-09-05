@@ -1,0 +1,1 @@
+Do not derive acquisition ExpectedBytes or ExpectedSha256 from the pre-upload local build. Upload the exact binary first, then fetch the server-side blob from GitHub, decode it, and derive the acquisition identity from those remote bytes only.
