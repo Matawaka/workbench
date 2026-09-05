@@ -25,6 +25,7 @@ public enum LocalAppsActionChoiceV050
     McpOwnershipStatus,
     AcknowledgeStaleMcpOwnershipMetadata,
     BoundedArtifactAcquisition,
+    BoundedRuntimeMaterialization,
     BoundedRuntimeExecution,
     StopBoundedRuntimeExecution
 }
