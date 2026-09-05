@@ -8,6 +8,10 @@ static string? Arg(string[] args, string name)
     return null;
 }
 
+// Qualification fixture only: keep the child alive long enough for the Workbench
+// Windows process-image observation gate to complete before any deliberate terminal mode.
+await Task.Delay(250);
+
 var modelPath = Arg(args, "--model");
 var tokenText = Arg(args, "--max-output-tokens");
 if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath) || !int.TryParse(tokenText, out var maxTokens) || maxTokens < 1)
