@@ -280,7 +280,7 @@ public sealed class BoundedRuntimeTreeMaterializationV054Service
 
         if (!string.Equals(acquisition.Schema, BoundedArtifactAcquisitionV052Service.ExecutionReceiptSchema, StringComparison.Ordinal) ||
             !string.Equals(acquisition.State, "ACQUISITION_VERIFIED", StringComparison.Ordinal) ||
-            !string.Equals(acquisition.Status, "ARTIFACT_ACQUISITION_VERIFIED", StringComparison.Ordinal) ||
+            !string.Equals(acquisition.Status, "ACQUISITION_VERIFIED", StringComparison.Ordinal) ||
             !acquisition.AllArtifactsSha256Verified || acquisition.ExtractionPerformed || acquisition.ProcessExecutionPerformed ||
             acquisition.RuntimeStartPerformed || acquisition.BenchmarkPerformed || acquisition.ModelRequestPerformed || acquisition.GameAccessPerformed)
             throw Refused("ACQUISITION_RECEIPT_NOT_VERIFIED", "Source receipt is not exact terminal v0.52 artifact verification evidence.");
