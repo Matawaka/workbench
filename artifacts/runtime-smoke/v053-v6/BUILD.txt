@@ -1,0 +1,9 @@
+v0.53 runtime smoke v6
+
+Compiler command used in an isolated build environment:
+  clang -target x86_64-pc-windows-msvc -c smoke.c -o smoke.obj -Oz -ffreestanding -fno-stack-protector -fno-ident
+  lld-link /entry:entry /subsystem:windows /nodefaultlib /machine:x64 /dynamicbase /nxcompat /out:smoke.exe smoke.obj
+
+Source entry is an infinite PAUSE loop with no imports, filesystem, network, model, benchmark or game behavior.
+
+Important: final acquisition identity will be derived only after GitHub server-side retrieval of the uploaded exact blob.
