@@ -1,0 +1,159 @@
+name: Workbench v0.54.1 receipt status binding
+
+on:
+  push:
+    branches:
+      - fix/workbench-v0.54.1-acquisition-receipt-status-binding
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-package:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.54.1 restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.54.1 Release build failed'}
+          Write-Host 'V0541_RELEASE_BUILD_PASS'
+
+      - name: Run canonical receipt status regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v0541receiptstatus/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.54.1 receipt status regression failed'}
+
+      - name: Preserve v0.54 hostile materialization controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v054materialization/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.54 hostile materialization regression failed'}
+
+      - name: Verify narrow compatibility boundary and first boot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $v054='184f04715e9989d8fa80c17b8df9444a5aec80c3'
+          foreach($file in @(
+            'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs'
+          )){
+            $diff=(git diff $v054 -- $file)
+            if(-not [string]::IsNullOrWhiteSpace(($diff -join ''))){throw "predecessor primitive changed: $file"}
+          }
+          $mat=Get-Content 'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs' -Raw
+          if(-not $mat.Contains('acquisition.Status, "ACQUISITION_VERIFIED"',[StringComparison]::Ordinal)){throw 'canonical v0.52 receipt status binding missing'}
+          if($mat.Contains('acquisition.Status, "ARTIFACT_ACQUISITION_VERIFIED"',[StringComparison]::Ordinal)){throw 'stale UI-wrapper status binding remains'}
+          $checkpoint=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV0541Service.cs' -Raw
+          foreach($marker in @(
+            '0.54.1',
+            'b501ba5820d0ae03265723b8d8cd413ba4818984',
+            'workbench-v0.54-accepted',
+            'workbench-v0.54.1-accepted',
+            'matawaka.workbench-build-source-manifest/v0.54',
+            'v0.54.1-source-manifest*.json'
+          )){
+            if(-not $checkpoint.Contains($marker,[StringComparison]::Ordinal)){throw "v0.54.1 checkpoint marker missing: $marker"}
+          }
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV054Routing()',[StringComparison]::Ordinal) -or -not $app.Contains('ConfigureV0541AcceptanceRouting()',[StringComparison]::Ordinal)){
+            throw 'v0.54.1 startup routing not bound to v0.54 primitive + v0.54.1 acceptance'
+          }
+          $writer=Get-Content 'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs' -Raw
+          if(-not $writer.Contains('return $"v{parts[0]}.{parts[1]}"',[StringComparison]::Ordinal)){throw 'predecessor build-manifest schema writer shape changed'}
+          Write-Host 'V0541_BOUNDARY_PASS'
+
+      - name: Verify public frontier unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='75f083f7f8383832ff85ecc61dd15ce47ba8d2c9'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne $expected){throw "public main moved unexpectedly: $remote"}
+          $tag=git ls-remote origin refs/tags/workbench-v0.54.1-accepted
+          if(-not [string]::IsNullOrWhiteSpace(($tag -join ''))){throw 'workbench-v0.54.1-accepted unexpectedly exists remotely'}
+          Write-Host "V0541_REMOTE_BOUNDARY_PASS main=$remote targetTagAbsent=True"
+
+      - name: Package exact local v0.54 predecessor update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='b501ba5820d0ae03265723b8d8cd413ba4818984'
+          $stage=Join-Path $env:RUNNER_TEMP 'v0541-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+          $files=@(
+            'PATCH-v0.54.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0541Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0541.Acceptance.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0541AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.54.1 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.54.1'
+            PredecessorTag='workbench-v0.54-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.54.1-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'exact local accepted v0.54 predecessor only',
+              'compatibility correction performs no network access',
+              'v0.52 acquisition and v0.53 execution primitive sources are not in payload',
+              'v0.54 materialization schema and authority semantics remain unchanged',
+              'publication remains deferred until corrected real-host materialization passes',
+              'no process/runtime/model/benchmark/game authority',
+              'no CI workflow or qualification files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.54.1-acquisition-receipt-status-binding-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0541_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - name: Upload exact local update
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.54.1-exact-local-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
