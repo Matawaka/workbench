@@ -1,0 +1,20 @@
+{
+  "Schema": "matawaka.runtime-smoke-artifact/v0.1",
+  "ArtifactId": "workbench-v0.53-runtime-smoke-v3",
+  "FileName": "matawaka-v053-runtime-smoke-v3.exe",
+  "Bytes": 1024,
+  "Sha256": "988e2888ef6c3b225bf8705965a0628ac6b0951e2ff08cc8f56e8012441e50c3",
+  "Architecture": "x86_64-windows-pe32+",
+  "Build": "clang 17 COFF object + lld-link PE32+ /subsystem:windows /entry:_start /nodefaultlib",
+  "Behavior": "Native GUI PE with no imports and no filesystem/network APIs; entry point executes PAUSE/JMP forever until externally terminated.",
+  "Purpose": "Tiny non-KONTUR real-host process-start, Windows image-path/hash verification, readiness-alive observation, and exact-owned-process-tree stop smoke for Workbench v0.53.",
+  "NonEffects": [
+    "no model loading",
+    "no benchmark",
+    "no game access",
+    "no shell or script indirection",
+    "no elevation",
+    "no network access by the smoke executable",
+    "no filesystem mutation by the smoke executable"
+  ]
+}

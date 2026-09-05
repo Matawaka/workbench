@@ -1,0 +1,16 @@
+{
+  "Schema": "matawaka.runtime-tree-manifest/v0.53",
+  "Version": "0.53",
+  "ManifestId": "workbench-v053-runtime-smoke-v3",
+  "State": "MATERIALIZED_VERIFIED",
+  "RuntimeRoot": "K:\\Matawaka",
+  "Files": [
+    {
+      "RelativePath": "matawaka-v053-runtime-smoke-v3.exe",
+      "Bytes": 1024,
+      "Sha256": "988e2888ef6c3b225bf8705965a0628ac6b0951e2ff08cc8f56e8012441e50c3",
+      "Role": "executable"
+    }
+  ],
+  "Note": "Compiler-linked x86_64 Windows GUI PE smoke for the v0.53 real-host execution/owned-stop gate. MATERIALIZED_VERIFIED is admitted only after v0.52 acquisition verifies these exact immutable bytes. No extraction, installer, network, benchmark, model request or game authority is implied."
+}
