@@ -1,0 +1,69 @@
+name: One-shot v0.55 immutable served identity
+
+on:
+  push:
+    branches:
+      - staging/workbench-v0.55-served-identity-v1
+
+permissions:
+  contents: read
+
+jobs:
+  derive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact qualified identity helper
+        uses: actions/checkout@v4
+        with:
+          ref: 48ee50f35e821fdb850f8265f9c07855b79c8ec9
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Guard exact helper source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "48ee50f35e821fdb850f8265f9c07855b79c8ec9"
+          test "$(git hash-object tooling/remote-smoke-identity/derive_remote_smoke_identity.py)" = "dc28e2600f0d60bb98de71322e01d0d91a89fbf9"
+          test "$(git status --porcelain)" = ""
+
+      - name: Derive identities from exact immutable raw served bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/v055-served-identities"
+          mkdir -p "$out"
+          runtime_url='https://raw.githubusercontent.com/Matawaka/workbench/b5004001c8fd57a149ee9929e2748de87c5a1180/artifacts/model-invocation-smoke/v055-v1/workbench-v055-realhost-fixture-runtime.zip'
+          model_url='https://raw.githubusercontent.com/Matawaka/workbench/b5004001c8fd57a149ee9929e2748de87c5a1180/artifacts/model-invocation-smoke/v055-v1/workbench-v055-realhost-fixture-model.bin'
+          python3 tooling/remote-smoke-identity/derive_remote_smoke_identity.py \
+            "$runtime_url" "$out/runtime-served-identity.json" --max-bytes 1048576
+          python3 tooling/remote-smoke-identity/derive_remote_smoke_identity.py \
+            "$model_url" "$out/model-served-identity.json" --max-bytes 1024
+          OUT="$out" RUNTIME_URL="$runtime_url" MODEL_URL="$model_url" python3 - <<'PY'
+          import json, os, pathlib, re
+          out = pathlib.Path(os.environ['OUT'])
+          cases = [
+              ('runtime-served-identity.json', os.environ['RUNTIME_URL'], 1048576),
+              ('model-served-identity.json', os.environ['MODEL_URL'], 1024),
+          ]
+          for name, url, ceiling in cases:
+              record = json.loads((out / name).read_text(encoding='utf-8'))
+              assert record['Schema'] == 'matawaka.remote-smoke-served-identity/v0.1'
+              assert record['SourceUri'] == url
+              assert record['Repository'] == 'Matawaka/workbench'
+              assert record['ImmutableCommit'] == 'b5004001c8fd57a149ee9929e2748de87c5a1180'
+              assert record['IdentitySource'] == 'EXACT_IMMUTABLE_SERVED_BYTES'
+              assert record['PreUploadIdentityAccepted'] is False
+              assert 0 < record['ObservedBytes'] <= ceiling
+              assert re.fullmatch(r'[0-9a-f]{64}', record['ObservedSha256'])
+          PY
+          echo "identity_dir=$out" >> "$GITHUB_OUTPUT"
+        id: identity
+
+      - name: Upload only served-identity records
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.55-realhost-served-identities
+          path: ${{ steps.identity.outputs.identity_dir }}/*.json
+          if-no-files-found: error
