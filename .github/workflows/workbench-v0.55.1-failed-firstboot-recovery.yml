@@ -1,0 +1,101 @@
+name: Workbench v0.55.1 failed-firstboot recovery
+
+on:
+  push:
+    branches:
+      - recovery/workbench-v0.55.1-firstboot-source
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build recovery utility
+        shell: pwsh
+        run: dotnet build .\tooling\v0551-firstboot-recovery\Matawaka.Workbench.V0551Recovery.csproj -c Release --nologo
+
+      - name: Run hostile recovery self-tests
+        shell: pwsh
+        run: dotnet run --project .\tooling\v0551-firstboot-recovery\Matawaka.Workbench.V0551Recovery.csproj -c Release -- --self-test
+
+      - name: Guard exact recovery policy constants
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content .\tooling\v0551-firstboot-recovery\Program.cs -Raw
+          $must = @(
+            '02d81b8559bc7c9676949be0557d20ecb50a9890',
+            'workbench-v0.55-accepted',
+            '50b6af3831c84032bbcd51d5b03dc7eb',
+            'd836d45c823e8388cb252214af176f2a1b315f2da8bbd3d9418ddd74b8c1fea7e',
+            'eac74afec61019095ef07649704e70e3a63cb289b3f2e86fec7a0fe4723b3872',
+            '1bdd6c83818ae5134ddbf90264c55bb3515124976ddd82c71c4e6c6681ab1655',
+            'FAILED_NO_RETRY',
+            'v0.55.1 validation returned Passed=false'
+          )
+          foreach ($value in $must) { if (-not $src.Contains($value)) { throw "missing fixed recovery policy value: $value" } }
+          if ($src -match 'HttpClient|WebRequest|SocketsHttpHandler|TcpClient|UdpClient') { throw 'network API surfaced in recovery utility' }
+          Write-Host 'RECOVERY_POLICY_CONSTANTS_PASS'
+
+      - name: Guard recovery branch does not mutate Workbench product source
+        shell: pwsh
+        run: |
+          $changed = git diff --name-only 79a67afea8c5766133225b0e8d1d84b452b2c7f0...HEAD
+          $unexpected = @($changed | Where-Object { $_ -notlike 'tooling/v0551-firstboot-recovery/*' -and $_ -ne '.github/workflows/workbench-v0.55.1-failed-firstboot-recovery.yml' })
+          if ($unexpected.Count -ne 0) { throw "Recovery implementation touched product source: $($unexpected -join ',')" }
+          Write-Host "RECOVERY_SOURCE_SEPARATION_PASS changed=$($changed.Count)"
+
+      - name: Guard public frontier unchanged
+        shell: pwsh
+        run: |
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
+          if ($main -ne '65b0b49a513a6b782760a7626d6b768bf7bb7f91') { throw "Public main drifted: $main" }
+          $v055 = git ls-remote $remote refs/tags/workbench-v0.55-accepted 'refs/tags/workbench-v0.55-accepted^{}'
+          $v0551 = git ls-remote $remote refs/tags/workbench-v0.55.1-accepted 'refs/tags/workbench-v0.55.1-accepted^{}'
+          if (-not [string]::IsNullOrWhiteSpace(($v055 -join "`n"))) { throw 'Public v0.55 intermediate tag unexpectedly exists' }
+          if (-not [string]::IsNullOrWhiteSpace(($v0551 -join "`n"))) { throw 'Public v0.55.1 failed-candidate tag unexpectedly exists' }
+          Write-Host "PUBLIC_FRONTIER_UNCHANGED_PASS main=$main"
+
+      - name: Publish exact standalone recovery executable
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'v0551-recovery-bin'
+          dotnet publish .\tooling\v0551-firstboot-recovery\Matawaka.Workbench.V0551Recovery.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'Matawaka.Workbench.V0551Recovery.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'recovery executable missing' }
+          Copy-Item .\tooling\v0551-firstboot-recovery\recovery-request.json (Join-Path $out 'recovery-request.json')
+          & $exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'published recovery executable self-test failed' }
+          $exeSha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $stage = Join-Path $env:RUNNER_TEMP 'v0551-recovery-package'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item $exe (Join-Path $stage 'Matawaka.Workbench.V0551Recovery.exe')
+          Copy-Item .\tooling\v0551-firstboot-recovery\recovery-request.json (Join-Path $stage 'recovery-request.json')
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.55.1-failed-firstboot-recovery.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $zipSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "exe_sha=$exeSha" >> $env:GITHUB_OUTPUT
+          "zip_sha=$zipSha" >> $env:GITHUB_OUTPUT
+          Write-Host "RECOVERY_PACKAGE_PASS exeSha256=$exeSha zipSha256=$zipSha"
+
+      - name: Upload exact recovery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.55.1-failed-firstboot-recovery
+          path: ${{ steps.publish.outputs.zip }}
+          if-no-files-found: error
