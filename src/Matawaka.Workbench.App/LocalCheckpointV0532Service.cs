@@ -62,7 +62,10 @@ public sealed class LocalCheckpointV0532Service
     public const string ExpectedPredecessorCommit = "49ccefc68ec0b6979fd2e36c59af1e8f1f68de64";
     public const string TargetTag = "workbench-v0.53.2-accepted";
     public const string CommitMessage = "Checkpoint Workbench v0.53.2 real-host admission and fixed publication closure";
-    public const string BuildManifestSchema = "matawaka.workbench-build-source-manifest/v0.53.2";
+    // The accepted v0.53 predecessor updater derives build-manifest schema from major.minor
+    // via ToSchemaVersion(), so TargetVersion=0.53.2 is emitted as schema family v0.53.
+    // Version remains exact 0.53.2 and predecessor/file-byte bindings remain independently exact.
+    public const string BuildManifestSchema = "matawaka.workbench-build-source-manifest/v0.53";
 
     private static readonly TimeSpan GitTimeout = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
@@ -197,7 +200,7 @@ public sealed class LocalCheckpointV0532Service
         ("checkpoint-v0532-exact-predecessor", ExpectedPredecessorCommit == "49ccefc68ec0b6979fd2e36c59af1e8f1f68de64", ExpectedPredecessorCommit, "exact accepted v0.53"),
         ("checkpoint-v0532-predecessor-tag", ExpectedPredecessorTag == "workbench-v0.53-accepted", ExpectedPredecessorTag, "workbench-v0.53-accepted"),
         ("checkpoint-v0532-target-tag", TargetTag == "workbench-v0.53.2-accepted", TargetTag, "workbench-v0.53.2-accepted"),
-        ("checkpoint-v0532-build-manifest", BuildManifestSchema == "matawaka.workbench-build-source-manifest/v0.53.2", BuildManifestSchema, "exact"),
+        ("checkpoint-v0532-build-manifest", BuildManifestSchema == "matawaka.workbench-build-source-manifest/v0.53", BuildManifestSchema, "actual predecessor-produced major.minor schema family"),
         ("checkpoint-v0532-bootstrap-only", true, "AcceptFromBootstrapAsync only", "no manual visible Accept path"),
         ("checkpoint-v0532-publication", true, "RemotePushAllowed=false", "separate explicit Publish accepted")
     };
