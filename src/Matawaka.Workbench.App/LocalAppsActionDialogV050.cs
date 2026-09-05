@@ -24,7 +24,9 @@ public enum LocalAppsActionChoiceV050
     ReadSessionHistoryPage,
     McpOwnershipStatus,
     AcknowledgeStaleMcpOwnershipMetadata,
-    BoundedArtifactAcquisition
+    BoundedArtifactAcquisition,
+    BoundedRuntimeExecution,
+    StopBoundedRuntimeExecution
 }
 
 public sealed class LocalAppsActionDialogV050 : Window

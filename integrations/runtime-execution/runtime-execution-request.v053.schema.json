@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:matawaka:runtime-execution-request:v0.53",
+  "title": "Matawaka Bounded Runtime Execution Request v0.53",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "Schema", "RequestId", "RuntimeTreeManifestPath", "RuntimeTreeManifestSha256",
+    "ExecutableRelativePath", "ExpectedExecutableSha256", "Arguments",
+    "WorkingDirectoryRelativePath", "Environment", "TtlSeconds",
+    "ReadinessDelayMilliseconds", "CreateNoWindow"
+  ],
+  "properties": {
+    "Schema": { "const": "matawaka.runtime-execution-request/v0.53" },
+    "RequestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "RuntimeTreeManifestPath": { "type": "string", "minLength": 3 },
+    "RuntimeTreeManifestSha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+    "ExecutableRelativePath": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "ExpectedExecutableSha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+    "Arguments": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "type": "string", "maxLength": 4096 }
+    },
+    "WorkingDirectoryRelativePath": { "type": "string", "maxLength": 1024 },
+    "Environment": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": "string", "maxLength": 4096 }
+    },
+    "TtlSeconds": { "type": "integer", "minimum": 30, "maximum": 1800 },
+    "ReadinessDelayMilliseconds": { "type": "integer", "minimum": 0, "maximum": 5000 },
+    "CreateNoWindow": { "type": "boolean" }
+  }
+}
