@@ -279,7 +279,7 @@ public sealed class FixedGitHubPublicationV0532Service
     private static string GetString(JsonElement o, string name)
         => o.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : "";
     private static bool GetBool(JsonElement o, string name)
-        => o.TryGetProperty(name, out var p) && p.ValueKind is JsonValueKind.True or JsonValueKind.False && p.GetBoolean();
+        => o.TryGetProperty(name, out var p) && (p.ValueKind is JsonValueKind.True or JsonValueKind.False) && p.GetBoolean();
     private static int GetInt(JsonElement o, string name)
         => o.TryGetProperty(name, out var p) && p.TryGetInt32(out var value) ? value : -1;
     private static DateTimeOffset GetDate(JsonElement o, string name)
