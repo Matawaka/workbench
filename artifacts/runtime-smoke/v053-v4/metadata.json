@@ -1,0 +1,25 @@
+{
+  "Schema": "matawaka.runtime-smoke-artifact/v0.2",
+  "ArtifactId": "workbench-v0.53-runtime-smoke-v4",
+  "FileName": "matawaka-v053-runtime-smoke-v4.exe",
+  "Bytes": 1024,
+  "Sha256": "8c99647b048fb184e3d0262680ab7fad4db2f85aa73bb073ea0c15dd01a5c53c",
+  "Architecture": "x86_64-windows-pe32+",
+  "Subsystem": "Windows GUI",
+  "Imports": "none",
+  "Behavior": "native PAUSE/JMP loop until externally terminated",
+  "Build": [
+    "clang --target=x86_64-pc-windows-msvc -c smoke.s -o smoke.obj",
+    "lld-link /entry:main /subsystem:windows /nodefaultlib /machine:x64 /dynamicbase /nxcompat /out:matawaka-v053-runtime-smoke-v4.exe smoke.obj"
+  ],
+  "ProvenanceNote": "Expected size and SHA-256 were calculated from the exact local output bytes before Git blob creation; they were not hard-coded from linker alignment assumptions.",
+  "NonEffects": [
+    "no filesystem IO",
+    "no network IO",
+    "no shell or script indirection",
+    "no elevation",
+    "no model loading",
+    "no benchmark",
+    "no game access"
+  ]
+}
