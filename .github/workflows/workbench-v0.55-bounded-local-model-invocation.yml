@@ -19,6 +19,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Release build
         shell: pwsh
         run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
@@ -30,6 +33,9 @@ jobs:
         run: |
           $fixture = Join-Path $PWD 'tests\V055ModelFixture\bin\Release\net10.0-windows'
           dotnet run --project .\tests\V055Qualification\V055Qualification.csproj -c Release -- $fixture
+      - name: Qualify immutable served-byte smoke identity helper
+        shell: pwsh
+        run: python .\tooling\remote-smoke-identity\test_derive_remote_smoke_identity.py
       - name: Guard predecessor primitives
         shell: pwsh
         run: |
