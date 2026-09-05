@@ -132,7 +132,7 @@ jobs:
 
           IMPORTANT: acquisition ExpectedBytes / ExpectedSha256 MUST be derived only from exact bytes re-fetched from raw.githubusercontent.com at the resulting immutable 40-hex commit after this upload. Pre-upload identity is not admitted remote acquisition identity.
           EOF
-          git add -- "$dest/README.txt" \
+          git add -f -- "$dest/README.txt" \
             "$dest/workbench-v055-realhost-fixture-runtime.zip" \
             "$dest/workbench-v055-realhost-fixture-model.bin"
           mapfile -t changed < <(git diff --cached --name-only)
