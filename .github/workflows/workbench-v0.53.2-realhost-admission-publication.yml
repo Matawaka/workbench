@@ -1,0 +1,136 @@
+name: Workbench v0.53.2 real-host admission publication
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.53.2-realhost-admission-publication
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-package:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore Matawaka.Workbench.sln
+          if($LASTEXITCODE -ne 0){throw 'v0.53.2 solution restore failed'}
+          dotnet build Matawaka.Workbench.sln -c Release --no-restore -warnaserror
+          if($LASTEXITCODE -ne 0){throw 'v0.53.2 Release build failed'}
+          Write-Host 'V0532_RELEASE_BUILD_PASS'
+
+      - name: Verify v0.53 primitive preservation and publication markers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='439a4d99c6e775aa33a47179afe741fc2428a939'
+          $diff=(git diff $base -- src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs)
+          if(-not [string]::IsNullOrWhiteSpace(($diff -join ''))){throw 'v0.53 runtime execution primitive changed in v0.53.2'}
+          $pub=Get-Content 'src/Matawaka.Workbench.App/FixedGitHubPublicationV0532Service.cs' -Raw
+          foreach($m in @(
+            '49ccefc68ec0b6979fd2e36c59af1e8f1f68de64',
+            'workbench-v0.53-accepted',
+            'workbench-v0.53.2-accepted',
+            '632ddbb73e8d70b485f02d21f772674d429adf8c',
+            'runtime-smoke-v053-local-realhost-001',
+            'RUNTIME_READY_OBSERVED',
+            'OWNED_PROCESS_TREE_STOPPED',
+            'ArbitraryPidAccepted',
+            'refs/heads/main'
+          )){
+            if(-not $pub.Contains($m,[StringComparison]::Ordinal)){throw "v0.53.2 publication marker missing: $m"}
+          }
+          if($pub.Contains('--force',[StringComparison]::OrdinalIgnoreCase)){throw 'force push marker unexpectedly present'}
+          Write-Host 'V0532_PUBLICATION_BOUNDARY_PASS'
+
+      - name: Verify public frontier remains unchanged during qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote=(git ls-remote origin refs/heads/main).Split("`t")[0].Trim().ToLowerInvariant()
+          if($remote -ne '632ddbb73e8d70b485f02d21f772674d429adf8c'){throw "remote main moved unexpectedly: $remote"}
+          $tag=git ls-remote origin refs/tags/workbench-v0.53.2-accepted
+          if(-not [string]::IsNullOrWhiteSpace(($tag -join ''))){throw 'workbench-v0.53.2-accepted unexpectedly exists remotely'}
+          Write-Host "V0532_REMOTE_BOUNDARY_PASS main=$remote targetTagAbsent=True"
+
+      - name: Package exact local v0.53 predecessor update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='49ccefc68ec0b6979fd2e36c59af1e8f1f68de64'
+          $stage=Join-Path $env:RUNNER_TEMP 'v0532-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+
+          $files=@(
+            'PATCH-v0.53.2.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0532Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0532Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0532.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0532.Acceptance.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0532AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.53.2 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.53.2'
+            PredecessorTag='workbench-v0.53-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.53.2-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'exact local v0.53 accepted predecessor only',
+              'update package performs no network access',
+              'v0.53 runtime execution primitive source is not in payload',
+              'publication remains a later explicit human-confirmed action',
+              'no force/arbitrary remote/ref authority',
+              'no runtime/acquisition/materialization/model/game authority',
+              'no CI workflow files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.53.2-realhost-admission-publication-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0532_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.53.2-exact-local-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
