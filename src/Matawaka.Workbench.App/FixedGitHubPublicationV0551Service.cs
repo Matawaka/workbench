@@ -185,7 +185,7 @@ public sealed class FixedGitHubPublicationV0551Service
             ExpectedAcceptedV055Tag, RemoteName, RemoteUrl, remoteMainBefore, remoteAcceptedTagBefore,
             remoteIntermediateV055TagBefore, remoteAdded, mainPush, tagPush, recovery,
             remoteMainAfter, remoteAcceptedTagAfter, remoteIntermediateV055TagAfter, candidate.Admission,
-            false, false, false, false, false, false, false, false, false, false,
+            false, false, false, false, false, false, false, false, false,
             candidate.NonEffects, "PUBLISHED_ACCEPTED_V0551",
             "Explicit fixed publication fast-forwarded only the exact accepted v0.55.1 HEAD and current v0.55.1 accepted tag after revalidating exact v0.55 real-host model-invocation admission evidence. The intermediate local workbench-v0.55-accepted tag remains unpublished.");
     }
