@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  qualify:
+  qualify-package:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,14 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'v0.54 Release build failed'}
           Write-Host 'V054_RELEASE_BUILD_PASS'
 
-      - name: Verify predecessor primitives unchanged
+      - name: Run hostile materialization controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet run --project .github/qualification/v054materialization/Probe.csproj -c Release
+          if($LASTEXITCODE -ne 0){throw 'v0.54 hostile materialization probe failed'}
+
+      - name: Verify predecessor primitives and first-boot boundary
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -47,9 +54,9 @@ jobs:
           $mat=Get-Content 'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs' -Raw
           foreach($marker in @(
             'matawaka.runtime-materialization-request/v0.54',
-            'matawaka.artifact-acquisition-execution-receipt/v0.52',
+            'BoundedArtifactAcquisitionV052Service.ExecutionReceiptSchema',
+            'BoundedRuntimeExecutionV053Service.RuntimeTreeManifestSchema',
             'MATERIALIZED_VERIFIED',
-            'matawaka.runtime-tree-manifest/v0.53',
             'MATERIALIZATION_PREPARED',
             'ARCHIVE_PLAN_VERIFIED',
             'EXTRACTION_STARTED',
@@ -61,7 +68,25 @@ jobs:
           )){
             if(-not $mat.Contains($marker,[StringComparison]::Ordinal)){throw "v0.54 marker missing: $marker"}
           }
-          Write-Host 'V054_STATIC_BOUNDARY_PASS'
+          $checkpoint=Get-Content 'src/Matawaka.Workbench.App/LocalCheckpointV054Service.cs' -Raw
+          foreach($marker in @(
+            '75f083f7f8383832ff85ecc61dd15ce47ba8d2c9',
+            'workbench-v0.53.2-accepted',
+            'workbench-v0.54-accepted',
+            'matawaka.workbench-build-source-manifest/v0.54',
+            'v0.54-source-manifest*.json'
+          )){
+            if(-not $checkpoint.Contains($marker,[StringComparison]::Ordinal)){throw "v0.54 checkpoint marker missing: $marker"}
+          }
+          $app=Get-Content 'src/Matawaka.Workbench.App/App.xaml.cs' -Raw
+          if(-not $app.Contains('ConfigureV054Routing()',[StringComparison]::Ordinal) -or -not $app.Contains('ConfigureV054AcceptanceRouting()',[StringComparison]::Ordinal)){
+            throw 'v0.54 startup routing is not exclusive successor routing'
+          }
+          $writer=Get-Content 'src/Matawaka.Workbench.App/BoundedUpdateApplyBuildService.cs' -Raw
+          if(-not $writer.Contains('return $"v{parts[0]}.{parts[1]}"',[StringComparison]::Ordinal)){
+            throw 'predecessor build-manifest schema writer shape changed unexpectedly'
+          }
+          Write-Host 'V054_BOUNDARY_PASS'
 
       - name: Verify public frontier unchanged during qualification
         shell: pwsh
@@ -73,3 +98,76 @@ jobs:
           $tag=git ls-remote origin refs/tags/workbench-v0.54-accepted
           if(-not [string]::IsNullOrWhiteSpace(($tag -join ''))){throw 'workbench-v0.54-accepted unexpectedly exists remotely'}
           Write-Host "V054_REMOTE_BOUNDARY_PASS main=$remote targetTagAbsent=True"
+
+      - name: Package exact local v0.53.2 predecessor update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $predecessor='75f083f7f8383832ff85ecc61dd15ce47ba8d2c9'
+          $stage=Join-Path $env:RUNNER_TEMP 'v054-exact-update'
+          if(Test-Path $stage){Remove-Item $stage -Recurse -Force}
+          $payload=Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload|Out-Null
+          $files=@(
+            'PATCH-v0.54.md',
+            'integrations/runtime-materialization/README.md',
+            'integrations/runtime-materialization/runtime-materialization-request.v054.schema.json',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV054Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V054.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V054.Acceptance.cs',
+            'src/Matawaka.Workbench.App/V054GlobalUsings.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV054AcceptanceHarness.cs'
+          )
+          $items=@()
+          foreach($file in $files){
+            $src=Join-Path (Get-Location) ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if(-not (Test-Path $src -PathType Leaf)){throw "missing v0.54 payload file: $file"}
+            $dst=Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force|Out-Null
+            Copy-Item $src $dst -Force
+            $items += [ordered]@{Path=$file;Sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $manifest=[ordered]@{
+            Schema='matawaka.workbench-update-package/v0.10'
+            PackageVersion='0.10'
+            TargetVersion='0.54'
+            PredecessorTag='workbench-v0.53.2-accepted'
+            PredecessorCommit=$predecessor
+            TargetTag='workbench-v0.54-accepted'
+            PayloadRoot='payload/'
+            Files=$items
+            NetworkAccessRequested=$false
+            CatalogMutationRequested=$false
+            AgentExecuteRequested=$false
+            ArbitraryProcessExecutionRequested=$false
+            InstallerScriptExecutionRequested=$false
+            NonEffects=@(
+              'exact local v0.53.2 accepted/public predecessor only',
+              'update package performs no network access',
+              'v0.52 acquisition and v0.53 execution primitive sources are not in payload',
+              'publication remains deferred until separate real-host materialization evidence',
+              'no force/arbitrary remote/ref authority',
+              'no process/runtime/model/benchmark/game authority',
+              'no CI workflow or qualification files in payload'
+            )
+          }
+          $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+          $zip=Join-Path $env:RUNNER_TEMP 'workbench-v0.54-bounded-runtime-tree-materialization-update.zip'
+          if(Test-Path $zip){Remove-Item $zip -Force}
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V054_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - name: Upload exact local update
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.54-exact-local-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
