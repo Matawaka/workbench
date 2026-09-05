@@ -79,6 +79,46 @@ jobs:
           if (Test-Path 'K:\Matawaka') { Write-Host 'Runner-local path presence is irrelevant; no operator host is touched.' }
           $changed = git diff --name-only 65b0b49a513a6b782760a7626d6b768bf7bb7f91...HEAD
           if ($changed -match 'Qwen3-8B-Q4_K_M\.gguf|llama-b10621-bin-win-cuda|cudart-llama') { throw 'Real model/runtime bytes are forbidden in v0.55 offline qualification.' }
+      - name: Prepare tiny real-host v0.55 fixture bundle
+        id: smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixture = Join-Path $PWD 'tests\V055ModelFixture\bin\Release\net10.0-windows\Matawaka.Workbench.V055.ModelFixture.exe'
+          if (-not (Test-Path $fixture -PathType Leaf)) { throw 'qualified native fixture is missing' }
+          $stage = Join-Path $env:RUNNER_TEMP 'v055-realhost-smoke'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          $runtimeZip = Join-Path $stage 'workbench-v055-realhost-fixture-runtime.zip'
+          $model = Join-Path $stage 'workbench-v055-realhost-fixture-model.bin'
+          $metadata = Join-Path $stage 'workbench-v055-realhost-fixture-local.json'
+          Compress-Archive -LiteralPath $fixture -DestinationPath $runtimeZip -CompressionLevel Optimal
+          [IO.File]::WriteAllText($model, 'NORMAL', (New-Object Text.UTF8Encoding($false)))
+          $record = [ordered]@{
+            Schema = 'matawaka.v055-realhost-fixture-local-build/v0.1'
+            SourceCommit = $env:GITHUB_SHA
+            RuntimeZipFileName = [IO.Path]::GetFileName($runtimeZip)
+            RuntimeZipBytes = (Get-Item $runtimeZip).Length
+            RuntimeZipSha256 = (Get-FileHash $runtimeZip -Algorithm SHA256).Hash.ToLowerInvariant()
+            FixtureExecutableFileName = [IO.Path]::GetFileName($fixture)
+            FixtureExecutableBytes = (Get-Item $fixture).Length
+            FixtureExecutableSha256 = (Get-FileHash $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+            ModelFileName = [IO.Path]::GetFileName($model)
+            ModelBytes = (Get-Item $model).Length
+            ModelSha256 = (Get-FileHash $model -Algorithm SHA256).Hash.ToLowerInvariant()
+            ModelContentSemantic = 'NORMAL fixture mode only'
+            RealModel = $false
+            KonturAuthority = $false
+          }
+          $record | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metadata -Encoding UTF8
+          "stage=$stage" >> $env:GITHUB_OUTPUT
+          Write-Host "V055_REALHOST_FIXTURE_PREPARED runtime=$($record.RuntimeZipBytes)/$($record.RuntimeZipSha256) exe=$($record.FixtureExecutableBytes)/$($record.FixtureExecutableSha256) model=$($record.ModelBytes)/$($record.ModelSha256)"
+      - name: Upload tiny real-host v0.55 fixture bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.55-realhost-fixture-bundle
+          path: ${{ steps.smoke.outputs.stage }}\*
+          if-no-files-found: error
       - name: Package exact v0.54.2 to v0.55 local update
         id: package
         shell: pwsh
