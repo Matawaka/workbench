@@ -1,0 +1,154 @@
+name: Workbench v0.55.1 fixed publication closure
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.55.1-fixed-publication-closure
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Release build
+        shell: pwsh
+        run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+
+      - name: Qualify v0.55.1 fixed publication constants
+        shell: pwsh
+        run: dotnet run --project .\tests\V0551Qualification\V0551Qualification.csproj -c Release
+
+      - name: Guard v0.52-v0.55 primitive semantics
+        shell: pwsh
+        run: |
+          $base = '48ee50f35e821fdb850f8265f9c07855b79c8ec9'
+          $paths = @(
+            'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs',
+            'src/Matawaka.Workbench.App/BoundedLocalModelInvocationV055Service.cs',
+            'src/Matawaka.Workbench.App/LocalModelInvocationRequestV055Parser.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.Acceptance.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV055Service.cs'
+          )
+          foreach ($p in $paths) {
+            $old = git rev-parse "$base`:$p"
+            $new = git rev-parse "HEAD`:$p"
+            if ($old -ne $new) { throw "v0.55 predecessor semantic drift: $p old=$old new=$new" }
+          }
+
+      - name: Guard public frontier remains v0.54.2 before publication closure
+        shell: pwsh
+        run: |
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $mainLine = git ls-remote $remote refs/heads/main
+          if ([string]::IsNullOrWhiteSpace($mainLine)) { throw 'public main missing' }
+          $main = $mainLine.Split("`t")[0]
+          if ($main -ne '65b0b49a513a6b782760a7626d6b768bf7bb7f91') { throw "Public main drifted: $main" }
+          $v055 = git ls-remote $remote refs/tags/workbench-v0.55-accepted 'refs/tags/workbench-v0.55-accepted^{}'
+          if (-not [string]::IsNullOrWhiteSpace(($v055 -join "`n"))) { throw 'Intermediate public workbench-v0.55-accepted unexpectedly exists' }
+          $v0551 = git ls-remote $remote refs/tags/workbench-v0.55.1-accepted 'refs/tags/workbench-v0.55.1-accepted^{}'
+          if (-not [string]::IsNullOrWhiteSpace(($v0551 -join "`n"))) { throw 'Public workbench-v0.55.1-accepted unexpectedly exists before local acceptance/publication' }
+          Write-Host "PUBLIC_FRONTIER_GUARD_PASS main=$main v055TagAbsent=true v0551TagAbsent=true"
+
+      - name: Guard publication closure payload is minimal
+        shell: pwsh
+        run: |
+          $allowed = @(
+            'PATCH-v0.55.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/RealHostModelInvocationAdmissionV0551.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0551Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0551Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0551.Acceptance.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0551AcceptanceHarness.cs'
+          )
+          $changed = git diff --name-only 48ee50f35e821fdb850f8265f9c07855b79c8ec9...HEAD | Where-Object { $_ -notlike '.github/*' -and $_ -notlike 'tests/*' }
+          $unexpected = @($changed | Where-Object { $allowed -notcontains $_ })
+          $missing = @($allowed | Where-Object { $changed -notcontains $_ })
+          if ($unexpected.Count -ne 0 -or $missing.Count -ne 0) {
+            throw "Minimal payload guard failed. unexpected=$($unexpected -join ',') missing=$($missing -join ',')"
+          }
+          Write-Host "V0551_MINIMAL_PAYLOAD_GUARD_PASS files=$($allowed.Count)"
+
+      - name: Package exact v0.55 to v0.55.1 local update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $predecessor = '02d81b8559bc7c9676949be0557d20ecb50a9890'
+          $stage = Join-Path $env:RUNNER_TEMP 'v0551-exact-update'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          $payload = Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $files = @(
+            'PATCH-v0.55.1.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/RealHostModelInvocationAdmissionV0551.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0551Service.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0551Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0551.Acceptance.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0551AcceptanceHarness.cs'
+          )
+          $items = @()
+          foreach ($file in $files) {
+            $src = Join-Path $PWD ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path $src -PathType Leaf)) { throw "missing v0.55.1 payload file: $file" }
+            $dst = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force | Out-Null
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+            $items += [ordered]@{ Path = $file; Sha256 = (Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.55.1'
+            PredecessorTag = 'workbench-v0.55-accepted'
+            PredecessorCommit = $predecessor
+            TargetTag = 'workbench-v0.55.1-accepted'
+            PayloadRoot = 'payload/'
+            Files = $items
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'exact local accepted v0.55 predecessor only',
+              'update package performs no artifact acquisition, runtime materialization or model invocation',
+              'v0.52/v0.53/v0.54/v0.55 primitive source files are not in payload',
+              'real-host evidence is referenced only by fixed digest constants and revalidated locally after launch',
+              'real LM1/Qwen/llama/CUDA bytes are absent',
+              'publication remains separate until local v0.55.1 acceptance and explicit Publish accepted Yes',
+              'no force/arbitrary remote/ref authority',
+              'intermediate workbench-v0.55-accepted tag remains unpublished',
+              'no benchmark/game/display/send/response/action/successor authority',
+              'no CI workflow or qualification-test files in payload'
+            )
+          }
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.55.1-fixed-publication-closure-update.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0551_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+
+      - name: Upload exact v0.55.1 local update
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.55.1-exact-local-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
