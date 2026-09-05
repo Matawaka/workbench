@@ -27,7 +27,8 @@ public enum LocalAppsActionChoiceV050
     BoundedArtifactAcquisition,
     BoundedRuntimeMaterialization,
     BoundedRuntimeExecution,
-    StopBoundedRuntimeExecution
+    StopBoundedRuntimeExecution,
+    BoundedLocalModelInvocation
 }
 
 public sealed class LocalAppsActionDialogV050 : Window
