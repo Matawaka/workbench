@@ -109,13 +109,17 @@ public partial class MainWindow
         try
         {
             var json = await File.ReadAllTextAsync(requestDialog.FileName, Encoding.UTF8);
-            request = JsonSerializer.Deserialize<LocalModelInvocationRequestV055>(json)
-                ?? throw new InvalidDataException("Local-model invocation request JSON deserialized to null.");
+            request = LocalModelInvocationRequestV055Parser.ParseExact(json);
             preview = _localModelInvocationV055Service.Preview(WorkspaceRootBox.Text, request, CancellationToken.None);
         }
         catch (JsonException ex)
         {
             ShowInvalid(new InvalidDataException("V055_MODEL_REQUEST_JSON_INVALID: " + ex.Message, ex));
+            return;
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowInvalid(new InvalidDataException("V055_MODEL_REQUEST_JSON_REFUSED: " + ex.Message, ex));
             return;
         }
         catch (LocalModelInvocationExceptionV055 ex)
@@ -225,6 +229,7 @@ public partial class MainWindow
     {
         ("routing-v055-title", Title == "Matawaka Workbench v0.55", Title, "Matawaka Workbench v0.55"),
         ("routing-v055-separate-model-action", true, "BoundedLocalModelInvocation", "separate from BoundedRuntimeExecution"),
+        ("routing-v055-exact-request-parser", true, "LocalModelInvocationRequestV055Parser.ParseExact", "unknown/duplicate/missing JSON properties refused"),
         ("routing-v055-grant-secret", true, "grant is never serialized to LocalApps output", "true"),
         ("routing-v055-output-status", true, "UNTRUSTED_LOCAL_MODEL_OUTPUT", "no response/display authority"),
         ("routing-v055-network-claim", true, "process network isolation not claimed", "false unless separately proven")
