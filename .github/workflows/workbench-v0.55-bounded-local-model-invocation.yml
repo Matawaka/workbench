@@ -25,6 +25,9 @@ jobs:
       - name: Release build
         shell: pwsh
         run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+      - name: Qualify closed exact request parser
+        shell: pwsh
+        run: dotnet run --project .\tests\V055ParserQualification\V055ParserQualification.csproj -c Release
       - name: Build deterministic native model fixture
         shell: pwsh
         run: |
