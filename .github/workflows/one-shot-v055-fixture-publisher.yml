@@ -1,0 +1,156 @@
+name: One-shot v0.55 fixture artifact publisher
+
+on:
+  push:
+    branches:
+      - staging/workbench-v0.55-fixture-publisher-v1
+
+concurrency:
+  group: one-shot-v055-fixture-publisher-v1
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact target artifact branch
+        uses: actions/checkout@v4
+        with:
+          ref: artifact/workbench-v0.55-realhost-fixture-v1
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Guard exact target predecessor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "65b0b49a513a6b782760a7626d6b768bf7bb7f91"
+          test "$(git status --porcelain)" = ""
+
+      - name: Download and audit exact prepared Actions artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/v055-fixture-artifact.zip"
+          stage="$RUNNER_TEMP/v055-fixture-stage"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Matawaka/workbench/actions/artifacts/9967926283/zip" \
+            -o "$archive"
+          printf '%s  %s\n' \
+            '95600fff4fb0f1dd2a04686364522b8595935cf30663b747d0caa75f9293f347' \
+            "$archive" | sha256sum --check --strict
+          mkdir -p "$stage"
+          ARCHIVE="$archive" STAGE="$stage" python3 - <<'PY'
+          import hashlib, json, os, pathlib, stat, zipfile
+
+          archive = pathlib.Path(os.environ['ARCHIVE'])
+          stage = pathlib.Path(os.environ['STAGE'])
+          expected_outer = {
+              'workbench-v055-realhost-fixture-local.json',
+              'workbench-v055-realhost-fixture-model.bin',
+              'workbench-v055-realhost-fixture-runtime.zip',
+          }
+
+          def safe_name(name: str) -> bool:
+              p = pathlib.PurePosixPath(name.replace('\\', '/'))
+              return bool(name) and not p.is_absolute() and '..' not in p.parts
+
+          with zipfile.ZipFile(archive, 'r') as z:
+              infos = z.infolist()
+              names = [i.filename for i in infos]
+              assert len(names) == len(set(names)), 'duplicate outer ZIP entries'
+              assert set(names) == expected_outer, f'unexpected outer ZIP entries: {names!r}'
+              for i in infos:
+                  assert safe_name(i.filename), f'unsafe outer path: {i.filename!r}'
+                  mode = (i.external_attr >> 16) & 0xFFFF
+                  assert not stat.S_ISLNK(mode), f'outer symlink forbidden: {i.filename!r}'
+                  out = stage / i.filename
+                  out.write_bytes(z.read(i))
+
+          meta_path = stage / 'workbench-v055-realhost-fixture-local.json'
+          meta = json.loads(meta_path.read_text(encoding='utf-8-sig'))
+          assert meta['Schema'] == 'matawaka.v055-realhost-fixture-local-build/v0.1'
+          assert meta['SourceCommit'] == 'dafee1f170a002a4f7108fbd6054c5ab3a8a263d'
+          assert meta['RealModel'] is False
+          assert meta['KonturAuthority'] is False
+
+          runtime = stage / 'workbench-v055-realhost-fixture-runtime.zip'
+          model = stage / 'workbench-v055-realhost-fixture-model.bin'
+          assert runtime.stat().st_size == 64629
+          assert hashlib.sha256(runtime.read_bytes()).hexdigest() == 'eb860cec27f057de409ae59e8c838d10b063268b491a0445ffae0e5c03ae702d'
+          assert model.read_bytes() == b'NORMAL'
+          assert hashlib.sha256(model.read_bytes()).hexdigest() == 'db2cb3fe28e2c54fce50bd9c03fd2b131091229c0ceda79289527aaba47226ad'
+
+          with zipfile.ZipFile(runtime, 'r') as z:
+              infos = z.infolist()
+              names = [i.filename for i in infos]
+              assert names == ['Matawaka.Workbench.V055.ModelFixture.exe'], names
+              assert len(names) == len(set(names))
+              i = infos[0]
+              assert safe_name(i.filename)
+              mode = (i.external_attr >> 16) & 0xFFFF
+              assert not stat.S_ISLNK(mode)
+              exe = z.read(i)
+              assert len(exe) == 122880
+              assert hashlib.sha256(exe).hexdigest() == 'bb7f1fe17be0757bc5404378601a1b1ef37af884a929cf7e80b748b6ce379343'
+              assert exe[:2] == b'MZ'
+          PY
+
+      - name: Commit only the audited tiny fixture bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/v055-fixture-stage"
+          dest='artifacts/model-invocation-smoke/v055-v1'
+          mkdir -p "$dest"
+          cp -- "$stage/workbench-v055-realhost-fixture-runtime.zip" "$dest/workbench-v055-realhost-fixture-runtime.zip"
+          cp -- "$stage/workbench-v055-realhost-fixture-model.bin" "$dest/workbench-v055-realhost-fixture-model.bin"
+          cat > "$dest/README.txt" <<'EOF'
+          Matawaka Workbench v0.55 tiny real-host model-invocation fixture
+
+          Source preparation commit: dafee1f170a002a4f7108fbd6054c5ab3a8a263d
+          Source Actions run: 33960932050
+          Source Actions artifact: 9967926283 / workbench-v0.55-realhost-fixture-bundle
+
+          Runtime artifact: workbench-v055-realhost-fixture-runtime.zip
+          Runtime contents: exactly Matawaka.Workbench.V055.ModelFixture.exe
+          Model artifact: workbench-v055-realhost-fixture-model.bin
+          Model semantic: NORMAL fixture mode only
+
+          Purpose: tiny non-KONTUR fixture for v0.52 acquisition -> v0.54 materialization -> v0.55 one-shot FIXTURE_STDIO_V1 admission.
+          This artifact commit does not authorize execution, response trust, KONTUR/game/display authority, or Workbench publication.
+
+          IMPORTANT: acquisition ExpectedBytes / ExpectedSha256 MUST be derived only from exact bytes re-fetched from raw.githubusercontent.com at the resulting immutable 40-hex commit after this upload. Pre-upload identity is not admitted remote acquisition identity.
+          EOF
+          git add -- "$dest/README.txt" \
+            "$dest/workbench-v055-realhost-fixture-runtime.zip" \
+            "$dest/workbench-v055-realhost-fixture-model.bin"
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -eq 3
+          printf '%s\n' "${changed[@]}" | diff -u - <(printf '%s\n' \
+            "$dest/README.txt" \
+            "$dest/workbench-v055-realhost-fixture-model.bin" \
+            "$dest/workbench-v055-realhost-fixture-runtime.zip")
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Add immutable v0.55 real-host fixture artifacts'
+          new_head="$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD^)" = "65b0b49a513a6b782760a7626d6b768bf7bb7f91"
+          git push origin HEAD:refs/heads/artifact/workbench-v0.55-realhost-fixture-v1
+          printf 'PUBLISHED_ARTIFACT_HEAD=%s\n' "$new_head"
+
+      - name: Assert no main or tag mutation was requested
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'No refs/heads/main or refs/tags/* write exists in this workflow.'
