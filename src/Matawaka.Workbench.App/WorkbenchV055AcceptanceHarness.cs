@@ -20,19 +20,23 @@ public sealed class WorkbenchV055AcceptanceHarness
         var invocationChecks = BoundedLocalModelInvocationV055Service.RunOfflineContractChecks()
             .Select(x => new WorkbenchAcceptanceCheck("v055-" + x.Id, x.Passed, x.Observed, x.Expected))
             .ToArray();
+        var parserChecks = LocalModelInvocationRequestV055Parser.RunOfflineContractChecks()
+            .Select(x => new WorkbenchAcceptanceCheck("v055-" + x.Id, x.Passed, x.Observed, x.Expected))
+            .ToArray();
         var routingChecks = _window.ObserveV055RoutingContract()
             .Select(x => new WorkbenchAcceptanceCheck("v055-" + x.Id, x.Passed, x.Observed, x.Expected))
             .ToArray();
         var checkpointChecks = LocalCheckpointV055Service.RunOfflineContractChecks()
             .Select(x => new WorkbenchAcceptanceCheck("v055-" + x.Id, x.Passed, x.Observed, x.Expected))
             .ToArray();
-        var successorChecks = invocationChecks.Concat(routingChecks).Concat(checkpointChecks).ToArray();
+        var successorChecks = invocationChecks.Concat(parserChecks).Concat(routingChecks).Concat(checkpointChecks).ToArray();
         var checks = predecessor.Checks.Concat(successorChecks).ToArray();
         var passed = predecessor.Passed && successorChecks.All(x => x.Passed);
         var nonEffects = predecessor.NonEffects.Concat(new[]
         {
             "v0.55 adds a separate bounded one-shot local-model invocation authority above exact runtime/model evidence",
             "v0.53 generic process execution is not reinterpreted as model request authority",
+            "v0.55 request JSON is closed: unknown, duplicate or missing properties are refused before Preview",
             "acceptance runs contract/self-test checks only and performs no model invocation",
             "no raw request text or bearer persistence is required by canonical v0.55 lease state",
             "successful local output remains UNTRUSTED_LOCAL_MODEL_OUTPUT and creates no response/display/game authority",
@@ -54,6 +58,6 @@ public sealed class WorkbenchV055AcceptanceHarness
             predecessor.ExecuteProgressEvents,
             checks,
             nonEffects,
-            "Workbench v0.55 introduces a separate provider-neutral one-shot model invocation lease with exact runtime/model evidence binding, bounded request/stdout/stderr and untrusted output semantics. First-boot acceptance does not invoke a model or authorize publication.");
+            "Workbench v0.55 introduces a separate provider-neutral one-shot model invocation lease with exact runtime/model evidence binding, closed request JSON, bounded request/stdout/stderr and untrusted output semantics. First-boot acceptance does not invoke a model or authorize publication.");
     }
 }
