@@ -83,9 +83,10 @@ public static class LocalModelInvocationRequestV055Parser
         }
         """;
         var parsed = ParseExact(valid);
-        var unknownRefused = Refused(valid.Replace("\"TtlSeconds\":30", "\"TtlSeconds\":30,\"Unexpected\":true"));
-        var duplicateRefused = Refused(valid.Replace("\"TtlSeconds\":30", "\"TtlSeconds\":30,\"TtlSeconds\":30"));
-        var missingRefused = Refused(valid.Replace("          \"RequestUtf8\":\"hello\",\n", ""));
+        var unknownRefused = Refused(valid.Replace("\"TtlSeconds\":30", "\"TtlSeconds\":30,\"Unexpected\":true", StringComparison.Ordinal));
+        var duplicateRefused = Refused(valid.Replace("\"TtlSeconds\":30", "\"TtlSeconds\":30,\"TtlSeconds\":30", StringComparison.Ordinal));
+        var missingJson = valid.Replace("\"RequestUtf8\":\"hello\",", string.Empty, StringComparison.Ordinal);
+        var missingRefused = !string.Equals(missingJson, valid, StringComparison.Ordinal) && Refused(missingJson);
         return new[]
         {
             ("v055-request-parser-valid", parsed.RequestId == "fixture", parsed.RequestId, "fixture"),
