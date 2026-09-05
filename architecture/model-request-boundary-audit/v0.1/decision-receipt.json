@@ -1,0 +1,20 @@
+{
+  "schema": "matawaka.workbench-model-request-boundary-decision-receipt/v0.1",
+  "origin_main": "65b0b49a513a6b782760a7626d6b768bf7bb7f91",
+  "audit_head": "8736c24a8a021a1be0348b6d8af06efedb6bd0d5",
+  "audit_ci_run": 33957293506,
+  "audit_result": "PASS",
+  "selected_successor": "V055_BOUNDED_LOCAL_MODEL_INVOCATION_LEASE",
+  "first_profile": "DIRECT_SUBPROCESS_STDIO_ONE_SHOT",
+  "loopback_profile": "DEFER_SEPARATE_SUCCESSOR",
+  "reuse_v053_as_model_request_authority": false,
+  "real_model_or_runtime_execution_authorized": false,
+  "implementation_authority_source": "Matawaka/workbench#79",
+  "non_effects": [
+    "no artifact acquisition",
+    "no materialization",
+    "no process start",
+    "no model request",
+    "no publication"
+  ]
+}
