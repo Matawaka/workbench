@@ -1,0 +1,1 @@
+entry(): infinite PAUSE loop; no imports, no CRT, no network, no filesystem, no model/benchmark/game behavior.
