@@ -1,0 +1,19 @@
+{
+  "Schema": "matawaka.runtime-smoke-artifact/v0.1",
+  "ArtifactId": "workbench-v0.53-runtime-smoke-v1",
+  "FileName": "matawaka-v053-runtime-smoke-v1.exe",
+  "Bytes": 2048,
+  "Sha256": "3ec2a47a1a177a1715940920101928b42eed5a5b6577bfbc374393f3cd908873",
+  "Architecture": "x86_64-windows-pe32+",
+  "Behavior": "GUI process with no console, no file IO, no network IO; imports only KERNEL32!Sleep and sleeps forever in 1-second intervals until externally terminated.",
+  "Purpose": "Tiny non-KONTUR real-host process-image/owned-stop smoke for Workbench v0.53 bounded runtime execution lease.",
+  "NonEffects": [
+    "no model loading",
+    "no benchmark",
+    "no game access",
+    "no shell or script indirection",
+    "no elevation",
+    "no network access by the smoke executable",
+    "no filesystem mutation by the smoke executable"
+  ]
+}
