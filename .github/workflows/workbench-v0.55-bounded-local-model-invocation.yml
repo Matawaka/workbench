@@ -22,6 +22,13 @@ jobs:
       - name: Release build
         shell: pwsh
         run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+      - name: Build deterministic model fixture
+        shell: pwsh
+        run: dotnet build .\tests\V055ModelFixture\V055ModelFixture.csproj -c Release --nologo
+      - name: Run v0.55 hostile qualification
+        shell: pwsh
+        run: |
+          dotnet run --project .\tests\V055Qualification\V055Qualification.csproj -c Release -- `"$PWD\tests\V055ModelFixture\bin\Release\net10.0-windows`"
       - name: Guard predecessor primitives
         shell: pwsh
         run: |
@@ -41,3 +48,9 @@ jobs:
         run: |
           $observed = (git ls-remote https://github.com/Matawaka/workbench.git refs/heads/main).Split("`t")[0]
           if ($observed -ne '65b0b49a513a6b782760a7626d6b768bf7bb7f91') { throw "Public main drifted: $observed" }
+      - name: Guard no real model/runtime acquisition in qualification
+        shell: pwsh
+        run: |
+          if (Test-Path 'K:\Matawaka') { Write-Host 'Runner-local path presence is irrelevant; no operator host is touched.' }
+          $changed = git diff --name-only 65b0b49a513a6b782760a7626d6b768bf7bb7f91...HEAD
+          if ($changed -match 'Qwen3-8B-Q4_K_M\.gguf|llama-b10621-bin-win-cuda|cudart-llama') { throw 'Real model/runtime bytes are forbidden in v0.55 offline qualification.' }
