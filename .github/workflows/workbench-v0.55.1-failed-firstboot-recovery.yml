@@ -20,7 +20,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Build recovery utility
+      - name: Build corrected recovery utility
         shell: pwsh
         run: dotnet build .\tooling\v0551-firstboot-recovery\Matawaka.Workbench.V0551Recovery.csproj -c Release --nologo
 
@@ -28,24 +28,36 @@ jobs:
         shell: pwsh
         run: dotnet run --project .\tooling\v0551-firstboot-recovery\Matawaka.Workbench.V0551Recovery.csproj -c Release -- --self-test
 
-      - name: Guard exact recovery policy constants
+      - name: Guard corrected exact recovery policy constants
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $src = Get-Content .\tooling\v0551-firstboot-recovery\Program.cs -Raw
+          $src = Get-Content .\tooling\v0551-firstboot-recovery\CorrectedEntryPoint.cs -Raw
+          $req = Get-Content .\tooling\v0551-firstboot-recovery\recovery-request.json -Raw | ConvertFrom-Json
+          $correct = 'd836d45c823e8388cb252214af176f2a1b315f2da8bd3d9418ddd74b8c1fea7e'
+          $wrong = 'd836d45c823e8388cb252214af176f2a1b315f2da8bbd3d9418ddd74b8c1fea7e'
+          if ($correct.Length -ne 64 -or $correct -notmatch '^[0-9a-f]{64}$') { throw 'correct failed-candidate SHA is not canonical SHA-256' }
+          if (-not $src.Contains($correct)) { throw 'correct failed-candidate SHA missing from corrected entrypoint' }
+          if ($src.Contains($wrong)) { throw 'old 65-character transcription remains in corrected entrypoint' }
+          if ($req.ExpectedFailedCandidateSha256 -ne $correct) { throw 'closed recovery request does not bind corrected failed-candidate SHA' }
+          if ($req.RequestId -ne 'recover-v0551-title-harness-failure-50b6af3831c84032bbcd51d5b03dc7eb-v2') { throw 'unexpected corrected request identity' }
           $must = @(
             '02d81b8559bc7c9676949be0557d20ecb50a9890',
             'workbench-v0.55-accepted',
             '50b6af3831c84032bbcd51d5b03dc7eb',
-            'd836d45c823e8388cb252214af176f2a1b315f2da8bbd3d9418ddd74b8c1fea7e',
             'eac74afec61019095ef07649704e70e3a63cb289b3f2e86fec7a0fe4723b3872',
-            '1bdd6c83818ae5134ddbf90264c55bb3515124976ddd82c71c4e6c6681ab1655',
-            'FAILED_NO_RETRY',
-            'v0.55.1 validation returned Passed=false'
+            '1bdd6c83818ae5134ddbf90264c55bb3515124976ddd82c71c4e6c6681ab1655'
           )
           foreach ($value in $must) { if (-not $src.Contains($value)) { throw "missing fixed recovery policy value: $value" } }
-          if ($src -match 'HttpClient|WebRequest|SocketsHttpHandler|TcpClient|UdpClient') { throw 'network API surfaced in recovery utility' }
-          Write-Host 'RECOVERY_POLICY_CONSTANTS_PASS'
+          if ($src -match 'HttpClient|WebRequest|SocketsHttpHandler|TcpClient|UdpClient') { throw 'network API surfaced in corrected entrypoint' }
+          Write-Host 'CORRECTED_RECOVERY_POLICY_CONSTANTS_PASS'
+
+      - name: Guard corrected startup entrypoint
+        shell: pwsh
+        run: |
+          $proj = Get-Content .\tooling\v0551-firstboot-recovery\Matawaka.Workbench.V0551Recovery.csproj -Raw
+          if (-not $proj.Contains('<StartupObject>Matawaka.Workbench.V0551Recovery.CorrectedEntryPoint</StartupObject>')) { throw 'corrected startup entrypoint not selected' }
+          Write-Host 'CORRECTED_STARTUP_ENTRYPOINT_PASS'
 
       - name: Guard recovery branch does not mutate Workbench product source
         shell: pwsh
@@ -67,35 +79,37 @@ jobs:
           if (-not [string]::IsNullOrWhiteSpace(($v0551 -join "`n"))) { throw 'Public v0.55.1 failed-candidate tag unexpectedly exists' }
           Write-Host "PUBLIC_FRONTIER_UNCHANGED_PASS main=$main"
 
-      - name: Publish exact standalone recovery executable
+      - name: Publish exact corrected standalone recovery executable
         id: publish
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $out = Join-Path $env:RUNNER_TEMP 'v0551-recovery-bin'
+          $out = Join-Path $env:RUNNER_TEMP 'v0551-recovery-v2-bin'
           dotnet publish .\tooling\v0551-firstboot-recovery\Matawaka.Workbench.V0551Recovery.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
           $exe = Join-Path $out 'Matawaka.Workbench.V0551Recovery.exe'
           if (-not (Test-Path $exe -PathType Leaf)) { throw 'recovery executable missing' }
           Copy-Item .\tooling\v0551-firstboot-recovery\recovery-request.json (Join-Path $out 'recovery-request.json')
           & $exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw 'published recovery executable self-test failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'published corrected recovery executable self-test failed' }
           $exeSha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          $stage = Join-Path $env:RUNNER_TEMP 'v0551-recovery-package'
+          $requestSha = (Get-FileHash (Join-Path $out 'recovery-request.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $stage = Join-Path $env:RUNNER_TEMP 'v0551-recovery-v2-package'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           Copy-Item $exe (Join-Path $stage 'Matawaka.Workbench.V0551Recovery.exe')
           Copy-Item .\tooling\v0551-firstboot-recovery\recovery-request.json (Join-Path $stage 'recovery-request.json')
-          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.55.1-failed-firstboot-recovery.zip'
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.55.1-failed-firstboot-recovery-v2.zip'
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
           $zipSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "zip=$zip" >> $env:GITHUB_OUTPUT
           "exe_sha=$exeSha" >> $env:GITHUB_OUTPUT
+          "request_sha=$requestSha" >> $env:GITHUB_OUTPUT
           "zip_sha=$zipSha" >> $env:GITHUB_OUTPUT
-          Write-Host "RECOVERY_PACKAGE_PASS exeSha256=$exeSha zipSha256=$zipSha"
+          Write-Host "CORRECTED_RECOVERY_PACKAGE_PASS exeSha256=$exeSha requestSha256=$requestSha zipSha256=$zipSha"
 
-      - name: Upload exact recovery package
+      - name: Upload exact corrected recovery package
         uses: actions/upload-artifact@v4
         with:
-          name: workbench-v0.55.1-failed-firstboot-recovery
+          name: workbench-v0.55.1-failed-firstboot-recovery-v2
           path: ${{ steps.publish.outputs.zip }}
           if-no-files-found: error
