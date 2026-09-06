@@ -20,6 +20,12 @@ permissions:
 
 jobs:
   qualify-provenance-human-review:
+    # This is the frozen v0.56.1 qualification surface, not a rolling successor gate.
+    # Preserve its historical assertions and scope execution only to the exact
+    # original PR predecessor or the exact canonical v0.56.1 post-merge SHA.
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.base.sha == '4d954bf5dd77ec732efc7c6d8e05b7c2ab7d161a') ||
+      (github.event_name == 'workflow_dispatch' && github.sha == '991fc9c08431141a63a8b53c2f0f138a4f58dc28')
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
