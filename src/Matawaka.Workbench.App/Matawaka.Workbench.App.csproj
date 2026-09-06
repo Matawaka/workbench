@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Branding\MatawakaWorkbench.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Matawaka.Workbench.Protocol\Matawaka.Workbench.Protocol.csproj" />
@@ -15,5 +16,8 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\.github\qualification\v056-provenance-admission\fixtures\uu-aap-955-qualification.json"
                       LogicalName="Matawaka.Workbench.App.ProvenanceReviewV0561.Qualification" />
+    <Resource Include="Assets\Branding\MatawakaWorkbench.ico" />
+    <Resource Include="Assets\Branding\splash-v060.jpg" />
+    <Resource Include="Assets\Branding\update-v060.jpg" />
   </ItemGroup>
 </Project>

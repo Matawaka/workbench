@@ -1,0 +1,182 @@
+name: Workbench v0.60 Windows Branding
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.60-windows-branding
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact v0.60 merged predecessor and current public frontier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '6541dc32182c970c8e1a6ade426a6cee7086511b'
+          $mergeBase = (git merge-base HEAD $base).Trim()
+          if ($mergeBase -ne $base) { throw "branding candidate does not descend from exact v0.60 predecessor: $mergeBase" }
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
+          if ($main -ne $base) { throw "public main drifted after branding candidate was cut: $main" }
+          Write-Host "V060_BRANDING_PREDECESSOR_PASS base=$base main=$main"
+
+      - name: Guard accepted release continuity and no v0.60 accepted identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $accepted = git ls-remote $remote refs/tags/workbench-v0.56.2-accepted 'refs/tags/workbench-v0.56.2-accepted^{}'
+          $peeled = @($accepted | Where-Object { $_ -match '\^\{\}$' })
+          if ($peeled.Count -ne 1) { throw 'accepted v0.56.2 peeled tag observation missing/ambiguous' }
+          $commit = $peeled[0].Split("`t")[0]
+          if ($commit -ne '693886052c598e9ed02558ca60a1fd8901090236') { throw "accepted v0.56.2 drifted: $commit" }
+          $v060 = git ls-remote $remote refs/tags/workbench-v0.60-accepted 'refs/tags/workbench-v0.60-accepted^{}'
+          if (-not [string]::IsNullOrWhiteSpace(($v060 -join "`n"))) { throw 'v0.60 accepted identity already exists unexpectedly' }
+          Write-Host "V060_ACCEPTED_IDENTITY_SEPARATION_PASS accepted=$commit v060=absent"
+
+      - name: Guard exact user-derived branding asset identities
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = @{
+            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico' = '2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1'
+            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg' = '03607f5843fddf0715fee0648053cdfc1b40f7590140e489d0043b9451637077'
+            'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg' = 'c6c79b11173121f0e1a405c8b7d54ec6c6617d8c959d497d4baa335f8f29a6a6'
+          }
+          foreach ($path in $expected.Keys) {
+            if (-not (Test-Path $path -PathType Leaf)) { throw "branding asset missing: $path" }
+            $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sha -ne $expected[$path]) { throw "branding asset hash mismatch: $path observed=$sha expected=$($expected[$path])" }
+          }
+          $source = Get-Content src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json -Raw | ConvertFrom-Json
+          if ($source.AuthorityEffect -ne 'NONE_BY_BRANDING') { throw 'branding provenance metadata authority effect drifted' }
+          Write-Host 'V060_BRANDING_ASSET_IDENTITY_PASS assets=3 provenance=true'
+
+      - name: Guard protected authority and reviewed presentation source byte identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '6541dc32182c970c8e1a6ade426a6cee7086511b'
+          $paths = @(
+            'src/Matawaka.Workbench.Runtime/CommandRouter.cs',
+            'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs',
+            'src/Matawaka.Workbench.AgentHost/SemanticProvider.cs',
+            'src/Matawaka.Workbench.AgentHost/ProvenanceCapabilityEvidenceComposer.cs',
+            'src/Matawaka.Workbench.Runtime/LiveCapabilityEvidenceAuditV058.cs',
+            'src/Matawaka.Workbench.App/CapabilityEvidenceReviewV059.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V060.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml'
+          )
+          foreach ($path in $paths) {
+            if (-not (Test-Path $path -PathType Leaf)) { throw "protected source missing: $path" }
+            $expected = (git rev-parse "$base`:$path").Trim()
+            $observed = (git hash-object $path).Trim()
+            if ($observed -ne $expected) { throw "protected source drift: $path expected=$expected observed=$observed" }
+          }
+          Write-Host "V060_BRANDING_PROTECTED_SOURCE_PASS paths=$($paths.Count)"
+
+      - name: Guard branding-only source shape
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $allowed = @(
+            '.github/workflows/workbench-v060-windows-branding.yml',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs',
+            'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj',
+            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico',
+            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg',
+            'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg',
+            'src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json'
+          )
+          $changed = @(git diff --name-only 6541dc32182c970c8e1a6ade426a6cee7086511b...HEAD)
+          $unexpected = @($changed | Where-Object { $_ -notin $allowed })
+          if ($unexpected.Count -ne 0) { throw "unexpected non-branding changed path(s): $($unexpected -join ', ')" }
+          foreach ($required in $allowed) { if ($required -notin $changed) { throw "expected branding path missing from candidate diff: $required" } }
+
+          $app = Get-Content src/Matawaka.Workbench.App/App.xaml.cs -Raw
+          $branding = Get-Content src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs -Raw
+          $project = Get-Content src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -Raw
+          foreach ($literal in @('--branding-review-only','SplashScreen("Assets/Branding/splash-v060.jpg")','ConfigureV060Branding(brandingReviewOnly)')) {
+            if (-not $app.Contains($literal)) { throw "startup branding binding missing: $literal" }
+          }
+          if (-not $app.Contains('if (!semanticReviewOnly)')) { throw 'historical semantic review modes are not excluded from v0.60 splash/branding route' }
+          foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','update-v060.jpg','Branding != Authority','Implementation merged != Accepted release')) {
+            if (-not $branding.Contains($literal)) { throw "branding presentation invariant missing: $literal" }
+          }
+          foreach ($literal in @('<ApplicationIcon>Assets\Branding\MatawakaWorkbench.ico</ApplicationIcon>','splash-v060.jpg','update-v060.jpg')) {
+            if (-not $project.Contains($literal)) { throw "project branding resource missing: $literal" }
+          }
+          foreach ($forbidden in @('HttpClient','TcpClient','UdpClient','Process.Start','git push','SuccessorPermitCreated = true','DisplayPermitCreated = true')) {
+            if ($branding.Contains($forbidden)) { throw "forbidden authority/effect surface in branding file: $forbidden" }
+          }
+          Write-Host "V060_BRANDING_SOURCE_SHAPE_PASS changed=$($changed.Count)"
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+
+      - name: Preserve v0.60 live authority-evidence qualification
+        shell: pwsh
+        run: dotnet run --project .\.github\qualification\v060-live-authority-evidence-surface\Probe.csproj -c Release
+
+      - name: Publish isolated self-contained Windows branding review candidate
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'workbench-v060-branding-review'
+          dotnet publish .\src\Matawaka.Workbench.App\Matawaka.Workbench.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'Matawaka.Workbench.App.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'published Workbench executable missing' }
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
+          if ($null -eq $icon -or $icon.Width -lt 16 -or $icon.Height -lt 16) { throw 'published executable has no usable associated icon' }
+          $exeSha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $receipt = [ordered]@{
+            schema = 'matawaka.workbench-v060-windows-branding-qualification/v0.60'
+            status = 'WINDOWS_BRANDING_REVIEW_CANDIDATE_QUALIFIED_NOT_ACCEPTED'
+            candidateHead = (git rev-parse HEAD).Trim()
+            sourcePredecessor = '6541dc32182c970c8e1a6ade426a6cee7086511b'
+            acceptedReleasePredecessor = '693886052c598e9ed02558ca60a1fd8901090236'
+            executableSha256 = $exeSha
+            brandingReviewArgument = '--branding-review-only'
+            splashSha256 = '03607f5843fddf0715fee0648053cdfc1b40f7590140e489d0043b9451637077'
+            updateArtworkSha256 = 'c6c79b11173121f0e1a405c8b7d54ec6c6617d8c959d497d4baa335f8f29a6a6'
+            iconSha256 = '2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1'
+            acceptedV060IdentityCreated = $false
+            authorityCreatedByBranding = $false
+          }
+          $receiptPath = Join-Path $out 'branding-qualification.json'
+          $receipt | ConvertTo-Json -Depth 6 | Set-Content $receiptPath -Encoding utf8NoBOM
+          "out=$out" >> $env:GITHUB_OUTPUT
+          "exe_sha=$exeSha" >> $env:GITHUB_OUTPUT
+          Write-Host "V060_WINDOWS_BRANDING_PUBLISH_PASS exeSha256=$exeSha"
+
+      - name: Upload isolated Windows branding review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v060-windows-branding-review
+          path: ${{ steps.publish.outputs.out }}
+          if-no-files-found: error
+
+      - name: Clean repository boundary
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain=v1 --untracked-files=all
+          if (-not [string]::IsNullOrWhiteSpace(($dirty -join "`n"))) { throw "qualification dirtied repository: $($dirty -join '; ')" }
+          Write-Host 'V060_BRANDING_CLEAN_REPOSITORY_PASS'
