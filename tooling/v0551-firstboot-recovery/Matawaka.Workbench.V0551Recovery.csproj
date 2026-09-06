@@ -6,5 +6,6 @@
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <StartupObject>Matawaka.Workbench.V0551Recovery.CorrectedEntryPoint</StartupObject>
   </PropertyGroup>
 </Project>
