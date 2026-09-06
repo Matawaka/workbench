@@ -49,6 +49,8 @@ var english = ProvenanceReviewPresentationServiceV0561.Create(admitted, Provenan
 
 Require(russian.LanguageCode == "ru" && russian.TabHeader == "Русский", "Russian presentation identity is missing.");
 Require(russian.Headline == ProvenanceReviewPresentationServiceV0561.RussianHeadline, "Russian headline does not preserve no-authority boundary.");
+Require(russian.Headline.Contains("СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ", StringComparison.Ordinal), "Russian headline does not use plain origin wording.");
+Require(!russian.Headline.Contains("ПРОВЕНАНС", StringComparison.OrdinalIgnoreCase), "Russian headline still exposes provenance jargon.");
 Require(russian.Headline.Contains("ПОЛНОМОЧИЙ НЕТ", StringComparison.Ordinal), "Russian headline does not foreground no-authority status.");
 Require(russian.Summary.Contains("не подтверждает доверие, истинность, разрешение или полномочие", StringComparison.Ordinal), "Russian summary does not state non-escalation clearly.");
 Require(russian.Boundaries.Any(x => x.Label == "Подпись Git-тега" && x.Value.Contains("НЕ ПОДПИСАН / НЕ ПРОВЕРЕН", StringComparison.Ordinal) && x.Value.Contains("UNSIGNED / NOT VERIFIED", StringComparison.Ordinal)), "Russian unsigned-tag boundary is missing.");
@@ -56,6 +58,7 @@ Require(russian.Boundaries.Any(x => x.Label == "Истинность" && x.Value
 Require(russian.Boundaries.Any(x => x.Label == "Полномочие на публикацию" && x.Value.Contains("НЕ УСТАНОВЛЕНО", StringComparison.Ordinal)), "Russian publication-authority boundary is missing.");
 Require(russian.EvidenceSource.Any(x => x.Label == "SHA-256 доказательства" && x.Value == fixtureSha), "Russian evidence digest is not visible in presentation model.");
 Require(russian.CopyHint.Contains("Ctrl+C", StringComparison.Ordinal), "Russian copy affordance is missing.");
+Require(russian.HumanReviewPrompt.Contains("сведения о происхождении", StringComparison.OrdinalIgnoreCase), "Russian human-review prompt does not use plain origin wording.");
 Require(russian.HumanReviewPrompt.Contains("пять секунд", StringComparison.OrdinalIgnoreCase), "Russian five-second semantic check is missing.");
 
 Require(english.LanguageCode == "en" && english.TabHeader == "English", "English presentation identity is missing.");
@@ -133,6 +136,7 @@ foreach (var requiredUx in new[]
 Require(presentationSource.Contains("\"Русский\"", StringComparison.Ordinal), "Russian localized surface is not source-bound.");
 Require(presentationSource.Contains("\"English\"", StringComparison.Ordinal), "English localized surface is not source-bound.");
 Require(presentationSource.Contains("Ctrl+C", StringComparison.Ordinal), "Copy guidance is not source-bound.");
+Require(!presentationSource.Contains("провенанс", StringComparison.OrdinalIgnoreCase), "Russian presentation source still contains unexplained provenance jargon.");
 
 const string startupBoundary = "if (!reviewOnly)\n        {\n            window.ConfigureV0552Routing();\n            window.ConfigureV0552AcceptanceRouting();\n        }";
 Require(startupSource.Contains(startupBoundary, StringComparison.Ordinal), "v0.55.2 routing/acceptance is not mechanically fenced outside review-only mode.");
@@ -141,7 +145,7 @@ Require(!combined.Contains("workbench-v0.56.1-accepted", StringComparison.Ordina
 
 var qualification = new
 {
-    schema = "matawaka.workbench-v0561-provenance-human-review-qualification/v0.2",
+    schema = "matawaka.workbench-v0561-provenance-human-review-qualification/v0.3",
     tracking_issue = 86,
     predecessor = "4d954bf5dd77ec732efc7c6d8e05b7c2ab7d161a",
     predecessor_tree = "7c72e5d2ce3792be6c623056c09337f444cc5d41",
@@ -150,6 +154,8 @@ var qualification = new
     {
         russian_default = true,
         english_available = true,
+        russian_plain_origin_wording = true,
+        russian_provenance_jargon_exposed = false,
         yellow_no_authority_banner = true,
         evidence_values_single_line_copyable = true,
         unsigned_tag_visible_in_both_languages = true,
