@@ -1,0 +1,163 @@
+name: Workbench v0.58 Live Capability Evidence Audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/workbench-v058-live-capability-evidence-audit.yml'
+      - '.github/qualification/v058-live-capability-evidence-audit/**'
+      - '.github/qualification/v056-provenance-admission/fixtures/uu-aap-955-qualification.json'
+      - 'src/Matawaka.Workbench.Runtime/**'
+      - 'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs'
+      - 'src/Matawaka.Workbench.AgentHost/SemanticProvider.cs'
+      - 'src/Matawaka.Workbench.AgentHost/ProvenanceCapabilityEvidenceComposer.cs'
+      - 'src/Matawaka.Workbench.Protocol/CapabilityEvidence.cs'
+      - 'LIVE-CAPABILITY-EVIDENCE-AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualify-v058-live-capability-evidence-audit:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact post-v0.57 predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = 'bb5e5521062b9d42a76448bd30b4ac74800c3b8e'
+          $tree = 'c34d718d9a0b915d25e3366a11d1096abeb88e58'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          git cat-file -e "$expected^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact post-v0.57 predecessor is unavailable.' }
+          $observedTree = (git rev-parse "$expected^{tree}").Trim()
+          if ($observedTree -ne $tree) { throw "Post-v0.57 predecessor tree mismatch: $observedTree" }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact post-v0.57 predecessor is not an ancestor of candidate.' }
+
+      - name: Verify accepted v0.56.2 continuity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'workbench-v0.56.2-accepted'
+          $tagObject = '0728333e33d07a4d9a07376d288fc0cd667254e2'
+          $peeledCommit = '693886052c598e9ed02558ca60a1fd8901090236'
+          $observed = @(git ls-remote https://github.com/Matawaka/workbench.git "refs/tags/$tag" "refs/tags/$tag^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe accepted v0.56.2 tag.' }
+          $raw = ($observed | Where-Object { $_ -match "refs/tags/$tag$" } | Select-Object -First 1)
+          $peeled = ($observed | Where-Object { $_ -match "refs/tags/$([regex]::Escape($tag))\^\{\}$" } | Select-Object -First 1)
+          if (-not $raw -or -not $peeled) { throw 'Accepted v0.56.2 tag readback incomplete.' }
+          if (($raw -split "`t")[0] -ne $tagObject) { throw 'Accepted v0.56.2 tag object drifted.' }
+          if (($peeled -split "`t")[0] -ne $peeledCommit) { throw 'Accepted v0.56.2 peeled commit drifted.' }
+
+      - name: Verify exact v0.57 qualification evidence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api repos/Matawaka/workbench/actions/runs/34023457366 | ConvertFrom-Json
+          if ($run.head_sha -ne '0e949593fd2b9b5480d3503fb7fd5b71ec0b4fa7' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+            throw 'Exact v0.57 qualification run no longer matches evidence.'
+          }
+          $artifact = gh api repos/Matawaka/workbench/actions/artifacts/9986291223 | ConvertFrom-Json
+          if ($artifact.workflow_run.id -ne 34023457366 -or $artifact.workflow_run.head_sha -ne '0e949593fd2b9b5480d3503fb7fd5b71ec0b4fa7' -or $artifact.digest -ne 'sha256:3981fd018b914332297f363cd7c1c87caf114c6d78f54187bd0700e4de201b0e') {
+            throw 'Exact v0.57 qualification artifact no longer matches evidence.'
+          }
+
+      - name: Verify authority and SemanticHost source remain exact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'bb5e5521062b9d42a76448bd30b4ac74800c3b8e'
+          $agentPath = 'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs'
+          $semanticPath = 'src/Matawaka.Workbench.AgentHost/SemanticProvider.cs'
+          $agentBase = (git rev-parse "$base`:$agentPath").Trim()
+          $agentHead = (git rev-parse "HEAD`:$agentPath").Trim()
+          $semanticBase = (git rev-parse "$base`:$semanticPath").Trim()
+          $semanticHead = (git rev-parse "HEAD`:$semanticPath").Trim()
+          if ($agentBase -ne '852de740c4ff94e0cffe751efb0abcf96e1a1c4c' -or $agentHead -ne $agentBase) {
+            throw "DevelopmentAgentHost authority/provider source changed: base=$agentBase head=$agentHead"
+          }
+          if ($semanticBase -ne '4e8477216e1222608a7f85ff0f79d4573ca79c67' -or $semanticHead -ne $semanticBase) {
+            throw "SemanticProvider authority packet source changed: base=$semanticBase head=$semanticHead"
+          }
+
+      - name: Verify v0.57 composition source remains exact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'bb5e5521062b9d42a76448bd30b4ac74800c3b8e'
+          $path = 'src/Matawaka.Workbench.AgentHost/ProvenanceCapabilityEvidenceComposer.cs'
+          $baseBlob = (git rev-parse "$base`:$path").Trim()
+          $headBlob = (git rev-parse "HEAD`:$path").Trim()
+          if ($headBlob -ne $baseBlob) { throw 'v0.57 composer source changed inside v0.58 integration.' }
+
+      - name: Verify exact embedded provenance fixture source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = '.github/qualification/v056-provenance-admission/fixtures/uu-aap-955-qualification.json'
+          $item = Get-Item $path
+          if ($item.Length -ne 2415) { throw "Fixture bytes mismatch: $($item.Length)" }
+          $sha = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+          if ($sha -ne 'ba2284c66ae4a48583a0918a1c7d4d6a96cf83e66c632b7d55a4aa0ec4d0b9c5') { throw "Fixture SHA-256 mismatch: $sha" }
+          $blob = (git hash-object $path).Trim()
+          if ($blob -ne '4ae93b36d5c8a6c2f00cbc53840221834e09ee26') { throw "Fixture Git blob mismatch: $blob" }
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build v0.58 qualification probe
+        shell: pwsh
+        run: dotnet build .github/qualification/v058-live-capability-evidence-audit/Probe.csproj -c Release
+
+      - name: Qualify live audit non-interference
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project .github/qualification/v058-live-capability-evidence-audit/Probe.csproj -c Release --no-build | Out-File -Encoding utf8 "$env:RUNNER_TEMP\v058-live-capability-evidence-audit.json"
+          $receipt = Get-Content "$env:RUNNER_TEMP\v058-live-capability-evidence-audit.json" -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'LIVE_CAPABILITY_EVIDENCE_AUDIT_QUALIFIED_NO_AUTHORITY_PROMOTION') { throw "Unexpected qualification status: $($receipt.status)" }
+          if ($receipt.allow_provider_received_exact_base_decision -ne $true -or
+              $receipt.deny_provider_not_invoked -ne $true -or
+              $receipt.execute_provider_not_invoked -ne $true -or
+              $receipt.forged_evidence_rejected_without_authority_change -ne $true -or
+              $receipt.missing_evidence_not_required_for_base_allow -ne $true) {
+            throw 'Live capability evidence audit did not preserve base authority flow.'
+          }
+          if ($receipt.semantic_authority_contract_changed -ne $false -or
+              $receipt.development_agent_host_policy_changed -ne $false -or
+              $receipt.external_effect -ne $false) {
+            throw 'v0.58 qualification reported an authority or external-effect change.'
+          }
+
+      - name: Verify candidate repository remains clean
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Qualification changed repository working tree:`n$dirty" }
+
+      - name: Upload v0.58 qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v058-live-capability-evidence-audit
+          path: ${{ runner.temp }}/v058-live-capability-evidence-audit.json
+          if-no-files-found: error
+          retention-days: 30
