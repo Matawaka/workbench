@@ -67,17 +67,19 @@ jobs:
           if ($unexpected.Count -ne 0) { throw "Recovery implementation touched product source: $($unexpected -join ',')" }
           Write-Host "RECOVERY_SOURCE_SEPARATION_PASS changed=$($changed.Count)"
 
-      - name: Guard public frontier unchanged
+      - name: Guard observed public frontier and failed tags
         shell: pwsh
         run: |
           $remote = 'https://github.com/Matawaka/workbench.git'
           $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
-          if ($main -ne '65b0b49a513a6b782760a7626d6b768bf7bb7f91') { throw "Public main drifted: $main" }
+          if ($main -ne '6111fdf82a9e8947a7722e9b603c1e9268a19105') { throw "Public main changed again during recovery qualification: $main" }
+          $firstParent = (git rev-parse 'origin/main^1').Trim()
+          if ($firstParent -ne '65b0b49a513a6b782760a7626d6b768bf7bb7f91') { throw "Observed #82 public merge does not descend from prior frontier: $firstParent" }
           $v055 = git ls-remote $remote refs/tags/workbench-v0.55-accepted 'refs/tags/workbench-v0.55-accepted^{}'
           $v0551 = git ls-remote $remote refs/tags/workbench-v0.55.1-accepted 'refs/tags/workbench-v0.55.1-accepted^{}'
-          if (-not [string]::IsNullOrWhiteSpace(($v055 -join "`n"))) { throw 'Public v0.55 intermediate tag unexpectedly exists' }
-          if (-not [string]::IsNullOrWhiteSpace(($v0551 -join "`n"))) { throw 'Public v0.55.1 failed-candidate tag unexpectedly exists' }
-          Write-Host "PUBLIC_FRONTIER_UNCHANGED_PASS main=$main"
+          if (-not [string]::IsNullOrWhiteSpace(($v055 -join "`n"))) { throw 'Public v0.55 intermediate accepted tag unexpectedly exists' }
+          if (-not [string]::IsNullOrWhiteSpace(($v0551 -join "`n"))) { throw 'Public v0.55.1 failed-candidate accepted tag unexpectedly exists' }
+          Write-Host "PUBLIC_FRONTIER_OBSERVED_PASS main=$main firstParent=$firstParent noV055AcceptedTags=true"
 
       - name: Publish exact corrected standalone recovery executable
         id: publish
