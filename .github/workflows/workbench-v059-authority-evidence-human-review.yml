@@ -90,8 +90,8 @@ jobs:
           foreach ($path in $expected.Keys) {
             $baseBlob = (git rev-parse "$base`:$path").Trim()
             $headBlob = (git rev-parse "HEAD`:$path").Trim()
-            if ($baseBlob -ne $expected[$path]) { throw "Unexpected predecessor blob for $path: $baseBlob" }
-            if ($headBlob -ne $baseBlob) { throw "v0.59 modified protected authority/runtime source: $path; base=$baseBlob head=$headBlob" }
+            if ($baseBlob -ne $expected[$path]) { throw "Unexpected predecessor blob for ${path}: $baseBlob" }
+            if ($headBlob -ne $baseBlob) { throw "v0.59 modified protected authority/runtime source: ${path}; base=$baseBlob head=$headBlob" }
           }
 
       - name: Verify no v0.59 accepted identity exists
