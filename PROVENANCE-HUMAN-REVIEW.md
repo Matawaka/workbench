@@ -1,6 +1,6 @@
 # Workbench v0.56.1 — Provenance human review
 
-Status: `HUMAN_REVIEW_CHANGES_REQUIRED`
+Status: `HUMAN_REVIEW_TERMINOLOGY_REFINEMENT`
 
 This candidate adds a read-only human review surface over the already merged Workbench provenance admission primitive.
 
@@ -27,11 +27,38 @@ The first qualified candidate was reviewed visually on Windows. Human findings:
 5. Evidence identifiers were readable, but SHA/source/path should remain on one line and be directly selectable/copyable when needed.
 6. The hierarchy was understandable, but a Russian translation is required.
 
-This is a **partial human PASS with mandatory presentation changes**, not merge authority.
+This was a partial human PASS with mandatory presentation changes, not merge authority.
 
-## Round 2 candidate requirements
+## Round 2 human review — 2026-09-06
 
-The revised candidate must preserve the same admitted evidence and authority boundary while changing presentation only:
+The revised Windows candidate was reviewed visually again. Human findings:
+
+1. The yellow no-authority banner was clear and acceptable.
+2. `UNSIGNED / NOT VERIFIED` remained understandable.
+3. Truth/publication-authority and runtime/model/action boundaries remained understandable.
+4. No visual element looked like permission to act.
+5. Evidence identifiers were clear, single-line, and copyable.
+6. Russian localization was understandable overall, but the transliterated technical word `провенанс` was not natural for a general Russian-speaking user.
+
+The only remaining human-facing issue is terminology. The evidence model and authority boundary are unchanged.
+
+## Terminology refinement
+
+For the Russian presentation only, user-facing `провенанс` wording is replaced with the plainer and semantically narrower phrase:
+
+`сведения о происхождении`
+
+The Russian no-authority headline becomes:
+
+`СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ`
+
+This wording intentionally does **not** use `подлинность`, `доверие`, `сертифицировано`, or another stronger claim. Those would overstate what the admitted C2PA/external-reference evidence proves.
+
+The English technical term `provenance` remains unchanged in the English view and in internal code/schema names.
+
+## Preserved round-2 presentation requirements
+
+The candidate must preserve the same admitted evidence and authority boundary:
 
 - a yellow warning/information banner foregrounds the no-authority headline;
 - one top-level `Provenance` surface contains local read-only language views;
@@ -49,7 +76,7 @@ The English message remains:
 
 The Russian message is:
 
-`ПРОВЕНАНС ЗАФИКСИРОВАН — ПОЛНОМОЧИЙ НЕТ`
+`СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ`
 
 Both views must make it easy to distinguish:
 
@@ -66,19 +93,14 @@ Both views must make it easy to distinguish:
 
 The exact evidence SHA-256 and pinned source frontier must remain visible and copyable as text.
 
-## Round 2 human acceptance questions
+## Final human acceptance focus
 
-A human reviewer must answer these before the PR can become merge-ready:
+The prior visual review already passed layout, hierarchy, copyability, unsigned/truth/authority distinction, and absence of action-like controls. After fresh Windows qualification of the terminology-only change, the remaining human check is narrow:
 
-1. Is the yellow no-authority banner immediately noticeable without looking like an approval/trust signal?
-2. In the Russian view, is it clear within about five seconds that provenance was observed but no authority was granted?
-3. Is `НЕ ПОДПИСАН / НЕ ПРОВЕРЕН (UNSIGNED / NOT VERIFIED)` visually obvious?
-4. Is it clear that truth and publication authority are not established and runtime/model/action authority was not created?
-5. Can SHA-256, source frontier, evidence path, and admission decision each be selected/copied cleanly without wrapping?
-6. Is the Russian wording natural and understandable without specialist C2PA knowledge?
-7. Does switching between `Русский` and `English` change only presentation, with no operational action surface appearing?
+1. Is `СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ` clearer than the transliterated `провенанс` wording?
+2. Does it still avoid implying truth, trust, authenticity, or authority?
 
-Human feedback may require further wording/layout changes and a fresh Windows qualification. A green CI result is not sufficient to merge this candidate.
+A green CI result remains insufficient by itself to merge this candidate.
 
 ## Non-effects
 
