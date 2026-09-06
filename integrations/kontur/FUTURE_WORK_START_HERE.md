@@ -4,9 +4,17 @@ This is the Workbench-side continuity anchor for later KONTUR integration work.
 
 Before implementation, re-observe both repositories and treat all current SHAs as historical frontier evidence, not automatically current truth. Read `KONTUR_INTEGRATION_BACKLOG.md`, this directory and KONTUR's `pilots/kontur-game-companion/workbench-integration/` support files.
 
-## First preferred implementation
+## Materialized generic prerequisites
 
-Design a new **bounded artifact transfer + local SHA-256 verification capability** that can consume KONTUR's exact LM1 handoff only after fresh human confirmation.
+Workbench `main` through v0.54.2 now contains separately bounded generic primitives
+for artifact acquisition (v0.52), runtime execution (v0.53) and runtime-tree
+materialization (v0.54). These capabilities do not themselves consume KONTUR intent.
+
+The v0.55 candidate adds a provider-neutral source/request provenance binding above
+the v0.53 execution lease. It hides the inner bearer and preserves restart as loss of
+authority. It still creates no KONTUR adapter or model-request authority.
+
+Any KONTUR artifact acquisition must continue to require:
 
 Required properties:
 
@@ -22,9 +30,13 @@ Required properties:
 
 Do not reuse the existing read lease as if it already authorizes network/file-write effects. A transfer capability must be a separately designed authority class.
 
-## Second preferred implementation
+## Next integration frontier
 
-Accept a KONTUR one-shot RequestEnvelope as semantic intent evidence while requiring a separate Workbench CapabilityLease for technical execution. The Workbench layer may strengthen cross-process replay/execution serialization, but it must not become the source of player intent.
+Translate an exact current KONTUR handoff into the generic v0.55 source binding while
+requiring a separate Workbench CapabilityLease for technical execution. The
+Workbench layer may strengthen cross-process replay/execution serialization, but it
+must not become the source of player intent. The later one-shot model request and
+bounded output receipt remain a distinct authority class.
 
 ## Third preferred implementation
 

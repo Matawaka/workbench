@@ -39,10 +39,19 @@ validated KONTUR handoff
 
 No runtime selection, process start, benchmark, inference, display or game access may be inferred from successful verification.
 
-## Later reuse
+## Current generic substrate
 
-Only after the read/MCP/runtime transaction line is stable should Workbench generalize its runtime primitives for KONTUR's future `llama.cpp` provider. The generic lifecycle should preserve:
+The re-observed Workbench `main` at `65b0b49a513a6b782760a7626d6b768bf7bb7f91`
+already contains the generic v0.52 acquisition, v0.53 execution and v0.54
+runtime-tree materialization primitives. The v0.55 candidate adds the missing
+source-frontier/request-envelope provenance binding above the unchanged v0.53
+lease. It does not make this inert directory an authority source.
+
+The generic lifecycle preserves:
 
 `Artifact Verified != Runtime Selected != Runtime Started != Endpoint Ready != Benchmark Authorized != Request Authorized`.
 
-This directory should remain import/inert by default. Future executable code must be introduced in a separately reviewed layer with its own authority and hostile qualification.
+This directory remains import/inert by default. A future KONTUR adapter may translate
+an exact handoff into the generic v0.55 source binding, but it must separately obtain
+current execution confirmation. Model request/output handling remains a later,
+separately bounded capability.
