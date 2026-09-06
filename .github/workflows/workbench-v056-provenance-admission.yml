@@ -1,0 +1,92 @@
+name: Workbench v0.56 Provenance Admission
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/workbench-v056-provenance-admission.yml'
+      - '.github/qualification/v056-provenance-admission/**'
+      - 'src/Matawaka.Workbench.Protocol/ProvenanceAdmission.cs'
+      - 'src/Matawaka.Workbench.AgentHost/C2paProvenanceAdmissionService.cs'
+      - 'PROVENANCE-ADMISSION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-provenance-admission:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact accepted predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expectedMain = 'ea852feeb0e8d92a8977bb251693e7e977913dca'
+          $expectedTree = '44d2507df87d991583e00d4bf0df05ef24050c32'
+          if ('${{ github.event_name }}' -eq 'pull_request') {
+            $event = Get-Content $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json
+            if ($event.pull_request.base.sha -ne $expectedMain) { throw "Unexpected PR base: $($event.pull_request.base.sha)" }
+          }
+          $tree = (git rev-parse "$expectedMain`^{tree}").Trim()
+          if ($tree -ne $expectedTree) { throw "Unexpected predecessor tree: $tree" }
+          git merge-base --is-ancestor $expectedMain HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Accepted predecessor is not an ancestor of candidate.' }
+
+      - name: Verify exact accepted UU-AAP fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixture = '.github/qualification/v056-provenance-admission/fixtures/uu-aap-955-qualification.json'
+          $blob = (git hash-object $fixture).Trim()
+          if ($blob -ne '4ae93b36d5c8a6c2f00cbc53840221834e09ee26') { throw "Fixture Git blob mismatch: $blob" }
+          $sha = (Get-FileHash $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne 'ba2284c66ae4a48583a0918a1c7d4d6a96cf83e66c632b7d55a4aa0ec4d0b9c5') { throw "Fixture SHA-256 mismatch: $sha" }
+          $bytes = (Get-Item $fixture).Length
+          if ($bytes -ne 2415) { throw "Fixture byte count mismatch: $bytes" }
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+
+      - name: Build v0.56 qualification probe
+        shell: pwsh
+        run: dotnet build .\.github\qualification\v056-provenance-admission\Probe.csproj -c Release --nologo
+
+      - name: Run positive and hostile admission qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project .\.github\qualification\v056-provenance-admission\Probe.csproj -c Release --no-build --nologo | Tee-Object -FilePath $env:RUNNER_TEMP\provenance-admission-receipt.json
+          if ($LASTEXITCODE -ne 0) { throw 'v0.56 provenance admission probe failed.' }
+          if (-not (Test-Path $env:RUNNER_TEMP\provenance-admission-receipt.json)) { throw 'Admission receipt missing.' }
+
+      - name: Verify candidate boundary remains clean
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Qualification changed repository state:`n$dirty" }
+
+      - name: Upload qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v056-provenance-admission
+          path: |
+            ${{ runner.temp }}/provenance-admission-receipt.json
+            .github/qualification/v056-provenance-admission/fixture-source.json
+          if-no-files-found: ignore
+          retention-days: 30
