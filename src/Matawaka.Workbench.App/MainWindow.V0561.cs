@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Matawaka.Workbench.AgentHost;
 using Matawaka.Workbench.Protocol;
 
@@ -16,8 +17,9 @@ public partial class MainWindow
     internal void ConfigureV0561ProvenanceReviewRouting(bool reviewOnly)
     {
         var receipt = AdmitEmbeddedProvenanceEvidenceV0561();
-        var presentation = ProvenanceReviewPresentationServiceV0561.Create(receipt);
-        _provenanceReviewTabV0561 ??= BuildProvenanceReviewTabV0561(presentation);
+        var russian = ProvenanceReviewPresentationServiceV0561.Create(receipt, ProvenanceReviewLanguageV0561.Russian);
+        var english = ProvenanceReviewPresentationServiceV0561.Create(receipt, ProvenanceReviewLanguageV0561.English);
+        _provenanceReviewTabV0561 ??= BuildProvenanceReviewTabV0561(russian, english);
 
         if (!OutputTabs.Items.Contains(_provenanceReviewTabV0561))
         {
@@ -56,30 +58,61 @@ public partial class MainWindow
         return C2paProvenanceAdmissionService.AdmitAcceptedWorkbenchV0552(buffer.ToArray());
     }
 
-    private static TabItem BuildProvenanceReviewTabV0561(ProvenanceReviewPresentationV0561 presentation)
+    private static TabItem BuildProvenanceReviewTabV0561(
+        ProvenanceReviewPresentationV0561 russian,
+        ProvenanceReviewPresentationV0561 english)
+    {
+        var languageTabs = new TabControl
+        {
+            SelectedIndex = 0,
+            Margin = new Thickness(0)
+        };
+        languageTabs.Items.Add(BuildProvenanceLanguageTabV0561(russian));
+        languageTabs.Items.Add(BuildProvenanceLanguageTabV0561(english));
+
+        return new TabItem
+        {
+            Header = "Provenance",
+            Content = languageTabs
+        };
+    }
+
+    private static TabItem BuildProvenanceLanguageTabV0561(ProvenanceReviewPresentationV0561 presentation)
     {
         var content = new StackPanel { Margin = new Thickness(18) };
-        content.Children.Add(new TextBlock
+
+        var bannerContent = new StackPanel();
+        bannerContent.Children.Add(new TextBlock
         {
             Text = presentation.Headline,
             FontSize = 24,
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, 7)
         });
-        content.Children.Add(new TextBlock
+        bannerContent.Children.Add(new TextBlock
         {
             Text = presentation.Summary,
             FontSize = 14,
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = 920,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(0, 0, 0, 18)
+            MaxWidth = 1120,
+            HorizontalAlignment = HorizontalAlignment.Left
         });
 
-        AddProvenanceSectionV0561(content, "What was observed", presentation.ObservedFacts);
-        AddProvenanceSectionV0561(content, "What was NOT established or created", presentation.Boundaries);
-        AddProvenanceSectionV0561(content, "Evidence source", presentation.EvidenceSource);
+        content.Children.Add(new Border
+        {
+            Background = Brushes.LightGoldenrodYellow,
+            BorderBrush = Brushes.Goldenrod,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(12),
+            Margin = new Thickness(0, 0, 0, 18),
+            Child = bannerContent
+        });
+
+        AddProvenanceSectionV0561(content, presentation.ObservedSectionTitle, presentation.ObservedFacts, false, null);
+        AddProvenanceSectionV0561(content, presentation.BoundariesSectionTitle, presentation.Boundaries, false, null);
+        AddProvenanceSectionV0561(content, presentation.EvidenceSectionTitle, presentation.EvidenceSource, true, presentation.CopyHint);
 
         var humanReview = new Border
         {
@@ -94,13 +127,13 @@ public partial class MainWindow
             Text = presentation.HumanReviewPrompt,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = 920
+            MaxWidth = 1120
         };
         content.Children.Add(humanReview);
 
         return new TabItem
         {
-            Header = "Provenance",
+            Header = presentation.TabHeader,
             Content = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -113,7 +146,9 @@ public partial class MainWindow
     private static void AddProvenanceSectionV0561(
         Panel parent,
         string title,
-        IReadOnlyList<ProvenanceReviewFactV0561> facts)
+        IReadOnlyList<ProvenanceReviewFactV0561> facts,
+        bool copyableValues,
+        string? copyHint)
     {
         parent.Children.Add(new TextBlock
         {
@@ -123,16 +158,70 @@ public partial class MainWindow
             Margin = new Thickness(0, 8, 0, 6)
         });
 
+        if (copyableValues && !string.IsNullOrWhiteSpace(copyHint))
+        {
+            parent.Children.Add(new TextBlock
+            {
+                Text = copyHint,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 7)
+            });
+        }
+
         foreach (var fact in facts)
         {
-            var row = new Grid { Margin = new Thickness(0, 0, 0, 7), MaxWidth = 920, HorizontalAlignment = HorizontalAlignment.Left };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
+            var row = new Grid
+            {
+                Margin = new Thickness(0, 0, 0, 7),
+                MaxWidth = 1160,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(copyableValues ? 620 : 330) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            var label = new TextBlock { Text = fact.Label, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
-            var value = new TextBlock { Text = fact.Value, FontFamily = new System.Windows.Media.FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 0, 10, 0) };
-            var explanation = new TextBlock { Text = fact.Explanation, TextWrapping = TextWrapping.Wrap };
+            var label = new TextBlock
+            {
+                Text = fact.Label,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            FrameworkElement value;
+            if (copyableValues)
+            {
+                value = new TextBox
+                {
+                    Text = fact.Value,
+                    IsReadOnly = true,
+                    IsReadOnlyCaretVisible = true,
+                    FontFamily = new FontFamily("Consolas"),
+                    TextWrapping = TextWrapping.NoWrap,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    Padding = new Thickness(4, 2, 4, 2),
+                    Margin = new Thickness(10, 0, 10, 0),
+                    ToolTip = copyHint
+                };
+            }
+            else
+            {
+                value = new TextBlock
+                {
+                    Text = fact.Value,
+                    FontFamily = new FontFamily("Consolas"),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(10, 0, 10, 0)
+                };
+            }
+
+            var explanation = new TextBlock
+            {
+                Text = fact.Explanation,
+                TextWrapping = TextWrapping.Wrap
+            };
             Grid.SetColumn(label, 0);
             Grid.SetColumn(value, 1);
             Grid.SetColumn(explanation, 2);
