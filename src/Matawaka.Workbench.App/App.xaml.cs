@@ -9,7 +9,7 @@ public partial class App : Application
         base.OnStartup(e);
         var reviewOnly = e.Args.Any(arg => string.Equals(
             arg,
-            MainWindow.ProvenanceReviewOnlyArgumentV0561,
+            global::Matawaka.Workbench.App.MainWindow.ProvenanceReviewOnlyArgumentV0561,
             StringComparison.OrdinalIgnoreCase));
 
         var window = new MainWindow();
