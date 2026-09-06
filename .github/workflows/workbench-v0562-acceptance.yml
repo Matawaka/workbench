@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/workbench-v0562-acceptance.yml'
       - '.github/workflows/workbench-v0562-publish-accepted.yml'
+      - '.github/workflows/workbench-v0561-provenance-human-review.yml'
       - '.github/qualification/v0562-acceptance/**'
       - 'src/Matawaka.Workbench.App/App.xaml.cs'
       - 'src/Matawaka.Workbench.App/MainWindow.V0562.cs'
