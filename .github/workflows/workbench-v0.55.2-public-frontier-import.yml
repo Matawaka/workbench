@@ -1,0 +1,111 @@
+name: Workbench v0.55.2 public-frontier import
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.55.2-convergent-publication-closure
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build fixed import utility
+        shell: pwsh
+        run: dotnet build .\tooling\v0552-public-frontier-import\Matawaka.Workbench.V0552PublicImport.csproj -c Release --nologo
+
+      - name: Closed-policy self-test
+        shell: pwsh
+        run: dotnet run --project .\tooling\v0552-public-frontier-import\Matawaka.Workbench.V0552PublicImport.csproj -c Release -- --self-test
+
+      - name: Guard exact Git authority shapes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content .\tooling\v0552-public-frontier-import\Program.cs -Raw
+          $must = @(
+            '02d81b8559bc7c9676949be0557d20ecb50a9890',
+            'workbench-v0.55-accepted',
+            '6111fdf82a9e8947a7722e9b603c1e9268a19105',
+            '65b0b49a513a6b782760a7626d6b768bf7bb7f91',
+            'https://github.com/Matawaka/workbench.git',
+            'IMPORT-EXACT-PUBLIC-6111',
+            '--no-write-fetch-head',
+            '--no-tags',
+            'refs/heads/main'
+          )
+          foreach ($v in $must) { if (-not $src.Contains($v)) { throw "missing fixed import policy value: $v" } }
+          $forbidden = @('"push"', '"update-ref"', '"branch"', '"tag", "-a"', '"reset"', '"checkout"', 'HttpClient', 'WebRequest')
+          foreach ($v in $forbidden) { if ($src.Contains($v)) { throw "forbidden authority surface in import utility: $v" } }
+          if ($src -match 'fetch[^\r\n]+refs/heads/main[^\r\n]+refs/') { throw 'fetch appears to include a destination ref' }
+          Write-Host 'V0552_IMPORT_GIT_SHAPES_PASS'
+
+      - name: Guard exact request bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $r = Get-Content .\tooling\v0552-public-frontier-import\public-import-request.json -Raw | ConvertFrom-Json
+          if ($r.Schema -ne 'matawaka.workbench-v0552-public-frontier-import-request/v0.1') { throw 'schema drift' }
+          if ($r.RequestId -ne 'v0552-import-public-main-6111fdf82a9e8947a7722e9b603c1e9268a19105-v1') { throw 'request identity drift' }
+          if ($r.ExpectedLocalHead -ne '02d81b8559bc7c9676949be0557d20ecb50a9890') { throw 'local head drift' }
+          if ($r.ExpectedPublicMain -ne '6111fdf82a9e8947a7722e9b603c1e9268a19105') { throw 'public main drift' }
+          Write-Host "V0552_IMPORT_REQUEST_PASS sha256=$((Get-FileHash .\tooling\v0552-public-frontier-import\public-import-request.json -Algorithm SHA256).Hash.ToLowerInvariant())"
+
+      - name: Re-observe public frontier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
+          if ($main -ne '6111fdf82a9e8947a7722e9b603c1e9268a19105') { throw "public main drifted: $main" }
+          $v055 = git ls-remote $remote refs/tags/workbench-v0.55-accepted 'refs/tags/workbench-v0.55-accepted^{}'
+          $v0551 = git ls-remote $remote refs/tags/workbench-v0.55.1-accepted 'refs/tags/workbench-v0.55.1-accepted^{}'
+          $v0552 = git ls-remote $remote refs/tags/workbench-v0.55.2-accepted 'refs/tags/workbench-v0.55.2-accepted^{}'
+          if (-not [string]::IsNullOrWhiteSpace(($v055 -join "`n"))) { throw 'intermediate public v0.55 tag exists' }
+          if (-not [string]::IsNullOrWhiteSpace(($v0551 -join "`n"))) { throw 'failed v0.55.1 tag exists' }
+          if (-not [string]::IsNullOrWhiteSpace(($v0552 -join "`n"))) { throw 'v0.55.2 accepted tag already exists' }
+          Write-Host "V0552_IMPORT_PUBLIC_FRONTIER_PASS main=$main"
+
+      - name: Publish exact standalone import package
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'v0552-public-import-bin'
+          dotnet publish .\tooling\v0552-public-frontier-import\Matawaka.Workbench.V0552PublicImport.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'Matawaka.Workbench.V0552PublicImport.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'import executable missing' }
+          Copy-Item .\tooling\v0552-public-frontier-import\public-import-request.json (Join-Path $out 'public-import-request.json')
+          & $exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'published import executable self-test failed' }
+          $stage = Join-Path $env:RUNNER_TEMP 'v0552-public-import-package'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item $exe (Join-Path $stage 'Matawaka.Workbench.V0552PublicImport.exe')
+          Copy-Item .\tooling\v0552-public-frontier-import\public-import-request.json (Join-Path $stage 'public-import-request.json')
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.55.2-public-frontier-import.zip'
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $exeSha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $requestSha = (Get-FileHash (Join-Path $stage 'public-import-request.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $zipSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "exe_sha=$exeSha" >> $env:GITHUB_OUTPUT
+          "request_sha=$requestSha" >> $env:GITHUB_OUTPUT
+          "zip_sha=$zipSha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0552_PUBLIC_IMPORT_PACKAGE_PASS exeSha256=$exeSha requestSha256=$requestSha zipSha256=$zipSha"
+
+      - name: Upload exact import package
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.55.2-public-frontier-import
+          path: ${{ steps.publish.outputs.zip }}
+          if-no-files-found: error
