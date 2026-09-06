@@ -27,7 +27,7 @@ public sealed record ProvenanceReviewPresentationV0561(
 public static class ProvenanceReviewPresentationServiceV0561
 {
     public const string Headline = "PROVENANCE OBSERVED — NO AUTHORITY";
-    public const string RussianHeadline = "ПРОВЕНАНС ЗАФИКСИРОВАН — ПОЛНОМОЧИЙ НЕТ";
+    public const string RussianHeadline = "СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ";
     public const string UnsignedTag = "UNSIGNED / NOT VERIFIED";
     public const string NotEstablished = "NOT ESTABLISHED";
     public const string NotCreated = "NOT CREATED";
@@ -91,10 +91,10 @@ public static class ProvenanceReviewPresentationServiceV0561
         {
             new ProvenanceReviewFactV0561("Подпись Git-тега", "НЕ ПОДПИСАН / НЕ ПРОВЕРЕН (UNSIGNED / NOT VERIFIED)", "Аннотированный тег Workbench зафиксирован как неподписанный. Проверенная криптографическая подпись Git-тега не заявляется."),
             new ProvenanceReviewFactV0561("Истинность", "НЕ УСТАНОВЛЕНА (NOT ESTABLISHED)", "Корректная связь происхождения не подтверждает истинность лежащих в основе утверждений."),
-            new ProvenanceReviewFactV0561("Полномочие на публикацию", "НЕ УСТАНОВЛЕНО (NOT ESTABLISHED)", "Публикация в репозитории и провенанс не устанавливают, кто был уполномочен публиковать."),
-            new ProvenanceReviewFactV0561("Полномочия runtime / модели", "НЕ СОЗДАНЫ (NOT CREATED)", "Это наблюдение провенанса не создаёт полномочий на запуск runtime или model-request."),
-            new ProvenanceReviewFactV0561("Полномочия ответа / отображения", "НЕ СОЗДАНЫ (NOT CREATED)", "Это наблюдение провенанса не создаёт разрешения на ответ или отображение."),
-            new ProvenanceReviewFactV0561("Разрешения действия / successor", "НЕ СОЗДАНЫ (NOT CREATED)", "Это наблюдение провенанса не создаёт разрешения на внешнее действие или successor-переход.")
+            new ProvenanceReviewFactV0561("Полномочие на публикацию", "НЕ УСТАНОВЛЕНО (NOT ESTABLISHED)", "Публикация в репозитории и сведения о происхождении не устанавливают, кто был уполномочен публиковать."),
+            new ProvenanceReviewFactV0561("Полномочия runtime / модели", "НЕ СОЗДАНЫ (NOT CREATED)", "Зафиксированные сведения о происхождении не создают полномочий на запуск runtime или model-request."),
+            new ProvenanceReviewFactV0561("Полномочия ответа / отображения", "НЕ СОЗДАНЫ (NOT CREATED)", "Зафиксированные сведения о происхождении не создают разрешения на ответ или отображение."),
+            new ProvenanceReviewFactV0561("Разрешения действия / successor", "НЕ СОЗДАНЫ (NOT CREATED)", "Зафиксированные сведения о происхождении не создают разрешения на внешнее действие или successor-переход.")
         },
         new[]
         {
@@ -103,7 +103,7 @@ public static class ProvenanceReviewPresentationServiceV0561
             new ProvenanceReviewFactV0561("Путь доказательства", receipt.EvidenceBinding.Path, "Зафиксированный путь qualification receipt в репозитории."),
             new ProvenanceReviewFactV0561("Решение admission", receipt.Decision, "Workbench классифицировал переданное доказательство только как наблюдение, без полномочий.")
         },
-        "Проверка человеком: понятно ли примерно за пять секунд, что провенанс зафиксирован, но истинность, доверие и полномочия НЕ предоставлены?");
+        "Проверка человеком: понятно ли примерно за пять секунд, что сведения о происхождении зафиксированы, но истинность, доверие и полномочия НЕ предоставлены?");
 
     private static ProvenanceReviewPresentationV0561 CreateEnglish(ProvenanceAdmissionReceipt receipt) => new(
         "en",
