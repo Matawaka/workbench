@@ -7,18 +7,32 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var reviewOnly = e.Args.Any(arg => string.Equals(
+
+        var provenanceReviewOnly = e.Args.Any(arg => string.Equals(
             arg,
             global::Matawaka.Workbench.App.MainWindow.ProvenanceReviewOnlyArgumentV0561,
             StringComparison.OrdinalIgnoreCase));
+        var capabilityEvidenceReviewOnly = e.Args.Any(arg => string.Equals(
+            arg,
+            global::Matawaka.Workbench.App.MainWindow.CapabilityEvidenceReviewOnlyArgumentV059,
+            StringComparison.OrdinalIgnoreCase));
 
+        if (provenanceReviewOnly && capabilityEvidenceReviewOnly)
+            throw new InvalidOperationException("Choose exactly one Workbench review-only mode.");
+
+        var anyReviewOnly = provenanceReviewOnly || capabilityEvidenceReviewOnly;
         var window = new MainWindow();
-        if (!reviewOnly)
+        if (!anyReviewOnly)
         {
             window.ConfigureV0562Routing();
         }
 
-        window.ConfigureV0561ProvenanceReviewRouting(reviewOnly);
+        if (!capabilityEvidenceReviewOnly)
+        {
+            window.ConfigureV0561ProvenanceReviewRouting(provenanceReviewOnly);
+        }
+
+        window.ConfigureV059CapabilityEvidenceReviewRouting(capabilityEvidenceReviewOnly);
         MainWindow = window;
         window.Show();
     }

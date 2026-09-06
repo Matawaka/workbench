@@ -1,0 +1,177 @@
+name: Workbench v0.59 Authority Evidence Human Review
+
+on:
+  pull_request:
+    paths:
+      - 'src/Matawaka.Workbench.App/App.xaml.cs'
+      - 'src/Matawaka.Workbench.App/CapabilityEvidenceReviewV059.cs'
+      - '.github/qualification/v059-authority-evidence-review/**'
+      - '.github/workflows/workbench-v059-authority-evidence-human-review.yml'
+      - 'AUTHORITY-EVIDENCE-HUMAN-REVIEW.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualify-v059-authority-evidence-human-review:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact post-v0.58 predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '162775614f4404ecf30448359811d4297e464b2f'
+          $tree = '77b013eb105b19bffbfed22cde8bfcc437aacccb'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          git cat-file -e "$expected^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact post-v0.58 predecessor is unavailable.' }
+          $observedTree = (git rev-parse "$expected^{tree}").Trim()
+          if ($observedTree -ne $tree) { throw "Post-v0.58 predecessor tree mismatch: $observedTree" }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact post-v0.58 predecessor is not an ancestor of candidate.' }
+
+      - name: Verify accepted v0.56.2 continuity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'workbench-v0.56.2-accepted'
+          $tagObject = '0728333e33d07a4d9a07376d288fc0cd667254e2'
+          $peeledCommit = '693886052c598e9ed02558ca60a1fd8901090236'
+          $observed = @(git ls-remote https://github.com/Matawaka/workbench.git "refs/tags/$tag" "refs/tags/$tag^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe accepted v0.56.2 tag.' }
+          $raw = ($observed | Where-Object { $_ -match "refs/tags/$tag$" } | Select-Object -First 1)
+          $peeled = ($observed | Where-Object { $_ -match "refs/tags/$([regex]::Escape($tag))\^\{\}$" } | Select-Object -First 1)
+          if (-not $raw -or -not $peeled) { throw 'Accepted v0.56.2 tag readback incomplete.' }
+          if (($raw -split "`t")[0] -ne $tagObject) { throw 'Accepted v0.56.2 tag object drifted.' }
+          if (($peeled -split "`t")[0] -ne $peeledCommit) { throw 'Accepted v0.56.2 peeled commit drifted.' }
+
+      - name: Verify exact v0.58 qualification evidence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api repos/Matawaka/workbench/actions/runs/34024776283 | ConvertFrom-Json
+          if ($run.head_sha -ne 'd48aed6ccfbfe67bf06ac7646a5c22348f6a1e27' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+            throw 'Exact v0.58 qualification run no longer matches evidence.'
+          }
+          $artifact = gh api repos/Matawaka/workbench/actions/artifacts/9986709354 | ConvertFrom-Json
+          if ($artifact.workflow_run.id -ne 34024776283 -or $artifact.workflow_run.head_sha -ne 'd48aed6ccfbfe67bf06ac7646a5c22348f6a1e27' -or $artifact.digest -ne 'sha256:e5f9c6cb46962d18a819c5efe45f472b61945ccacca2ee2ac8db94376a3b27e2') {
+            throw 'Exact v0.58 qualification artifact no longer matches evidence.'
+          }
+
+      - name: Verify authority and v0.58 runtime sources remain exact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = '162775614f4404ecf30448359811d4297e464b2f'
+          $expected = @{
+            'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs' = '852de740c4ff94e0cffe751efb0abcf96e1a1c4c'
+            'src/Matawaka.Workbench.AgentHost/SemanticProvider.cs' = '4e8477216e1222608a7f85ff0f79d4573ca79c67'
+            'src/Matawaka.Workbench.AgentHost/ProvenanceCapabilityEvidenceComposer.cs' = '83286837e903d942eb0cc8b22de0f23f43ce1255'
+            'src/Matawaka.Workbench.Runtime/LiveCapabilityEvidenceAuditV058.cs' = 'e6bc8ffe7295bb56fb3749315c251816aa9633c8'
+            'src/Matawaka.Workbench.Runtime/CommandRouter.cs' = '08df01117ab5b657f493bcafc706fd568370b0a6'
+          }
+          foreach ($path in $expected.Keys) {
+            $baseBlob = (git rev-parse "$base`:$path").Trim()
+            $headBlob = (git rev-parse "HEAD`:$path").Trim()
+            if ($baseBlob -ne $expected[$path]) { throw "Unexpected predecessor blob for ${path}: $baseBlob" }
+            if ($headBlob -ne $baseBlob) { throw "v0.59 modified protected authority/runtime source: ${path}; base=$baseBlob head=$headBlob" }
+          }
+
+      - name: Verify no v0.59 accepted identity exists
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $refs = @(git ls-remote https://github.com/Matawaka/workbench.git 'refs/tags/workbench-v0.59*')
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect v0.59 tag namespace.' }
+          if ($refs.Count -ne 0) { throw "Unexpected v0.59 tag/ref already exists: $($refs -join '; ')" }
+
+      - name: Full Workbench Release build
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build v0.59 qualification probe
+        run: dotnet build .github/qualification/v059-authority-evidence-review/Probe.csproj -c Release
+
+      - name: Qualify authority/evidence presentation semantics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = 'v059-authority-evidence-human-review-qualification.json'
+          dotnet run --project .github/qualification/v059-authority-evidence-review/Probe.csproj -c Release --no-build | Tee-Object -FilePath $out
+          if ($LASTEXITCODE -ne 0) { throw 'v0.59 qualification probe failed.' }
+          $receipt = Get-Content $out -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'AUTHORITY_EVIDENCE_PRESENTATION_QUALIFIED_PENDING_HUMAN_UI_REVIEW') { throw 'Unexpected v0.59 qualification status.' }
+          if (-not $receipt.human_ui_review_required_before_merge) { throw 'Human UI review gate was not preserved.' }
+          if ($receipt.accepted_release_identity_changed) { throw 'Qualification reported accepted release identity change.' }
+
+      - name: Publish isolated human-test build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:RUNNER_TEMP\workbench-v059-human-test"
+          dotnet publish src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -c Release -r win-x64 --self-contained true -o $out
+          @'
+          WORKBENCH v0.59 AUTHORITY / EVIDENCE HUMAN UI REVIEW
+
+          Run only:
+            Matawaka.Workbench.App.exe --capability-evidence-review-only
+
+          Expected startup:
+            - title says authority / evidence review candidate (read-only)
+            - Authority / Evidence tab is selected automatically
+            - Русский is the default language; English is available beside it
+            - yellow banner states that policy allowed only read-only and evidence review added no authority
+            - section 1 shows what POLICY allowed
+            - section 2 shows what EVIDENCE REVIEW observed
+            - section 3 lists authority/effects that were NOT created
+            - section 4 shows exact policy/request/repository/frontier/path/SHA values on one line and copyable
+            - maintenance and installed-app actions are disabled
+            - normal boot/acceptance/publication and agent/provider/SemanticHost routes are not attached
+
+          Human questions:
+            1. Is it immediately clear that policy authority and evidence review are two different things?
+            2. Does the yellow banner look informational rather than like approval/trust/new permission?
+            3. Is “проверка сведений / сведения о происхождении” understandable without the word “провенанс”?
+            4. Is it clear that only read-only was allowed and mutation/network/arbitrary-process authority remain absent?
+            5. Are exact technical values readable on one line and easy to select/copy?
+            6. Is the Russian wording natural and non-misleading? Does English preserve the same meaning?
+
+          Do not use this artifact as an accepted Workbench release. It is a human-test candidate only.
+          '@ | Set-Content -Encoding utf8 "$out\HUMAN-TEST.txt"
+
+      - name: Verify candidate repository remains clean
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $status = git status --porcelain
+          if ($status) {
+            # Qualification output is intentionally untracked and is the only allowed generated file.
+            $unexpected = @($status | Where-Object { $_ -notmatch '^\?\? v059-authority-evidence-human-review-qualification\.json$' })
+            if ($unexpected.Count -ne 0) { throw "Candidate repository became dirty: $($unexpected -join '; ')" }
+          }
+
+      - name: Upload v0.59 qualification and human-test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v059-authority-evidence-human-review
+          path: |
+            v059-authority-evidence-human-review-qualification.json
+            ${{ runner.temp }}/workbench-v059-human-test/**
+          if-no-files-found: error
+          retention-days: 30
