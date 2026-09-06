@@ -27,7 +27,8 @@ public sealed record CommandResult(
     object? Authority = null,
     object? Agent = null,
     object? Semantic = null,
-    object? ProcessBoundary = null);
+    object? ProcessBoundary = null,
+    object? CapabilityEvidence = null);
 
 public interface ICommandRunner
 {
@@ -43,15 +44,18 @@ public sealed class CommandRouter : ICommandRunner
     private readonly IAnalyticFutureAdapter _engine;
     private readonly CatalogService _catalog;
     private readonly DevelopmentAgentHost _agent;
+    private readonly LiveCapabilityEvidenceAuditServiceV058 _capabilityEvidenceAudit;
 
     public CommandRouter(
         IAnalyticFutureAdapter? engine = null,
         CatalogService? catalog = null,
-        DevelopmentAgentHost? agent = null)
+        DevelopmentAgentHost? agent = null,
+        LiveCapabilityEvidenceAuditServiceV058? capabilityEvidenceAudit = null)
     {
         _engine = engine ?? new WeightedAnalyticFutureAdapter();
         _catalog = catalog ?? new CatalogService();
         _agent = agent ?? new DevelopmentAgentHost();
+        _capabilityEvidenceAudit = capabilityEvidenceAudit ?? new LiveCapabilityEvidenceAuditServiceV058();
     }
 
     public async Task<CommandResult> RunAsync(
@@ -103,16 +107,24 @@ public sealed class CommandRouter : ICommandRunner
                     receipt.CapabilityRequest,
                     receipt.CapabilityDecision);
 
+                // v0.58 deliberately observes provenance only after DevelopmentAgentHost has
+                // completed its existing authority/provider path. The supplemental audit cannot
+                // become provider or SemanticHost authority input.
+                var capabilityEvidenceAudit = _capabilityEvidenceAudit.Observe(
+                    receipt.CapabilityRequest,
+                    receipt.CapabilityDecision);
+
                 if (string.Equals(receipt.Status, "denied", StringComparison.OrdinalIgnoreCase))
                 {
                     result = new CommandResult(
                         command.Kind,
                         CommandTerminalState.Denied,
                         $"Agent {receipt.Mode} denied by typed capability policy; mutations=0.",
-                        receipt.CapabilityDecision,
-                        null,
-                        authorityReceipt,
-                        receipt);
+                        Data: receipt.CapabilityDecision,
+                        Evidence: null,
+                        Authority: authorityReceipt,
+                        Agent: receipt,
+                        CapabilityEvidence: capabilityEvidenceAudit);
                 }
                 else
                 {
@@ -138,12 +150,13 @@ public sealed class CommandRouter : ICommandRunner
                         command.Kind,
                         CommandTerminalState.Completed,
                         $"Agent {receipt.Mode} checkpoint completed with {receipt.Evidence.Count} balanced evidence items from {receipt.Coverage.RepositoriesRepresented} repositories and {receipt.Mutations.Count} mutations.",
-                        agentData,
-                        evidenceReceipt,
-                        authorityReceipt,
-                        receipt,
-                        semanticReceipt,
-                        receipt.SemanticProviderBoundary?.ProcessBoundary);
+                        Data: agentData,
+                        Evidence: evidenceReceipt,
+                        Authority: authorityReceipt,
+                        Agent: receipt,
+                        Semantic: semanticReceipt,
+                        ProcessBoundary: receipt.SemanticProviderBoundary?.ProcessBoundary,
+                        CapabilityEvidence: capabilityEvidenceAudit);
                 }
                 break;
 
