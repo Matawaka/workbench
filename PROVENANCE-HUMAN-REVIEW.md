@@ -1,6 +1,6 @@
 # Workbench v0.56.1 — Provenance human review
 
-Status: `TERMINOLOGY_REFINEMENT_QUALIFICATION_PENDING`
+Status: `READY_FOR_FINAL_WORDING_CONFIRMATION`
 
 This candidate adds a read-only human review surface over the already merged Workbench provenance admission primitive.
 
@@ -40,15 +40,15 @@ The revised Windows candidate was reviewed visually again. Human findings:
 5. Evidence identifiers were clear, single-line, and copyable.
 6. Russian localization was understandable overall, but the transliterated technical word `провенанс` was not natural for a general Russian-speaking user.
 
-The only remaining human-facing issue is terminology. The evidence model and authority boundary are unchanged.
+The only remaining human-facing issue was terminology. The evidence model and authority boundary remained unchanged.
 
 ## Terminology refinement
 
-For the Russian presentation only, user-facing `провенанс` wording is replaced with the plainer and semantically narrower phrase:
+For the Russian presentation only, user-facing `провенанс` wording has been replaced with the plainer and semantically narrower phrase:
 
 `сведения о происхождении`
 
-The Russian no-authority headline becomes:
+The Russian no-authority headline is now:
 
 `СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ`
 
@@ -56,51 +56,46 @@ This wording intentionally does **not** use `подлинность`, `дове�
 
 The English technical term `provenance` remains unchanged in the English view and in internal code/schema names.
 
-## Preserved round-2 presentation requirements
+## Preserved presentation requirements
 
-The candidate must preserve the same admitted evidence and authority boundary:
+The exact same admitted evidence and authority boundary remain in force:
 
-- a yellow warning/information banner foregrounds the no-authority headline;
-- one top-level `Provenance` surface contains local read-only language views;
-- `Русский` is the default language view and `English` remains available;
-- both languages are generated from the same admitted receipt;
-- exact evidence SHA-256, pinned repository/frontier, path, and admission decision are single-line read-only selectable values;
-- those values can be copied with normal text selection / `Ctrl+C` without adding a copy button or custom clipboard capability;
-- no Approve, Trust, Grant, Run, Execute, Publish, or equivalent authority-like control is introduced.
+- yellow information/warning banner foregrounds the no-authority headline;
+- `Русский` is the default local read-only view and `English` remains available;
+- both views are generated from the same admitted receipt;
+- exact evidence SHA-256, repository/frontier, path, and admission decision remain single-line read-only selectable values;
+- normal selection / `Ctrl+C` is available without a copy button or custom clipboard capability;
+- no Approve, Trust, Grant, Run, Execute, Publish, or equivalent authority-like control exists.
 
-## Expected meaning
+## Final terminology qualification
 
-The English message remains:
+Exact qualified candidate head:
 
-`PROVENANCE OBSERVED — NO AUTHORITY`
+`185dcd980e4565d9e128291fd0b9f4cf0ed6d3bf`
 
-The Russian message is:
+Windows run / job:
 
-`СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ`
+- run `34015906909`
+- job `101439497330`
+- result `SUCCESS`
 
-Both views must make it easy to distinguish:
+The final semantic qualification additionally proves:
 
-- observed C2PA external-reference binding;
-- exact external evidence byte match;
-- accepted live C2PA validation;
-- observed Workbench release identity;
-- unsigned / unverified Git tag;
-- truth not established;
-- publication authority not established;
-- runtime/model authority not created;
-- response/display authority not created;
-- action/successor permits not created.
-
-The exact evidence SHA-256 and pinned source frontier must remain visible and copyable as text.
+- Russian headline uses `СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ`;
+- Russian headline still foregrounds `ПОЛНОМОЧИЙ НЕТ`;
+- Russian presentation source contains no user-facing Cyrillic `провенанс` jargon;
+- English technical `provenance` wording remains unchanged;
+- exact evidence fixture/admission boundary is unchanged;
+- full Workbench Release build, hostile suite, review-only fencing, self-contained publish, and clean-tree checks remain GREEN.
 
 ## Final human acceptance focus
 
-The prior visual review already passed layout, hierarchy, copyability, unsigned/truth/authority distinction, and absence of action-like controls. After fresh Windows qualification of the terminology-only change, the remaining human check is narrow:
+The prior visual review already passed layout, hierarchy, copyability, unsigned/truth/authority distinction, and absence of action-like controls. The remaining human check is only:
 
-1. Is `СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ` clearer than the transliterated `провенанс` wording?
-2. Does it still avoid implying truth, trust, authenticity, or authority?
+1. Is `СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ ЗАФИКСИРОВАНЫ — ПОЛНОМОЧИЙ НЕТ` clearer than `ПРОВЕНАНС ЗАФИКСИРОВАН — ПОЛНОМОЧИЙ НЕТ`?
+2. Does the new phrase still avoid implying truth, trust, authenticity, or authority?
 
-A green CI result remains insufficient by itself to merge this candidate.
+A human confirmation of these two points is required before this PR may become merge-ready.
 
 ## Non-effects
 
