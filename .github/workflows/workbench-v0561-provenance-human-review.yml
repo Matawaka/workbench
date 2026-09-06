@@ -77,6 +77,10 @@ jobs:
           $receipt = Get-Content "$env:RUNNER_TEMP\v0561-qualification.json" -Raw | ConvertFrom-Json
           if ($receipt.status -ne 'READY_FOR_HUMAN_TEST_AFTER_WINDOWS_BUILD') { throw "Unexpected qualification status: $($receipt.status)" }
           if ($receipt.external_effect -ne $false -or $receipt.automatic_action -ne $false) { throw 'Qualification reported an external effect.' }
+          if ($receipt.presentation.russian_default -ne $true) { throw 'Russian review view is not the default.' }
+          if ($receipt.presentation.english_available -ne $true) { throw 'English review view is missing.' }
+          if ($receipt.presentation.yellow_no_authority_banner -ne $true) { throw 'Yellow no-authority banner is missing.' }
+          if ($receipt.presentation.evidence_values_single_line_copyable -ne $true) { throw 'Evidence copy/readability contract is missing.' }
 
       - name: Publish isolated human-test build
         shell: pwsh
@@ -85,7 +89,7 @@ jobs:
           $out = "$env:RUNNER_TEMP\workbench-v0561-human-test"
           dotnet publish src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -c Release -r win-x64 --self-contained true -o $out
           @'
-          WORKBENCH v0.56.1 PROVENANCE HUMAN TEST
+          WORKBENCH v0.56.1 PROVENANCE HUMAN TEST — ROUND 2
 
           Run only:
             Matawaka.Workbench.App.exe --provenance-review-only
@@ -93,17 +97,21 @@ jobs:
           Expected startup:
             - title says provenance review candidate (read-only)
             - Provenance tab is selected automatically
+            - Русский is the default language view; English is available beside it
+            - the no-authority headline is highlighted with a yellow banner
+            - evidence SHA-256/source/path/decision stay on one line and can be selected/copied with Ctrl+C
             - maintenance and installed-app actions are disabled
             - no acceptance/publication bootstrap is attached
             - closing this review-only window does not persist Workbench settings
 
           Human questions:
-            1. Within about five seconds, is PROVENANCE OBSERVED — NO AUTHORITY unmistakable?
-            2. Is UNSIGNED / NOT VERIFIED visually obvious?
-            3. Is it clear that truth and publication authority are NOT ESTABLISHED?
-            4. Does anything look like permission to run, approve, trust, publish, grant, or execute?
-            5. Are evidence source and SHA-256 readable at normal Windows scaling?
-            6. Is the hierarchy understandable without specialist C2PA knowledge?
+            1. Is the yellow no-authority banner immediately noticeable without looking like approval or trust?
+            2. In Russian, is it clear within about five seconds that provenance was observed but no authority was granted?
+            3. Is НЕ ПОДПИСАН / НЕ ПРОВЕРЕН (UNSIGNED / NOT VERIFIED) visually obvious?
+            4. Is it clear that truth/publication authority are not established and runtime/model/action authority was not created?
+            5. Can SHA-256, source frontier, evidence path, and admission decision each be selected/copied cleanly without wrapping?
+            6. Is the Russian wording natural and understandable without specialist C2PA knowledge?
+            7. Does switching between Русский and English change only presentation, with no operational action surface appearing?
 
           Do not use this artifact as an accepted Workbench release. It is a human-test candidate only.
           '@ | Set-Content -Encoding utf8 "$out\HUMAN-TEST.txt"
