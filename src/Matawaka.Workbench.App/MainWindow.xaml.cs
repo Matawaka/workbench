@@ -333,7 +333,7 @@ public partial class MainWindow : Window
             preview.AppendLine($"Target: {plan.TargetVersion} / {plan.TargetTag}");
             preview.AppendLine($"Payload: {plan.PayloadFileCount} files; {plan.PayloadBytes} bytes");
             preview.AppendLine();
-            preview.AppendLine("Разрешается только запись проверенных payload bytes в Workbench/.workbench/update-materializations и materialization receipt. Source tree, build, git commit/tag, сеть, каталог Matawaka и Agent Execute не разрешаются.");
+            preview.AppendLine("Разрешается только запись проверенных payload bytes в Workbench/.workbench/update-materializations и materialization receipt. Source tree, build, git commit/tag, сеть, каталог Matawaka и Agent Execute не разрешаются этим подтверждением.");
 
             if (MessageBox.Show(this, preview.ToString(), "Материализовать Workbench update", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
@@ -1277,7 +1277,7 @@ public partial class MainWindow : Window
             preview.AppendLine("Контроли: drift после SHA-binding, extra ZIP entry, transport-manifest drift.");
             preview.AppendLine("Ожидается отказ до evidence materialization. Source transport, main source tree, Git HEAD/tag, сеть и Agent Execute не изменяются.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Transport negatives v0.27", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Transport negatives v0.27", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
 
             SaveSettings();
@@ -1737,13 +1737,17 @@ public partial class MainWindow : Window
             AgentTextBox.AppendText(CommandCodec.Serialize(result.Agent));
         }
 
-        OutputTabs.SelectedItem = result.TerminalState switch
+        var liveCapabilityEvidenceRendered = TryShowLiveCapabilityEvidenceV060(result);
+        if (!liveCapabilityEvidenceRendered)
         {
-            CommandTerminalState.Denied when result.Authority is not null => AuthorityTab,
-            CommandTerminalState.Completed when result.Semantic is not null => SemanticTab,
-            CommandTerminalState.Completed when result.Evidence is not null => EvidenceTab,
-            _ => ResultTab
-        };
+            OutputTabs.SelectedItem = result.TerminalState switch
+            {
+                CommandTerminalState.Denied when result.Authority is not null => AuthorityTab,
+                CommandTerminalState.Completed when result.Semantic is not null => SemanticTab,
+                CommandTerminalState.Completed when result.Evidence is not null => EvidenceTab,
+                _ => ResultTab
+            };
+        }
     }
 
     private void ApplyTerminalState(CommandTerminalState state, string summary)
