@@ -67,26 +67,27 @@ The exact same admitted evidence and authority boundary remain in force:
 - normal selection / `Ctrl+C` is available without a copy button or custom clipboard capability;
 - no Approve, Trust, Grant, Run, Execute, Publish, or equivalent authority-like control exists.
 
-## Final terminology qualification
+## Final exact-head qualification
 
-Exact qualified candidate head:
+Exact candidate head:
 
-`185dcd980e4565d9e128291fd0b9f4cf0ed6d3bf`
+`f54cbfb5c613616f66b139fb55a14b8fab73e874`
 
 Windows run / job:
 
-- run `34015906909`
-- job `101439497330`
+- run `34016037030`
+- job `101439846420`
 - result `SUCCESS`
 
-The final semantic qualification additionally proves:
+Artifact:
 
-- Russian headline uses `СВЕДЕНИЯ О ПРОИСХОЖДЕНИИ`;
-- Russian headline still foregrounds `ПОЛНОМОЧИЙ НЕТ`;
-- Russian presentation source contains no user-facing Cyrillic `провенанс` jargon;
-- English technical `provenance` wording remains unchanged;
-- exact evidence fixture/admission boundary is unchanged;
-- full Workbench Release build, hostile suite, review-only fencing, self-contained publish, and clean-tree checks remain GREEN.
+- artifact `9983945849`
+- name `workbench-v0561-provenance-human-test`
+- bytes `66896539`
+- ZIP SHA-256 `002c929760f6a65701ff0398e74c07ace18a5cfcc81065aa99e2aaced4ed39bc`
+- bound exact head `f54cbfb5c613616f66b139fb55a14b8fab73e874`
+
+The final qualification proves full Release build, exact fixture, plain-Russian origin wording, absence of Cyrillic `провенанс` in the Russian presentation source, hostile fail-closed semantics, review-only fencing, self-contained human-test publish, and clean repository boundary.
 
 ## Final human acceptance focus
 
