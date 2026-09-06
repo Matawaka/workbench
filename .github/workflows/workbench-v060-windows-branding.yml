@@ -47,23 +47,28 @@ jobs:
           if (-not [string]::IsNullOrWhiteSpace(($v060 -join "`n"))) { throw 'v0.60 accepted identity already exists unexpectedly' }
           Write-Host "V060_ACCEPTED_IDENTITY_SEPARATION_PASS accepted=$commit v060=absent"
 
-      - name: Guard exact user-derived branding asset identities
+      - name: Guard exact derived branding resource identities
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $expected = @{
-            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico' = '2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1'
-            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg' = '03607f5843fddf0715fee0648053cdfc1b40f7590140e489d0043b9451637077'
-            'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg' = 'c6c79b11173121f0e1a405c8b7d54ec6c6617d8c959d497d4baa335f8f29a6a6'
+            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico' = 'fabca6277cb1c525ca8a5ef7ceae2635d0ded0b89281f4dfda8a83fc31ae4deb'
+            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg' = '3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c'
+            'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg' = '487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7'
           }
           foreach ($path in $expected.Keys) {
             if (-not (Test-Path $path -PathType Leaf)) { throw "branding asset missing: $path" }
             $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($sha -ne $expected[$path]) { throw "branding asset hash mismatch: $path observed=$sha expected=$($expected[$path])" }
           }
+          Add-Type -AssemblyName System.Drawing
+          $icoPath = (Resolve-Path 'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico').Path
+          $ico = [System.Drawing.Icon]::new($icoPath)
+          if ($null -eq $ico -or $ico.Width -lt 16 -or $ico.Height -lt 16) { throw 'product ICO is not a usable Windows icon' }
           $source = Get-Content src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json -Raw | ConvertFrom-Json
           if ($source.AuthorityEffect -ne 'NONE_BY_BRANDING') { throw 'branding provenance metadata authority effect drifted' }
-          Write-Host 'V060_BRANDING_ASSET_IDENTITY_PASS assets=3 provenance=true'
+          if ($source.DerivedProductResources.'MatawakaWorkbench.ico'.Sha256 -ne $expected['src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico']) { throw 'branding metadata/icon identity drifted' }
+          Write-Host "V060_BRANDING_ASSET_IDENTITY_PASS assets=3 icon=$($ico.Width)x$($ico.Height) provenance=true"
 
       - name: Guard protected authority and reviewed presentation source byte identity
         shell: pwsh
@@ -155,9 +160,9 @@ jobs:
             acceptedReleasePredecessor = '693886052c598e9ed02558ca60a1fd8901090236'
             executableSha256 = $exeSha
             brandingReviewArgument = '--branding-review-only'
-            splashSha256 = '03607f5843fddf0715fee0648053cdfc1b40f7590140e489d0043b9451637077'
-            updateArtworkSha256 = 'c6c79b11173121f0e1a405c8b7d54ec6c6617d8c959d497d4baa335f8f29a6a6'
-            iconSha256 = '2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1'
+            splashSha256 = '3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c'
+            updateArtworkSha256 = '487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7'
+            iconSha256 = 'fabca6277cb1c525ca8a5ef7ceae2635d0ded0b89281f4dfda8a83fc31ae4deb'
             acceptedV060IdentityCreated = $false
             authorityCreatedByBranding = $false
           }
@@ -165,7 +170,7 @@ jobs:
           $receipt | ConvertTo-Json -Depth 6 | Set-Content $receiptPath -Encoding utf8NoBOM
           "out=$out" >> $env:GITHUB_OUTPUT
           "exe_sha=$exeSha" >> $env:GITHUB_OUTPUT
-          Write-Host "V060_WINDOWS_BRANDING_PUBLISH_PASS exeSha256=$exeSha"
+          Write-Host "V060_WINDOWS_BRANDING_PUBLISH_PASS exeSha256=$exeSha icon=$($icon.Width)x$($icon.Height)"
 
       - name: Upload isolated Windows branding review artifact
         uses: actions/upload-artifact@v4

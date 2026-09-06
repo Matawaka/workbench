@@ -19,16 +19,28 @@
     }
   },
   "DerivedProductResources": {
+    "MatawakaWorkbench.ico": {
+      "Derivation": "compact multi-size 16/24/32/48 ICO reconstructed from the exact user-supplied icon visual",
+      "Bytes": 9605,
+      "Sha256": "fabca6277cb1c525ca8a5ef7ceae2635d0ded0b89281f4dfda8a83fc31ae4deb",
+      "Status": "DERIVED_PRODUCT_RESOURCE_NOT_ORIGINAL_SOURCE_BYTES"
+    },
     "splash-v060.jpg": {
       "Dimensions": "800x450",
-      "Bytes": 18947,
-      "Sha256": "03607f5843fddf0715fee0648053cdfc1b40f7590140e489d0043b9451637077"
+      "Bytes": 15008,
+      "Sha256": "3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c",
+      "Status": "ROUND_TRIP_OBSERVED_DERIVED_FROM_USER_LOGO_ARTWORK"
     },
     "update-v060.jpg": {
       "Dimensions": "800x450",
-      "Bytes": 27524,
-      "Sha256": "c6c79b11173121f0e1a405c8b7d54ec6c6617d8c959d497d4baa335f8f29a6a6"
+      "Bytes": 10083,
+      "Sha256": "487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7",
+      "Status": "ROUND_TRIP_OBSERVED_DERIVED_FROM_USER_UPDATE_ARTWORK"
     }
+  },
+  "DiscardedInitialTransport": {
+    "Reason": "initial binary GitHub transport did not preserve the intended local derivative identities; expected hashes were not weakened to admit those assumptions",
+    "InvalidRepositoryIconSha256": "4caebdcc095a46ce7aad22f89502dffb6031f22beccf53cea587939a4b73a89f"
   },
   "SourceFrontier": "6541dc32182c970c8e1a6ade426a6cee7086511b",
   "AcceptedReleaseAtCandidateCreation": {
