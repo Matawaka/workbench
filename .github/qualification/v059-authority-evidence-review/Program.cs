@@ -168,7 +168,7 @@ static void VerifyStaticReviewBoundary(string repoRoot)
     Require(review.Contains("Loaded -= Window_LoadedV040", StringComparison.Ordinal), "review-only source does not detach historical loaded route");
     Require(review.Contains("PrimaryMaintenanceSurface.IsEnabled = false", StringComparison.Ordinal), "review-only source does not disable maintenance surface");
     Require(review.Contains("InstalledAppsList.IsEnabled = false", StringComparison.Ordinal), "review-only source does not disable local-app interaction");
-    Require(review.Contains("POLИТИКА РАЗРЕШИЛА ТОЛЬКО ЧТЕНИЕ", StringComparison.Ordinal), "review source lacks required Russian policy headline");
+    Require(review.Contains("ПОЛИТИКА РАЗРЕШИЛА ТОЛЬКО ЧТЕНИЕ", StringComparison.Ordinal), "review source lacks required Russian policy headline");
     Require(!review.Contains("ПРОВЕНАНС", StringComparison.OrdinalIgnoreCase), "review source contains prohibited unexplained Russian provenance jargon");
 
     Require(app.Contains("var anyReviewOnly = provenanceReviewOnly || capabilityEvidenceReviewOnly", StringComparison.Ordinal), "startup does not compute exclusive review-only routing");
