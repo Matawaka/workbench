@@ -110,7 +110,7 @@ jobs:
           $b = $src.IndexOf('public async Task<FixedGitHubPublicationReceiptV0552> PublishAsync')
           if ($a -lt 0 -or $b -le $a) { throw 'publication method boundaries missing' }
           $preview = $src.Substring($a, $b - $a)
-          if ($preview -match 'ls-remote|"push"|"fetch"') { throw 'network Git command surfaced in publication PreviewAsync' }
+          if ($preview.Contains('"ls-remote"') -or $preview.Contains('"push"') -or $preview.Contains('"fetch"')) { throw 'network Git command surfaced in publication PreviewAsync' }
           if ($src.Contains('--force') -or $src.Contains('--force-with-lease')) { throw 'force push surfaced in fixed v0.55.2 publisher' }
           if (-not $src.Contains('https://github.com/Matawaka/workbench.git')) { throw 'fixed remote missing' }
           Write-Host 'V0552_PUBLICATION_AUTHORITY_SHAPE_PASS previewNetwork=false force=false'
