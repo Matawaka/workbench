@@ -333,7 +333,7 @@ public partial class MainWindow : Window
             preview.AppendLine($"Target: {plan.TargetVersion} / {plan.TargetTag}");
             preview.AppendLine($"Payload: {plan.PayloadFileCount} files; {plan.PayloadBytes} bytes");
             preview.AppendLine();
-            preview.AppendLine("Разрешается только запись проверенных payload bytes в Workbench/.workbench/update-materializations и materialization receipt. Source tree, build, git commit/tag, сеть, каталог Matawaka и Agent Execute не разрешаются этим подтверждением.");
+            preview.AppendLine("Разрешается только запись проверенных payload bytes в Workbench/.workbench/update-materializations и materialization receipt. Source tree, build, git commit/tag, сеть, каталог Matawaka и Agent Execute не разрешаются.");
 
             if (MessageBox.Show(this, preview.ToString(), "Материализовать Workbench update", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
@@ -1277,7 +1277,7 @@ public partial class MainWindow : Window
             preview.AppendLine("Контроли: drift после SHA-binding, extra ZIP entry, transport-manifest drift.");
             preview.AppendLine("Ожидается отказ до evidence materialization. Source transport, main source tree, Git HEAD/tag, сеть и Agent Execute не изменяются.");
 
-            if (MessageBox.Show(this, preview.ToString(), "Transport negatives v0.27", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (MessageBox.Show(this, preview.ToString(), "Transport negatives v0.27", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             SaveSettings();
