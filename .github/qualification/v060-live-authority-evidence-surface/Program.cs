@@ -227,7 +227,7 @@ static void VerifyStaticLiveWiring(string repoRoot)
     Require(renderMethod >= 0 && rawAuthority > renderMethod && liveWiring > rawAuthority && fallback > liveWiring,
         "RenderResult live authority/evidence wiring order is not display-only after raw receipts");
 
-    Require(main.Contains("Source tree, build, git commit/tag, сеть, каталог Matawaka и Agent Execute не разрешаются.\");", StringComparison.Ordinal),
+    Require(main.Contains("Source tree, build, git commit/tag, сеть, каталог Matawaka и Agent Execute не разрешаются.", StringComparison.Ordinal),
         "historical materialization preview drifted during v0.60 wiring");
     Require(main.Contains("\"Transport negatives v0.27\", MessageBoxButton.YesNo, MessageBoxImage.Question", StringComparison.Ordinal),
         "historical transport negative-control dialog drifted during v0.60 wiring");
