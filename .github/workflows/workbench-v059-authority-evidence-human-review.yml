@@ -120,6 +120,41 @@ jobs:
           if (-not $receipt.human_ui_review_required_before_merge) { throw 'Human UI review gate was not preserved.' }
           if ($receipt.accepted_release_identity_changed) { throw 'Qualification reported accepted release identity change.' }
 
+      - name: Publish isolated human-test build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:RUNNER_TEMP\workbench-v059-human-test"
+          dotnet publish src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -c Release -r win-x64 --self-contained true -o $out
+          @'
+          WORKBENCH v0.59 AUTHORITY / EVIDENCE HUMAN UI REVIEW
+
+          Run only:
+            Matawaka.Workbench.App.exe --capability-evidence-review-only
+
+          Expected startup:
+            - title says authority / evidence review candidate (read-only)
+            - Authority / Evidence tab is selected automatically
+            - Русский is the default language; English is available beside it
+            - yellow banner states that policy allowed only read-only and evidence review added no authority
+            - section 1 shows what POLICY allowed
+            - section 2 shows what EVIDENCE REVIEW observed
+            - section 3 lists authority/effects that were NOT created
+            - section 4 shows exact policy/request/repository/frontier/path/SHA values on one line and copyable
+            - maintenance and installed-app actions are disabled
+            - normal boot/acceptance/publication and agent/provider/SemanticHost routes are not attached
+
+          Human questions:
+            1. Is it immediately clear that policy authority and evidence review are two different things?
+            2. Does the yellow banner look informational rather than like approval/trust/new permission?
+            3. Is “проверка сведений / сведения о происхождении” understandable without the word “провенанс”?
+            4. Is it clear that only read-only was allowed and mutation/network/arbitrary-process authority remain absent?
+            5. Are exact technical values readable on one line and easy to select/copy?
+            6. Is the Russian wording natural and non-misleading? Does English preserve the same meaning?
+
+          Do not use this artifact as an accepted Workbench release. It is a human-test candidate only.
+          '@ | Set-Content -Encoding utf8 "$out\HUMAN-TEST.txt"
+
       - name: Verify candidate repository remains clean
         shell: pwsh
         run: |
@@ -131,9 +166,12 @@ jobs:
             if ($unexpected.Count -ne 0) { throw "Candidate repository became dirty: $($unexpected -join '; ')" }
           }
 
-      - name: Upload v0.59 qualification evidence
+      - name: Upload v0.59 qualification and human-test build
         uses: actions/upload-artifact@v4
         with:
           name: workbench-v059-authority-evidence-human-review
-          path: v059-authority-evidence-human-review-qualification.json
+          path: |
+            v059-authority-evidence-human-review-qualification.json
+            ${{ runner.temp }}/workbench-v059-human-test/**
           if-no-files-found: error
+          retention-days: 30
