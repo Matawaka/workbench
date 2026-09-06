@@ -23,6 +23,9 @@ permissions:
 
 jobs:
   qualify-v0562-acceptance:
+    # Historical PR qualification is applicable only to the exact v0.56.1 predecessor.
+    # Manual dispatch semantics remain unchanged; successor PRs are skipped, not reinterpreted.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.sha == '991fc9c08431141a63a8b53c2f0f138a4f58dc28' }}
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
