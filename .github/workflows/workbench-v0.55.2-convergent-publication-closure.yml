@@ -1,0 +1,238 @@
+name: Workbench v0.55.2 convergent publication closure
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.55.2-convergent-publication-closure
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Release build
+        shell: pwsh
+        run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+
+      - name: v0.55.2 offline contract qualification
+        shell: pwsh
+        run: dotnet run --project .\.github\qualification\v0552\Probe.csproj -c Release
+
+      - name: Guard exact public #82 delta
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $public = '6111fdf82a9e8947a7722e9b603c1e9268a19105'
+          $paths = @(
+            '.github/qualification/v055/Probe.csproj',
+            '.github/qualification/v055/Program.cs',
+            'KONTUR_INTEGRATION_BACKLOG.md',
+            'PATCH-v0.55.md',
+            'integrations/kontur/FUTURE_WORK_START_HERE.md',
+            'integrations/kontur/README.md',
+            'integrations/runtime-execution/README.md',
+            'integrations/runtime-execution/runtime-execution-source-binding.v055.schema.json',
+            'src/Matawaka.Workbench.App/ProvenanceBoundRuntimeExecutionV055Service.cs'
+          )
+          foreach ($path in $paths) {
+            $expected = (git rev-parse "$public`:$path").Trim()
+            $observed = (git hash-object $path).Trim()
+            if ($expected -ne $observed) { throw "public #82 byte drift: $path expected=$expected observed=$observed" }
+          }
+          Write-Host "PUBLIC82_EXACT_DELTA_PASS paths=$($paths.Count)"
+
+      - name: Guard accepted local v0.55 semantic source preservation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = '48ee50f35e821fdb850f8265f9c07855b79c8ec9'
+          $paths = @(
+            'src/Matawaka.Workbench.App/BoundedLocalModelInvocationV055Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV055Service.cs',
+            'src/Matawaka.Workbench.App/LocalModelInvocationRequestV055Parser.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV055AcceptanceHarness.cs',
+            'tooling/remote-smoke-identity/README.md',
+            'tooling/remote-smoke-identity/derive_remote_smoke_identity.py'
+          )
+          foreach ($path in $paths) {
+            $expected = (git rev-parse "$source`:$path").Trim()
+            $observed = (git hash-object $path).Trim()
+            if ($expected -ne $observed) { throw "accepted v0.55 semantic source drift: $path" }
+          }
+          $expectedPatch = (git rev-parse "$source`:PATCH-v0.55.md").Trim()
+          $observedPatch = (git hash-object PATCH-v0.55.LOCAL_ACCEPTED_MODEL_INVOCATION.md).Trim()
+          if ($expectedPatch -ne $observedPatch) { throw 'historical local accepted v0.55 patch narrative was not preserved exactly' }
+          Write-Host "LOCAL_V055_SEMANTIC_PRESERVATION_PASS paths=$($paths.Count) patch=true"
+
+      - name: Guard exact real-host admission verifier reuse
+        shell: pwsh
+        run: |
+          $expected = (git rev-parse '79a67afea8c5766133225b0e8d1d84b452b2c7f0:src/Matawaka.Workbench.App/RealHostModelInvocationAdmissionV0551.cs').Trim()
+          $observed = (git hash-object src/Matawaka.Workbench.App/RealHostModelInvocationAdmissionV0551.cs).Trim()
+          if ($expected -ne $observed) { throw "real-host admission verifier drift expected=$expected observed=$observed" }
+          Write-Host 'REALHOST_V055_ADMISSION_VERIFIER_EXACT_PASS'
+
+      - name: Guard successor title isolation and two-parent checkpoint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $h = Get-Content .\src\Matawaka.Workbench.App\WorkbenchV0552AcceptanceHarness.cs -Raw
+          if (-not $h.Contains('new WorkbenchV0542AcceptanceHarness')) { throw 'v0.55.2 does not reuse v0.54.2 predecessor harness' }
+          if ($h.Contains('new WorkbenchV055AcceptanceHarness')) { throw 'historical v0.55 exact-title harness is still executed by successor' }
+          $routing = Get-Content .\src\Matawaka.Workbench.App\MainWindow.V0552.cs -Raw
+          if (-not $routing.Contains('Matawaka Workbench v0.55.2')) { throw 'successor title missing' }
+          $checkpoint = Get-Content .\src\Matawaka.Workbench.App\LocalCheckpointV0552Service.cs -Raw
+          foreach ($v in @('commit-tree','02d81b8559bc7c9676949be0557d20ecb50a9890','6111fdf82a9e8947a7722e9b603c1e9268a19105','update-ref','workbench-v0.55.2-accepted')) {
+            if (-not $checkpoint.Contains($v)) { throw "missing fixed two-parent checkpoint value: $v" }
+          }
+          Write-Host 'V0552_TITLE_AND_TWO_PARENT_CHECKPOINT_PASS'
+
+      - name: Guard publication preview has no network and publication has no force
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content .\src\Matawaka.Workbench.App\FixedGitHubPublicationV0552Service.cs -Raw
+          $a = $src.IndexOf('public async Task<FixedGitHubPublicationCandidateV0552> PreviewAsync')
+          $b = $src.IndexOf('public async Task<FixedGitHubPublicationReceiptV0552> PublishAsync')
+          if ($a -lt 0 -or $b -le $a) { throw 'publication method boundaries missing' }
+          $preview = $src.Substring($a, $b - $a)
+          if ($preview -match 'ls-remote|"push"|"fetch"') { throw 'network Git command surfaced in publication PreviewAsync' }
+          if ($src.Contains('--force') -or $src.Contains('--force-with-lease')) { throw 'force push surfaced in fixed v0.55.2 publisher' }
+          if (-not $src.Contains('https://github.com/Matawaka/workbench.git')) { throw 'fixed remote missing' }
+          Write-Host 'V0552_PUBLICATION_AUTHORITY_SHAPE_PASS previewNetwork=false force=false'
+
+      - name: Guard canonical evidence bindings
+        shell: pwsh
+        run: |
+          $src = Get-Content .\src\Matawaka.Workbench.App\WorkbenchConvergenceEvidenceV0552.cs -Raw
+          foreach ($v in @(
+            'eb292179147a469d8ad9a7ea83d844e8115f394f773e94a91ca360430e784d58',
+            '429d769a9caca8537fccb6778249e67969729de94cda4e7616d47598210a38a5',
+            '02d81b8559bc7c9676949be0557d20ecb50a9890',
+            '6111fdf82a9e8947a7722e9b603c1e9268a19105',
+            '65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          )) { if (-not $src.Contains($v)) { throw "missing canonical convergence binding: $v" } }
+          Write-Host 'V0552_CANONICAL_EVIDENCE_BINDINGS_PASS'
+
+      - name: Public frontier guard
+        shell: pwsh
+        run: |
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
+          if ($main -ne '6111fdf82a9e8947a7722e9b603c1e9268a19105') { throw "public main drifted: $main" }
+          foreach ($tag in @('workbench-v0.55-accepted','workbench-v0.55.1-accepted','workbench-v0.55.2-accepted')) {
+            $found = git ls-remote $remote "refs/tags/$tag" "refs/tags/$tag^{}"
+            if (-not [string]::IsNullOrWhiteSpace(($found -join "`n"))) { throw "unexpected public accepted tag: $tag" }
+          }
+          Write-Host "V0552_PUBLIC_FRONTIER_GUARD_PASS main=$main"
+
+      - name: Prepare exact local v0.55.2 update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            '.github/qualification/v055/Probe.csproj',
+            '.github/qualification/v055/Program.cs',
+            'KONTUR_INTEGRATION_BACKLOG.md',
+            'PATCH-v0.55.md',
+            'PATCH-v0.55.LOCAL_ACCEPTED_MODEL_INVOCATION.md',
+            'PATCH-v0.55.2.md',
+            'integrations/kontur/FUTURE_WORK_START_HERE.md',
+            'integrations/kontur/README.md',
+            'integrations/runtime-execution/README.md',
+            'integrations/runtime-execution/runtime-execution-source-binding.v055.schema.json',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/ProvenanceBoundRuntimeExecutionV055Service.cs',
+            'src/Matawaka.Workbench.App/RealHostModelInvocationAdmissionV0551.cs',
+            'src/Matawaka.Workbench.App/WorkbenchConvergenceEvidenceV0552.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0552Service.cs',
+            'src/Matawaka.Workbench.App/FixedGitHubPublicationV0552Service.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0552.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0552.Acceptance.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0552AcceptanceHarness.cs'
+          )
+          foreach ($path in $files) { if (-not (Test-Path $path -PathType Leaf)) { throw "package source missing: $path" } }
+          $stage = Join-Path $env:RUNNER_TEMP 'workbench-v0552-update-stage'
+          $payload = Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $manifestFiles = @()
+          foreach ($path in $files) {
+            $dst = Join-Path $payload ($path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path (Split-Path $dst -Parent) -Force | Out-Null
+            Copy-Item $path $dst
+            $manifestFiles += [ordered]@{ Path = $path; Sha256 = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.55.2'
+            PredecessorTag = 'workbench-v0.55-accepted'
+            PredecessorCommit = '02d81b8559bc7c9676949be0557d20ecb50a9890'
+            TargetTag = 'workbench-v0.55.2-accepted'
+            PayloadRoot = 'payload/'
+            Files = $manifestFiles
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'package intake is local and no-network',
+              'public #82 source is an additive distinct runtime-execution authority class',
+              'historical local v0.55 model-invocation patch is preserved separately',
+              'failed v0.55.1 identity is not reused',
+              'source apply/build/launch/checkpoint remain separately authorized by existing Workbench gates',
+              'publication remains separate after local v0.55.2 acceptance'
+            )
+          }
+          $manifestPath = Join-Path $stage 'workbench-update-manifest.json'
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content -Path $manifestPath -Encoding utf8NoBOM
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.55.2-convergent-publication-update.zip'
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $zipSha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "zip_sha=$zipSha" >> $env:GITHUB_OUTPUT
+          "file_count=$($files.Count)" >> $env:GITHUB_OUTPUT
+          Write-Host "V0552_EXACT_LOCAL_UPDATE_PASS files=$($files.Count) zipSha256=$zipSha"
+
+      - name: Audit exact local update ZIP
+        shell: pwsh
+        run: |
+          $zip = '${{ steps.package.outputs.zip }}'
+          $temp = Join-Path $env:RUNNER_TEMP 'audit-v0552-package'
+          Expand-Archive $zip $temp
+          $manifest = Get-Content (Join-Path $temp 'workbench-update-manifest.json') -Raw | ConvertFrom-Json
+          if ($manifest.TargetVersion -ne '0.55.2' -or $manifest.PredecessorCommit -ne '02d81b8559bc7c9676949be0557d20ecb50a9890' -or $manifest.TargetTag -ne 'workbench-v0.55.2-accepted') { throw 'package identity drift' }
+          if ($manifest.Files.Count -ne 19) { throw "unexpected package file count: $($manifest.Files.Count)" }
+          if ($manifest.NetworkAccessRequested -or $manifest.CatalogMutationRequested -or $manifest.AgentExecuteRequested -or $manifest.ArbitraryProcessExecutionRequested -or $manifest.InstallerScriptExecutionRequested) { throw 'package requested forbidden effect' }
+          $actual = @(Get-ChildItem (Join-Path $temp 'payload') -File -Recurse)
+          if ($actual.Count -ne 19) { throw "payload file count mismatch: $($actual.Count)" }
+          foreach ($item in $manifest.Files) {
+            $path = Join-Path (Join-Path $temp 'payload') ($item.Path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path $path -PathType Leaf)) { throw "missing payload file: $($item.Path)" }
+            $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sha -ne $item.Sha256) { throw "payload hash mismatch: $($item.Path)" }
+          }
+          Write-Host 'V0552_LOCAL_UPDATE_AUDIT_PASS files=19 forbiddenEffects=false'
+
+      - name: Upload exact v0.55.2 local update
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.55.2-convergent-publication-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
