@@ -1,0 +1,134 @@
+name: Workbench v0.57 Provenance Capability Evidence
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/workbench-v057-provenance-capability-evidence.yml'
+      - '.github/qualification/v057-provenance-capability-evidence/**'
+      - '.github/qualification/v056-provenance-admission/fixtures/uu-aap-955-qualification.json'
+      - 'src/Matawaka.Workbench.Protocol/CapabilityEvidence.cs'
+      - 'src/Matawaka.Workbench.Protocol/ProvenanceAdmission.cs'
+      - 'src/Matawaka.Workbench.AgentHost/ProvenanceCapabilityEvidenceComposer.cs'
+      - 'src/Matawaka.Workbench.AgentHost/C2paProvenanceAdmissionService.cs'
+      - 'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs'
+      - 'CAPABILITY-EVIDENCE-COMPOSITION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualify-v057-provenance-capability-evidence:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact accepted v0.56.2 predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '693886052c598e9ed02558ca60a1fd8901090236'
+          $tree = 'd461ca9ec706a7154b660f19572362107b34e9c4'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          git cat-file -e "$expected^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw 'Accepted v0.56.2 predecessor is unavailable.' }
+          $observedTree = (git rev-parse "$expected^{tree}").Trim()
+          if ($observedTree -ne $tree) { throw "Accepted predecessor tree mismatch: $observedTree" }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Accepted v0.56.2 predecessor is not an ancestor of candidate.' }
+
+      - name: Verify exact accepted v0.56.2 tag continuity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $tag = 'workbench-v0.56.2-accepted'
+          $tagObject = '0728333e33d07a4d9a07376d288fc0cd667254e2'
+          $peeledCommit = '693886052c598e9ed02558ca60a1fd8901090236'
+          $lines = @(git ls-remote $remote "refs/tags/$tag" "refs/tags/$tag^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe accepted v0.56.2 tag.' }
+          $raw = ($lines | Where-Object { $_ -match "refs/tags/$tag$" } | Select-Object -First 1)
+          $peeled = ($lines | Where-Object { $_ -match "refs/tags/$([regex]::Escape($tag))\^\{\}$" } | Select-Object -First 1)
+          if (-not $raw -or -not $peeled) { throw 'Accepted v0.56.2 annotated tag readback is incomplete.' }
+          if (($raw -split "`t")[0] -ne $tagObject) { throw 'Accepted v0.56.2 tag object drifted.' }
+          if (($peeled -split "`t")[0] -ne $peeledCommit) { throw 'Accepted v0.56.2 peeled commit drifted.' }
+
+      - name: Verify exact accepted publication evidence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api repos/Matawaka/workbench/actions/runs/34022945579 | ConvertFrom-Json
+          if ($run.event -ne 'workflow_dispatch' -or $run.head_branch -ne 'main' -or $run.head_sha -ne '693886052c598e9ed02558ca60a1fd8901090236' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+            throw 'Exact accepted v0.56.2 publication run no longer matches evidence.'
+          }
+          $artifact = gh api repos/Matawaka/workbench/actions/artifacts/9986123154 | ConvertFrom-Json
+          if ($artifact.workflow_run.id -ne 34022945579 -or $artifact.workflow_run.head_sha -ne '693886052c598e9ed02558ca60a1fd8901090236' -or $artifact.digest -ne 'sha256:ae59303d6e01fc61170d78090e6657a8a6849f9cff470f7cf80d02d7d2e32a00') {
+            throw 'Exact accepted v0.56.2 publication artifact no longer matches evidence.'
+          }
+
+      - name: Verify exact admitted provenance fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = '.github/qualification/v056-provenance-admission/fixtures/uu-aap-955-qualification.json'
+          $item = Get-Item $path
+          if ($item.Length -ne 2415) { throw "Fixture bytes mismatch: $($item.Length)" }
+          $sha = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+          if ($sha -ne 'ba2284c66ae4a48583a0918a1c7d4d6a96cf83e66c632b7d55a4aa0ec4d0b9c5') { throw "Fixture SHA-256 mismatch: $sha" }
+          $blob = (git hash-object $path).Trim()
+          if ($blob -ne '4ae93b36d5c8a6c2f00cbc53840221834e09ee26') { throw "Fixture Git blob mismatch: $blob" }
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build v0.57 qualification probe
+        shell: pwsh
+        run: dotnet build .github/qualification/v057-provenance-capability-evidence/Probe.csproj -c Release
+
+      - name: Qualify provenance capability monotonicity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project .github/qualification/v057-provenance-capability-evidence/Probe.csproj -c Release --no-build | Out-File -Encoding utf8 "$env:RUNNER_TEMP\v057-qualification.json"
+          $receipt = Get-Content "$env:RUNNER_TEMP\v057-qualification.json" -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'PROVENANCE_CONTEXT_COMPOSED_NO_AUTHORITY_PROMOTION') { throw "Unexpected qualification status: $($receipt.status)" }
+          if ($receipt.hostile_rejections -ne 20) { throw "Unexpected hostile rejection count: $($receipt.hostile_rejections)" }
+          if (-not $receipt.deny_preserved -or -not $receipt.execute_deny_preserved) { throw 'Deny monotonicity was not preserved.' }
+          if ($receipt.authority_increased -or $receipt.mutation_budget_increased -or $receipt.network_grant_increased -or $receipt.arbitrary_process_grant_increased) {
+            throw 'Capability evidence composition widened a base grant.'
+          }
+          if ($receipt.model_authority_created -or $receipt.runtime_authority_created -or $receipt.response_authority_created -or $receipt.display_permit_created -or $receipt.action_permit_created -or $receipt.successor_permit_created) {
+            throw 'Capability evidence composition created a stronger authority class.'
+          }
+          if ($receipt.external_effect -or $receipt.automatic_action) { throw 'Qualification reported an external/automatic effect.' }
+
+      - name: Verify candidate repository remains clean
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Qualification changed repository working tree:`n$dirty" }
+
+      - name: Upload v0.57 qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v057-provenance-capability-evidence
+          path: ${{ runner.temp }}/v057-qualification.json
+          if-no-files-found: error
+          retention-days: 30
