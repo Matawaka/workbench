@@ -1,6 +1,6 @@
 # Workbench v0.56.1 — Provenance human review
 
-Status: `HUMAN_REVIEW_TERMINOLOGY_REFINEMENT`
+Status: `TERMINOLOGY_REFINEMENT_QUALIFICATION_PENDING`
 
 This candidate adds a read-only human review surface over the already merged Workbench provenance admission primitive.
 
