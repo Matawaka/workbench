@@ -68,7 +68,7 @@ public sealed class LiveCapabilityEvidenceAuditServiceV058
             var composition = ProvenanceCapabilityEvidenceComposer.Compose(request, baseDecision, provenance);
 
             RequireSameDecisionGrants(baseDecision, composition.BaseDecision, "composition base decision");
-            RequireNoIncrease(baseDecision, composition.ComposedDecision);
+            RequireNoIncrease(baseDecision, composition.EffectiveDecision);
 
             return new LiveCapabilityEvidenceAuditReceiptV058(
                 ReceiptSchema,
