@@ -3,7 +3,7 @@ name: Workbench v0.60 Windows Branding
 on:
   push:
     branches:
-      - feat/workbench-v0.60-windows-branding
+      - feat/workbench-v0.60-windows-branding-v2
   workflow_dispatch:
 
 permissions:
