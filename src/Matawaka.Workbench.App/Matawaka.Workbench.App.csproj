@@ -10,5 +10,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Matawaka.Workbench.Protocol\Matawaka.Workbench.Protocol.csproj" />
     <ProjectReference Include="..\Matawaka.Workbench.Runtime\Matawaka.Workbench.Runtime.csproj" />
+    <ProjectReference Include="..\Matawaka.Workbench.AgentHost\Matawaka.Workbench.AgentHost.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\.github\qualification\v056-provenance-admission\fixtures\uu-aap-955-qualification.json"
+                      LogicalName="Matawaka.Workbench.App.ProvenanceReviewV0561.Qualification" />
   </ItemGroup>
 </Project>
