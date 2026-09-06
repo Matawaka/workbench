@@ -1,29 +1,52 @@
-# Workbench v0.55 — bounded one-shot local-model invocation lease
+# Workbench v0.55 — provenance-bound runtime execution lease
 
-Exact accepted/public predecessor:
-- `workbench-v0.54.2-accepted`
+Observed predecessor:
+
 - `65b0b49a513a6b782760a7626d6b768bf7bb7f91`
+- Workbench v0.54.2 real-host materialization admission and publication closure
 
-Purpose:
-- add a separate provider-neutral model-request authority above exact v0.52 model-artifact evidence and exact v0.54/v0.53 runtime-tree evidence;
-- preserve `Process Execution Authority != Model Request Authority`;
-- first admitted profile is deterministic `FIXTURE_STDIO_V1` for offline/real-host boundary qualification, not a real LM1/llama.cpp policy adapter.
+## Why this is additive
 
-Core corridor:
+The observed `main` already contains the provider-neutral v0.53 one-shot runtime
+execution lease. Reimplementing that primitive would duplicate authority. The
+remaining integration gap is provenance: the v0.53 request/receipt binds the exact
+runtime tree and executable but does not bind the calling source artifact and current
+request-envelope digest.
 
-`exact verified model + MATERIALIZED_VERIFIED runtime -> Preview -> explicit confirmation -> one-shot Model Invocation Lease -> authority consumed -> exact model/runtime rehash -> one direct subprocess request -> bounded stdout/stderr -> UNTRUSTED_LOCAL_MODEL_OUTPUT -> STOP`
+v0.55 adds an outer provenance lease. It reuses the unchanged v0.53 primitive and
+binds:
 
-Key boundaries:
-- caller supplies no arbitrary process argument vector;
-- request text is byte-bounded; canonical lease state retains digest + size, not raw text;
-- stdout/stderr are independently bounded;
-- timeout/overrun stops only the owned process tree;
-- no automatic retry/resume/replay;
-- output remains untrusted and creates no response/display/game/action/successor authority;
-- `No Workbench Network Transport != OS-Level Process Network Isolation`;
-- v0.52 acquisition, v0.53 execution and v0.54 materialization primitives remain unchanged;
-- real Qwen/llama/CUDA acquisition, benchmark and KONTUR inference are not authorized by v0.55.
+```text
+source repository + source frontier + source artifact SHA-256
+        + request-envelope SHA-256
+        + exact v0.53 request digest
+        -> one explicitly confirmed outer lease
+        -> hidden process-local v0.53 grant
+```
 
-Also includes the reusable #73 smoke-identity helper: admitted test-artifact size/hash are derived only from bytes re-fetched from an immutable raw GitHub commit URL.
+## Fail-closed properties
 
-Publication remains deferred after local v0.55 acceptance until a tiny real-host v0.55 fixture admission is separately observed.
+- source evidence must say `NONE_BY_SOURCE_RECORD`;
+- process ceiling is exactly `EXACT_RUNTIME_ONLY`;
+- TTL must exactly equal the inner v0.53 request TTL;
+- both authority layers have one call;
+- grant re-runs Preview and rejects digest drift;
+- the outer lease is persisted as consumed before inner execution;
+- the inner bearer is neither returned nor persisted by v0.55;
+- loss/restart of the creating service cannot resume the hidden inner grant;
+- bearer, state, source, request or receipt substitution fails closed;
+- failure after consumption creates no retry or resume authority.
+
+## Non-effects
+
+This frontier does not start a process during qualification and does not authorize or
+perform a model request, network access, game access, display, KONTUR policy change,
+Agent Execute, ActionPermit, Stable Core change or external publication.
+
+`External Intent != Execution Authority`.
+
+`Source Receipt != Capability Lease`.
+
+`Capability Lease != Model Request Authority`.
+
+`Restart != Resume Authority`.
