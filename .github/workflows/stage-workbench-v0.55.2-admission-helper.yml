@@ -1,0 +1,35 @@
+name: Stage Workbench v0.55.2 admission helper
+
+on:
+  push:
+    branches:
+      - staging/workbench-v0.55.2-copy-admission
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  copy:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = 'feat/workbench-v0.55.2-convergent-publication-closure'
+          $expectedTarget = 'c705fb35ed4fcd55f87479af2bf2b4e089872a8e'
+          $source = '79a67afea8c5766133225b0e8d1d84b452b2c7f0'
+          $observed = (git ls-remote --heads origin "refs/heads/$target").Split("`t")[0]
+          if ($observed -ne $expectedTarget) { throw "target branch drifted: $observed" }
+          git config user.name 'Matawaka'
+          git config user.email '319695216+Matawaka@users.noreply.github.com'
+          git checkout -B $target $expectedTarget
+          git checkout $source -- src/Matawaka.Workbench.App/RealHostModelInvocationAdmissionV0551.cs
+          git add -- src/Matawaka.Workbench.App/RealHostModelInvocationAdmissionV0551.cs
+          git commit -m 'Reuse exact v0.55 real-host admission verifier in successor'
+          git push origin "HEAD:refs/heads/$target"
+          if ($LASTEXITCODE -ne 0) { throw 'non-force target update failed' }
+          Write-Host "V0552_ADMISSION_HELPER_STAGED head=$((git rev-parse HEAD).Trim())"
