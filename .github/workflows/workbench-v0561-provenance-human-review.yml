@@ -1,0 +1,125 @@
+name: Workbench v0.56.1 Provenance Human Review
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/workbench-v0561-provenance-human-review.yml'
+      - '.github/qualification/v0561-provenance-review/**'
+      - '.github/qualification/v056-provenance-admission/fixtures/uu-aap-955-qualification.json'
+      - 'src/Matawaka.Workbench.App/App.xaml.cs'
+      - 'src/Matawaka.Workbench.App/MainWindow.V0561.cs'
+      - 'src/Matawaka.Workbench.App/ProvenanceReviewV0561.cs'
+      - 'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj'
+      - 'src/Matawaka.Workbench.AgentHost/C2paProvenanceAdmissionService.cs'
+      - 'src/Matawaka.Workbench.Protocol/ProvenanceAdmission.cs'
+      - 'PROVENANCE-HUMAN-REVIEW.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-provenance-human-review:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact post-85 predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '4d954bf5dd77ec732efc7c6d8e05b7c2ab7d161a'
+          $tree = '7c72e5d2ce3792be6c623056c09337f444cc5d41'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          $observedTree = (git rev-parse "$expected`^{tree}").Trim()
+          if ($observedTree -ne $tree) { throw "Predecessor tree mismatch: $observedTree" }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact predecessor is not an ancestor of candidate.' }
+
+      - name: Verify exact embedded provenance fixture source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = '.github/qualification/v056-provenance-admission/fixtures/uu-aap-955-qualification.json'
+          $item = Get-Item $path
+          if ($item.Length -ne 2415) { throw "Fixture bytes mismatch: $($item.Length)" }
+          $sha = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+          if ($sha -ne 'ba2284c66ae4a48583a0918a1c7d4d6a96cf83e66c632b7d55a4aa0ec4d0b9c5') { throw "Fixture SHA-256 mismatch: $sha" }
+          $blob = (git hash-object $path).Trim()
+          if ($blob -ne '4ae93b36d5c8a6c2f00cbc53840221834e09ee26') { throw "Fixture Git blob mismatch: $blob" }
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build v0.56.1 review qualification probe
+        shell: pwsh
+        run: dotnet build .github/qualification/v0561-provenance-review/Probe.csproj -c Release
+
+      - name: Qualify semantic presentation and review-only boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project .github/qualification/v0561-provenance-review/Probe.csproj -c Release --no-build | Out-File -Encoding utf8 "$env:RUNNER_TEMP\v0561-qualification.json"
+          $receipt = Get-Content "$env:RUNNER_TEMP\v0561-qualification.json" -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'READY_FOR_HUMAN_TEST_AFTER_WINDOWS_BUILD') { throw "Unexpected qualification status: $($receipt.status)" }
+          if ($receipt.external_effect -ne $false -or $receipt.automatic_action -ne $false) { throw 'Qualification reported an external effect.' }
+
+      - name: Publish isolated human-test build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:RUNNER_TEMP\workbench-v0561-human-test"
+          dotnet publish src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -c Release -r win-x64 --self-contained true -o $out
+          @'
+          WORKBENCH v0.56.1 PROVENANCE HUMAN TEST
+
+          Run only:
+            Matawaka.Workbench.App.exe --provenance-review-only
+
+          Expected startup:
+            - title says provenance review candidate (read-only)
+            - Provenance tab is selected automatically
+            - maintenance and installed-app actions are disabled
+            - no acceptance/publication bootstrap is attached
+            - closing this review-only window does not persist Workbench settings
+
+          Human questions:
+            1. Within about five seconds, is PROVENANCE OBSERVED — NO AUTHORITY unmistakable?
+            2. Is UNSIGNED / NOT VERIFIED visually obvious?
+            3. Is it clear that truth and publication authority are NOT ESTABLISHED?
+            4. Does anything look like permission to run, approve, trust, publish, grant, or execute?
+            5. Are evidence source and SHA-256 readable at normal Windows scaling?
+            6. Is the hierarchy understandable without specialist C2PA knowledge?
+
+          Do not use this artifact as an accepted Workbench release. It is a human-test candidate only.
+          '@ | Set-Content -Encoding utf8 "$out\HUMAN-TEST.txt"
+
+      - name: Verify candidate repository remains clean
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Qualification changed repository working tree:`n$dirty" }
+
+      - name: Upload human-test and qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0561-provenance-human-test
+          path: |
+            ${{ runner.temp }}/v0561-qualification.json
+            ${{ runner.temp }}/workbench-v0561-human-test/**
+          if-no-files-found: error
+          retention-days: 30
