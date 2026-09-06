@@ -15,8 +15,7 @@ public partial class App : Application
         var window = new MainWindow();
         if (!reviewOnly)
         {
-            window.ConfigureV0552Routing();
-            window.ConfigureV0552AcceptanceRouting();
+            window.ConfigureV0562Routing();
         }
 
         window.ConfigureV0561ProvenanceReviewRouting(reviewOnly);
