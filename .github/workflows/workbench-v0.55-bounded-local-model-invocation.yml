@@ -1,0 +1,153 @@
+name: Workbench v0.55 bounded local-model invocation
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.55-bounded-local-model-invocation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Release build
+        shell: pwsh
+        run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+      - name: Qualify closed exact request parser
+        shell: pwsh
+        run: dotnet run --project .\tests\V055ParserQualification\V055ParserQualification.csproj -c Release
+      - name: Build deterministic native model fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw 'vswhere.exe is unavailable on windows-2025 runner' }
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if ([string]::IsNullOrWhiteSpace($vs)) { throw 'MSVC x64 toolchain installation was not found' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat missing: $vcvars" }
+          $out = Join-Path $PWD 'tests\V055ModelFixture\bin\Release\net10.0-windows'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $src = Join-Path $PWD 'tests\V055ModelFixture\fixture-native.c'
+          $exe = Join-Path $out 'Matawaka.Workbench.V055.ModelFixture.exe'
+          $compile = "call `"$vcvars`" >nul && cl.exe /nologo /O2 /MT /W4 /WX /DUNICODE /D_UNICODE /Fe:`"$exe`" `"$src`""
+          & cmd.exe /d /s /c $compile
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe -PathType Leaf)) { throw 'native fixture compile failed' }
+          Write-Host "V055_NATIVE_FIXTURE_PASS exe=$exe bytes=$((Get-Item $exe).Length)"
+      - name: Run v0.55 hostile qualification
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $PWD 'tests\V055ModelFixture\bin\Release\net10.0-windows'
+          dotnet run --project .\tests\V055Qualification\V055Qualification.csproj -c Release -- $fixture
+      - name: Qualify immutable served-byte smoke identity helper
+        shell: pwsh
+        run: python .\tooling\remote-smoke-identity\test_derive_remote_smoke_identity.py
+      - name: Guard predecessor primitives
+        shell: pwsh
+        run: |
+          $base = '65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          $paths = @(
+            'src/Matawaka.Workbench.App/BoundedArtifactAcquisitionV052Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeExecutionV053Service.cs',
+            'src/Matawaka.Workbench.App/BoundedRuntimeTreeMaterializationV054Service.cs'
+          )
+          foreach ($p in $paths) {
+            $old = git rev-parse "$base`:$p"
+            $new = git rev-parse "HEAD`:$p"
+            if ($old -ne $new) { throw "Primitive drift: $p" }
+          }
+      - name: Guard public main predecessor during qualification
+        shell: pwsh
+        run: |
+          $observed = (git ls-remote https://github.com/Matawaka/workbench.git refs/heads/main).Split("`t")[0]
+          if ($observed -ne '65b0b49a513a6b782760a7626d6b768bf7bb7f91') { throw "Public main drifted: $observed" }
+      - name: Guard no real model/runtime acquisition in qualification
+        shell: pwsh
+        run: |
+          if (Test-Path 'K:\Matawaka') { Write-Host 'Runner-local path presence is irrelevant; no operator host is touched.' }
+          $changed = git diff --name-only 65b0b49a513a6b782760a7626d6b768bf7bb7f91...HEAD
+          if ($changed -match 'Qwen3-8B-Q4_K_M\.gguf|llama-b10621-bin-win-cuda|cudart-llama') { throw 'Real model/runtime bytes are forbidden in v0.55 offline qualification.' }
+      - name: Package exact v0.54.2 to v0.55 local update
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $predecessor = '65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          $stage = Join-Path $env:RUNNER_TEMP 'v055-exact-update'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          $payload = Join-Path $stage 'payload'
+          New-Item -ItemType Directory -Path $payload -Force | Out-Null
+          $files = @(
+            'PATCH-v0.55.md',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/BoundedLocalModelInvocationV055Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV055Service.cs',
+            'src/Matawaka.Workbench.App/LocalModelInvocationRequestV055Parser.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV055AcceptanceHarness.cs',
+            'tooling/remote-smoke-identity/README.md',
+            'tooling/remote-smoke-identity/derive_remote_smoke_identity.py'
+          )
+          $items = @()
+          foreach ($file in $files) {
+            $src = Join-Path $PWD ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path $src -PathType Leaf)) { throw "missing v0.55 payload file: $file" }
+            $dst = Join-Path $payload ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($dst)) -Force | Out-Null
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+            $items += [ordered]@{ Path = $file; Sha256 = (Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-update-package/v0.10'
+            PackageVersion = '0.10'
+            TargetVersion = '0.55'
+            PredecessorTag = 'workbench-v0.54.2-accepted'
+            PredecessorCommit = $predecessor
+            TargetTag = 'workbench-v0.55-accepted'
+            PayloadRoot = 'payload/'
+            Files = $items
+            NetworkAccessRequested = $false
+            CatalogMutationRequested = $false
+            AgentExecuteRequested = $false
+            ArbitraryProcessExecutionRequested = $false
+            InstallerScriptExecutionRequested = $false
+            NonEffects = @(
+              'exact accepted/public v0.54.2 predecessor only',
+              'update package performs no artifact acquisition or model invocation',
+              'v0.52 acquisition, v0.53 execution and v0.54 materialization primitive sources are not in payload',
+              'real LM1/llama/CUDA bytes are absent',
+              'publication remains deferred until separate tiny real-host v0.55 admission',
+              'no force/arbitrary remote/ref authority',
+              'no benchmark/game/display/send/action authority',
+              'no CI workflow or qualification fixture files in payload'
+            )
+          }
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $stage 'workbench-update-manifest.json') -Encoding UTF8
+          $zip = Join-Path $env:RUNNER_TEMP 'workbench-v0.55-bounded-local-model-invocation-update.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V055_PACKAGE_PASS predecessor=$predecessor files=$($files.Count) sha256=$sha"
+      - name: Upload exact v0.55 local update
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.55-exact-local-update
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
