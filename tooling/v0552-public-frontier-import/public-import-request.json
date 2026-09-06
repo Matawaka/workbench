@@ -1,0 +1,10 @@
+{
+  "Schema": "matawaka.workbench-v0552-public-frontier-import-request/v0.1",
+  "RequestId": "v0552-import-public-main-6111fdf82a9e8947a7722e9b603c1e9268a19105-v1",
+  "RepositoryRoot": "K:\\Matawaka\\Workbench",
+  "ExpectedLocalHead": "02d81b8559bc7c9676949be0557d20ecb50a9890",
+  "ExpectedLocalTag": "workbench-v0.55-accepted",
+  "FixedRemoteUrl": "https://github.com/Matawaka/workbench.git",
+  "ExpectedPublicMain": "6111fdf82a9e8947a7722e9b603c1e9268a19105",
+  "ExpectedPublicFirstParent": "65b0b49a513a6b782760a7626d6b768bf7bb7f91"
+}
