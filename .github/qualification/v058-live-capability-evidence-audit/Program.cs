@@ -29,7 +29,7 @@ try
     Require(ReferenceEquals(allowProvider.ReceivedDecision, allowAgent.CapabilityDecision), "provider did not receive the exact base decision object");
     Require(ReferenceEquals(allowAuthority.Decision, allowAgent.CapabilityDecision), "CommandResult authority receipt did not preserve the exact base decision object");
     RequireSameDecisionGrants(allowAgent.CapabilityDecision, allowAudit.Composition!.BaseDecision, "allow composition base");
-    RequireNoIncrease(allowAgent.CapabilityDecision, allowAudit.Composition.ComposedDecision, "allow composition");
+    RequireNoIncrease(allowAgent.CapabilityDecision, allowAudit.Composition.EffectiveDecision, "allow composition");
     RequireNoAuthorityEffects(allowAudit, "allow audit");
 
     var denyProvider = new RecordingProvider();
@@ -47,7 +47,7 @@ try
     var denyAudit = RequireType<LiveCapabilityEvidenceAuditReceiptV058>(denyResult.CapabilityEvidence, "deny capability evidence audit");
     Require(denyAgent.CapabilityDecision.Decision == "deny", "base deny decision drifted");
     Require(denyAudit.Status == LiveCapabilityEvidenceAuditServiceV058.ComposedStatus, "deny audit was not composed");
-    Require(denyAudit.Composition is not null && denyAudit.Composition.ComposedDecision.Decision == "deny", "provenance audit upgraded base deny");
+    Require(denyAudit.Composition is not null && denyAudit.Composition.EffectiveDecision.Decision == "deny", "provenance audit upgraded base deny");
     RequireNoAuthorityEffects(denyAudit, "deny audit");
 
     var executeProvider = new RecordingProvider();
@@ -62,7 +62,7 @@ try
     Require(executeResult.TerminalState == CommandTerminalState.Denied, "execute path did not deny");
     Require(executeProvider.Calls == 0, "provider was invoked for denied execute request");
     var executeAudit = RequireType<LiveCapabilityEvidenceAuditReceiptV058>(executeResult.CapabilityEvidence, "execute audit");
-    Require(executeAudit.Composition is not null && executeAudit.Composition.ComposedDecision.Decision == "deny", "execute provenance audit upgraded deny");
+    Require(executeAudit.Composition is not null && executeAudit.Composition.EffectiveDecision.Decision == "deny", "execute provenance audit upgraded deny");
     RequireNoAuthorityEffects(executeAudit, "execute audit");
 
     var forgedProvider = new RecordingProvider();
