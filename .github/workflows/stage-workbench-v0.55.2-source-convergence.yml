@@ -1,0 +1,87 @@
+name: Stage Workbench v0.55.2 source convergence
+
+on:
+  push:
+    branches:
+      - staging/workbench-v0.55.2-source-convergence
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stage-target:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Construct exact convergence target branch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $public = '6111fdf82a9e8947a7722e9b603c1e9268a19105'
+          $prior = '65b0b49a513a6b782760a7626d6b768bf7bb7f91'
+          $localSource = '48ee50f35e821fdb850f8265f9c07855b79c8ec9'
+          $target = 'feat/workbench-v0.55.2-convergent-publication-closure'
+
+          $remoteMain = (git ls-remote origin refs/heads/main).Split("`t")[0]
+          if ($remoteMain -ne $public) { throw "public main drifted before source staging: $remoteMain" }
+          $existing = git ls-remote --heads origin "refs/heads/$target"
+          if (-not [string]::IsNullOrWhiteSpace(($existing -join "`n"))) { throw "target branch already exists; refusing overwrite: $target" }
+          git cat-file -e "$public^{commit}"
+          git cat-file -e "$localSource^{commit}"
+          $mergeBase = (git merge-base $prior $localSource).Trim()
+          if ($mergeBase -ne $prior) { throw "local v0.55 source no longer has expected prior base: $mergeBase" }
+
+          git config user.name 'Matawaka'
+          git config user.email '319695216+Matawaka@users.noreply.github.com'
+          git checkout -b $target $public
+
+          $copy = @(
+            '.github/workflows/workbench-v0.55-bounded-local-model-invocation.yml',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/BoundedLocalModelInvocationV055Service.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV050.cs',
+            'src/Matawaka.Workbench.App/LocalAppsActionDialogV0515.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV055Service.cs',
+            'src/Matawaka.Workbench.App/LocalModelInvocationRequestV055Parser.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.Acceptance.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V055.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV055AcceptanceHarness.cs',
+            'tests/V055ModelFixture/Program.cs',
+            'tests/V055ModelFixture/V055ModelFixture.csproj',
+            'tests/V055ModelFixture/fixture-native.c',
+            'tests/V055ParserQualification/Program.cs',
+            'tests/V055ParserQualification/V055ParserQualification.csproj',
+            'tests/V055Qualification/Program.cs',
+            'tests/V055Qualification/V055Qualification.csproj',
+            'tooling/remote-smoke-identity/README.md',
+            'tooling/remote-smoke-identity/derive_remote_smoke_identity.py',
+            'tooling/remote-smoke-identity/test_derive_remote_smoke_identity.py'
+          )
+          foreach ($path in $copy) {
+            git checkout $localSource -- $path
+            if ($LASTEXITCODE -ne 0) { throw "failed to copy exact accepted v0.55 source path: $path" }
+          }
+
+          $historicPatch = git show "${localSource}:PATCH-v0.55.md"
+          if ($LASTEXITCODE -ne 0) { throw 'failed to read local v0.55 patch narrative' }
+          [IO.File]::WriteAllText((Join-Path (Get-Location) 'PATCH-v0.55.LOCAL_ACCEPTED_MODEL_INVOCATION.md'), ($historicPatch -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+
+          # Keep public #82 PATCH-v0.55.md byte-for-byte from the public parent; the local accepted
+          # model-invocation narrative is preserved under a distinct path instead of being collapsed.
+          $publicPatch = (git rev-parse "$public`:PATCH-v0.55.md").Trim()
+          $currentPatch = (git hash-object PATCH-v0.55.md).Trim()
+          if ($publicPatch -ne $currentPatch) { throw 'public #82 PATCH-v0.55.md changed during convergence staging' }
+
+          git add -- .github/workflows/workbench-v0.55-bounded-local-model-invocation.yml src tests tooling PATCH-v0.55.LOCAL_ACCEPTED_MODEL_INVOCATION.md
+          $status = git status --porcelain=v1
+          if ([string]::IsNullOrWhiteSpace(($status -join "`n"))) { throw 'convergence staging produced no source delta' }
+          git commit -m 'Stage accepted v0.55 model invocation beside public #82 substrate'
+          $head = (git rev-parse HEAD).Trim()
+          $parent = (git rev-parse HEAD^).Trim()
+          if ($parent -ne $public) { throw "target staging commit is not based on exact public main: $parent" }
+          git push origin "HEAD:refs/heads/$target"
+          if ($LASTEXITCODE -ne 0) { throw 'non-force development branch push failed' }
+          Write-Host "V0552_SOURCE_CONVERGENCE_STAGED head=$head parent=$parent localSource=$localSource"
