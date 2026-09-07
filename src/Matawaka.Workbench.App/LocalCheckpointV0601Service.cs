@@ -170,6 +170,8 @@ internal sealed class LocalCheckpointV0601Service
             ?? throw new InvalidDataException("v0.60.1 acceptance artifact disappeared before checkpoint.");
         RequirePassingAcceptance(parsedAcceptance);
         VerifyRunningExecutable(parsedAcceptance.AppExecutableSha256);
+        if (!parsedAcceptance.AppExecutableSha256.Equals(bootstrapLease.CandidateExecutableSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("v0.60.1 acceptance executable differs from the one-shot bootstrap candidate.");
         if (!HashFile(candidate.AcceptanceArtifactPath).Equals(candidate.AcceptanceArtifactSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("v0.60.1 acceptance artifact bytes changed after preview.");
 
@@ -273,6 +275,7 @@ internal sealed class LocalCheckpointV0601Service
         ("checkpoint-v0601-target-tag", TargetTag == "workbench-v0.60.1-accepted", TargetTag, "fresh successor tag"),
         ("checkpoint-v0601-no-v060-relabel", HistoricalV060Tag == "workbench-v0.60-accepted", HistoricalV060Tag, "historical implementation-only tag must remain absent"),
         ("checkpoint-v0601-two-parent", true, "commit-tree -p installed -p public; parent order reverified", "two exact ordered parents"),
+        ("checkpoint-v0601-one-shot-process-binding", true, "CONSUMING + exact PID + exact process path/hash + claim file + verified launch/handoff", "checkpoint cannot rely only on caller sequencing"),
         ("checkpoint-v0601-publication", true, "RemotePushAllowed=false; NetworkAccessAllowed=false", "publication remains separate")
     };
 
@@ -281,9 +284,29 @@ internal sealed class LocalCheckpointV0601Service
         if (lease.TargetVersion != Version || lease.TargetTag != TargetTag ||
             lease.PredecessorTag != ExpectedPredecessorTag ||
             !lease.PredecessorCommit.Equals(FirstParentCommit, StringComparison.OrdinalIgnoreCase) ||
-            !lease.FirstBootSelfTestAllowed || !lease.FirstBootAcceptIfSelfTestPassesAllowed ||
+            lease.State != TransitionBootstrapV040Service.ConsumingState ||
+            lease.ProcessId != Environment.ProcessId ||
+            !lease.AutoLaunchAllowed || !lease.FirstBootSelfTestAllowed || !lease.FirstBootAcceptIfSelfTestPassesAllowed ||
+            lease.LaunchReceiptVerified != true || lease.CandidateObservedAlive != true ||
+            lease.ProcessImageMatchedCandidate != true || lease.PredecessorSelfCloseEligible != true ||
+            string.IsNullOrWhiteSpace(lease.ClaimPath) || !File.Exists(lease.ClaimPath) ||
             lease.PublishAllowed || lease.LifecycleAllowed || lease.RetryAuthorized)
-            throw new InvalidDataException("Transition bootstrap lease does not match fixed v0.60.1 acceptance boundary.");
+            throw new InvalidDataException("Transition bootstrap lease does not match fixed one-shot v0.60.1 acceptance boundary.");
+
+        var processPath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(processPath) || !File.Exists(processPath) ||
+            !Path.GetFullPath(processPath).Equals(Path.GetFullPath(lease.CandidateExecutablePath), StringComparison.OrdinalIgnoreCase) ||
+            !HashFile(processPath).Equals(lease.CandidateExecutableSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Transition bootstrap candidate is not the exact current v0.60.1 process image.");
+
+        var claimText = File.ReadAllText(lease.ClaimPath, Encoding.UTF8);
+        var expectedLeaseLine = "lease=" + lease.LeaseId;
+        var expectedPidLine = "pid=" + Environment.ProcessId;
+        var claimLines = claimText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+        if (claimLines.Length != 3 || !claimLines.Contains(expectedLeaseLine, StringComparer.Ordinal) ||
+            !claimLines.Contains(expectedPidLine, StringComparer.Ordinal) ||
+            claimLines.Count(line => line.StartsWith("claimed=", StringComparison.Ordinal)) != 1)
+            throw new InvalidDataException("Transition bootstrap one-shot claim file does not match the current v0.60.1 lease/process.");
     }
 
     private static WorkbenchUpdateApplyBuildReceipt ValidateBuildReceipt(string root, TransitionBootstrapV040Lease lease)
