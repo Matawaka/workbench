@@ -1,0 +1,121 @@
+name: Workbench v0.60.1 Operator Bundle v2
+
+on:
+  push:
+    branches:
+      - artifact/workbench-v0.60.1-operator-bundle-v2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prepare:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Checkout exact qualified candidate
+        uses: actions/checkout@v4
+        with:
+          ref: e466543964d97cf25a81fd571125d9b0282371dd
+          fetch-depth: 0
+          path: candidate
+
+      - name: Guard exact live frontier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
+          if ($main -ne 'ac083598711caa0c399cc0d2c385b980c083024a') { throw "public main drifted: $main" }
+          $tag = git ls-remote $remote refs/tags/workbench-v0.60.1-accepted 'refs/tags/workbench-v0.60.1-accepted^{}'
+          if (-not [string]::IsNullOrWhiteSpace(($tag -join "`n"))) { throw 'public v0.60.1 accepted tag unexpectedly exists' }
+          $candidateHead = (git -C .\candidate rev-parse HEAD).Trim()
+          if ($candidateHead -ne 'e466543964d97cf25a81fd571125d9b0282371dd') { throw "candidate checkout mismatch: $candidateHead" }
+          Write-Host "V0601_BUNDLE_FRONTIER_PASS main=$main candidate=$candidateHead tag=absent"
+
+      - name: Publish fixed no-ref import utility
+        id: importer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Join-Path $env:RUNNER_TEMP 'workbench-v0601-operator-bundle-v2'
+          $out = Join-Path $env:RUNNER_TEMP 'workbench-v0601-import'
+          New-Item -ItemType Directory -Force -Path $bundle,$out | Out-Null
+          dotnet publish .\candidate\tooling\v0601-public-main-import\Matawaka.Workbench.V0601PublicImport.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'Matawaka.Workbench.V0601PublicImport.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'fixed import executable missing' }
+          & $exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "fixed import self-test failed: $LASTEXITCODE" }
+          $dest = Join-Path $bundle 'Matawaka.Workbench.V0601PublicImport.exe'
+          Copy-Item $exe $dest
+          $sha = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+          "bundle=$bundle" >> $env:GITHUB_OUTPUT
+          "import_sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0601_IMPORT_ARTIFACT_PASS sha256=$sha"
+
+      - name: Build exact cumulative update package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = '${{ steps.importer.outputs.bundle }}'
+          $package = Join-Path $bundle 'workbench-v0.60.1-cumulative.zip'
+          dotnet run --project .\tooling\v0601-operator-bundle\Matawaka.Workbench.V0601OperatorBundleBuilder.csproj -c Release -- .\candidate $package
+          $sha = (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne 'bfbcd4bcebb211230c145c1ce564e5896e5612007b18bfb663e4ca8e04ef92a5') { throw "qualified package identity mismatch: $sha" }
+          Write-Host "V0601_PACKAGE_ARTIFACT_PASS sha256=$sha bytes=$((Get-Item $package).Length)"
+
+      - name: Write exact operator manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = '${{ steps.importer.outputs.bundle }}'
+          $package = Join-Path $bundle 'workbench-v0.60.1-cumulative.zip'
+          $import = Join-Path $bundle 'Matawaka.Workbench.V0601PublicImport.exe'
+          $manifest = [ordered]@{
+            Schema = 'matawaka.workbench-v0601-operator-bundle/v0.1'
+            Status = 'QUALIFIED_OPERATOR_ARTIFACTS_NOT_EXECUTED_ON_OPERATOR_HOST'
+            QualificationRun = 34135319914
+            CandidateSourceHead = 'e466543964d97cf25a81fd571125d9b0282371dd'
+            InstalledPredecessorCommit = 'ea852feeb0e8d92a8977bb251693e7e977913dca'
+            InstalledPredecessorTag = 'workbench-v0.55.2-accepted'
+            ExactPublicMainObject = 'ac083598711caa0c399cc0d2c385b980c083024a'
+            PublicMainImportConfirmation = 'IMPORT-EXACT-PUBLIC-AC08'
+            TargetVersion = '0.60.1'
+            TargetTag = 'workbench-v0.60.1-accepted'
+            UpdatePackageSha256 = (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant()
+            UpdatePackageBytes = (Get-Item $package).Length
+            ImportUtilitySha256 = (Get-FileHash $import -Algorithm SHA256).Hash.ToLowerInvariant()
+            ImportUtilityBytes = (Get-Item $import).Length
+            RequiredOrder = @('NO_REF_PUBLIC_MAIN_IMPORT','VERIFY_CANONICAL_IMPORT_RECEIPT','UPDATE_WORKBENCH_INTAKE')
+            RemotePushAuthorized = $false
+            PublicationAuthorized = $false
+            AutomaticRetryAuthorized = $false
+            RuntimeOrModelExecutionAuthorized = $false
+            NonEffects = @(
+              'bundle construction does not mutate operator repository',
+              'import utility is fixed to one repository and one public main object',
+              'update package is inert until separately confirmed by installed Workbench',
+              'local acceptance does not imply publication authority'
+            )
+          }
+          $path = Join-Path $bundle 'operator-bundle-manifest.json'
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8NoBOM $path
+          $files = @(Get-ChildItem $bundle -File)
+          if ($files.Count -ne 3) { throw "unexpected operator bundle file count: $($files.Count)" }
+          Write-Host "V0601_OPERATOR_MANIFEST_PASS files=$($files.Count) manifestSha256=$((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant())"
+
+      - name: Upload exact operator bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.60.1-operator-bundle-v2
+          path: ${{ steps.importer.outputs.bundle }}/*
+          if-no-files-found: error
