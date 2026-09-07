@@ -59,6 +59,9 @@ That is the exact file-byte hash in this checkout (including its line endings),
 not an authority digest. The semantic round-trip also verifies deserialized
 objects independently of file line endings.
 
+The shared Git blob (line-ending-independent repository representation) is
+`3409b9f71c0f47f286fd191994857b8e3c862825` in both candidates.
+
 Source schema keys, one-call boundary and hard maximum ceilings are compared to
 the C# record and existing service constants by the new probe. This does not
 claim execution of a full JSON Schema engine.
@@ -66,4 +69,3 @@ claim execution of a full JSON Schema engine.
 No workflow changed and no new automatic CI coverage is claimed. Reproduce with
 the commands in README. The two legacy failures remain visible for a separate
 qualification-maintenance decision.
-
