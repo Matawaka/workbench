@@ -11,14 +11,14 @@ namespace Matawaka.Workbench.App;
 internal static class V0601QualifiedSourceBindings
 {
     internal const string InstalledAcceptedPredecessor = "ea852feeb0e8d92a8977bb251693e7e977913dca";
-    internal const string PublicImplementationMain = "6541dc32182c970c8e1a6ade426a6cee7086511b";
+    internal const string PublicImplementationMain = "ac083598711caa0c399cc0d2c385b980c083024a";
 }
 
 internal static class ProgramFixed
 {
     private const string FirstParent = "ea852feeb0e8d92a8977bb251693e7e977913dca";
     private const string FirstParentTag = "workbench-v0.55.2-accepted";
-    private const string SecondParent = "6541dc32182c970c8e1a6ade426a6cee7086511b";
+    private const string SecondParent = "ac083598711caa0c399cc0d2c385b980c083024a";
     private const string TargetVersion = "0.60.1";
     private const string TargetTag = "workbench-v0.60.1-accepted";
     private const string HistoricalV060Tag = "workbench-v0.60-accepted";

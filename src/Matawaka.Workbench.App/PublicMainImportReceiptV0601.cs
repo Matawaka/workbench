@@ -21,10 +21,10 @@ internal static class PublicMainImportReceiptVerifierV0601
     internal const string Schema = "matawaka.workbench-v0601-public-main-import-receipt/v0.1";
     internal const string Status = "EXACT_PUBLIC_MAIN_OBJECT_IMPORTED_NO_REF_MUTATION";
     internal const string RemoteUrl = "https://github.com/Matawaka/workbench.git";
-    internal const string PublicMainCommit = "6541dc32182c970c8e1a6ade426a6cee7086511b";
+    internal const string PublicMainCommit = "ac083598711caa0c399cc0d2c385b980c083024a";
     internal const string InstalledHead = "ea852feeb0e8d92a8977bb251693e7e977913dca";
     internal const string InstalledTag = "workbench-v0.55.2-accepted";
-    internal const string ReceiptFileName = "public-main-6541dc32182c970c8e1a6ade426a6cee7086511b.json";
+    internal const string ReceiptFileName = "public-main-ac083598711caa0c399cc0d2c385b980c083024a.json";
 
     internal static PublicMainImportEvidenceV0601 FindExact(string workspaceRoot)
     {

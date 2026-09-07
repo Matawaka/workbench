@@ -9,8 +9,8 @@ internal static class Program
     private const string FixedRemote = "https://github.com/Matawaka/workbench.git";
     private const string ExpectedHead = "ea852feeb0e8d92a8977bb251693e7e977913dca";
     private const string ExpectedTag = "workbench-v0.55.2-accepted";
-    private const string ExpectedPublicMain = "6541dc32182c970c8e1a6ade426a6cee7086511b";
-    private const string Confirmation = "IMPORT-EXACT-PUBLIC-6541";
+    private const string ExpectedPublicMain = "ac083598711caa0c399cc0d2c385b980c083024a";
+    private const string Confirmation = "IMPORT-EXACT-PUBLIC-AC08";
     private const string Schema = "matawaka.workbench-v0601-public-main-import-receipt/v0.1";
     private const string Status = "EXACT_PUBLIC_MAIN_OBJECT_IMPORTED_NO_REF_MUTATION";
 
@@ -58,7 +58,7 @@ internal static class Program
             RepositoryRoot,
             "artifacts",
             "convergence-v0601",
-            "public-main-6541dc32182c970c8e1a6ade426a6cee7086511b.json");
+            "public-main-ac083598711caa0c399cc0d2c385b980c083024a.json");
         if (File.Exists(receiptPath))
             throw new InvalidDataException($"EXACT_RECEIPT_ALREADY_EXISTS: {receiptPath}");
 
@@ -223,7 +223,7 @@ internal static class Program
             ExpectedHead.Length == 40,
             ExpectedPublicMain.Length == 40,
             ExpectedTag == "workbench-v0.55.2-accepted",
-            Confirmation == "IMPORT-EXACT-PUBLIC-6541",
+            Confirmation == "IMPORT-EXACT-PUBLIC-AC08",
             Schema.EndsWith("/v0.1", StringComparison.Ordinal),
             Status == "EXACT_PUBLIC_MAIN_OBJECT_IMPORTED_NO_REF_MUTATION"
         };

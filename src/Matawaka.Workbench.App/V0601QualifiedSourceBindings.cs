@@ -10,7 +10,7 @@ namespace Matawaka.Workbench.App;
 internal static class V0601QualifiedSourceBindings
 {
     internal const string ReviewedV060Head = "3063c739a29e2524a3d45d5003095b515b6ad75f";
-    internal const string PublicImplementationMain = "6541dc32182c970c8e1a6ade426a6cee7086511b";
+    internal const string PublicImplementationMain = "ac083598711caa0c399cc0d2c385b980c083024a";
     internal const string InstalledAcceptedPredecessor = "ea852feeb0e8d92a8977bb251693e7e977913dca";
     internal const string InstalledAcceptedPredecessorTag = "workbench-v0.55.2-accepted";
 
@@ -41,7 +41,15 @@ internal static class V0601QualifiedSourceBindings
             ["src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.001"] = "c5a9b21b85e31a7713a3ed3157d801f1ffcf921a",
             ["src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.002"] = "66631925452b1769d2e943d2e71c9ed96f52027e",
             ["src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.003"] = "5e3a0e45716b6607c6cbeb16f889312627a5fe25",
-            ["src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.004"] = "e2294e891885f68e40f5fe05e88fcd9751d0d0f7"
+            ["src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.004"] = "e2294e891885f68e40f5fe05e88fcd9751d0d0f7",
+            [".github/qualification/source-bound-model/Probe.csproj"] = "7099afc63264a0bee684788fe50448a78272e616",
+            [".github/qualification/source-bound-model/Program.cs"] = "065e8d339acd4d8ee9766f8433e9f5de0c598902",
+            [".github/qualification/source-bound-model/translation-fixture.json"] = "3409b9f71c0f47f286fd191994857b8e3c862825",
+            ["KONTUR_INTEGRATION_BACKLOG.md"] = "5035aaa63702678f54533bbf98abf2f565e51a10",
+            ["integrations/model-invocation/QUALIFICATION.md"] = "606f186a6ecd960cceed18966f28f27472f6ff2f",
+            ["integrations/model-invocation/README.md"] = "b4823d0421ec663ad4bb82a49852d3022bedabc5",
+            ["integrations/model-invocation/source-binding.schema.json"] = "13b2b78cea39a870546db79c1881bc271224e721",
+            ["src/Matawaka.Workbench.App/SourceBoundModelInvocation.cs"] = "14d092d47e6a699405eededad6b577bd4bf8a4da"
         };
 
     internal static IReadOnlyList<WorkbenchAcceptanceCheck> Run(string workspaceRoot)

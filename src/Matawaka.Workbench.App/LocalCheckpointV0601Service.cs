@@ -64,7 +64,7 @@ internal sealed class LocalCheckpointV0601Service
     internal const string AcceptanceSchema = "matawaka.workbench-acceptance-receipt/v0.60.1";
     internal const string ExpectedPredecessorTag = "workbench-v0.55.2-accepted";
     internal const string FirstParentCommit = "ea852feeb0e8d92a8977bb251693e7e977913dca";
-    internal const string SecondParentCommit = "6541dc32182c970c8e1a6ade426a6cee7086511b";
+    internal const string SecondParentCommit = "ac083598711caa0c399cc0d2c385b980c083024a";
     internal const string TargetTag = "workbench-v0.60.1-accepted";
     internal const string HistoricalV060Tag = "workbench-v0.60-accepted";
     internal const string CommitMessage = "Checkpoint Workbench v0.60.1 operator acceptance over reviewed v0.60 and installed v0.55.2";
