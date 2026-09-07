@@ -64,6 +64,12 @@ public partial class App : Application
         if (!semanticReviewOnly)
         {
             window.ConfigureV060Branding(reviewOnly: false);
+
+            // v0.60 remains the reviewed implementation/UI frontier. v0.60.1 is a
+            // fresh successor identity solely because first-boot/local acceptance
+            // routing changes product bytes. Review-only modes never receive this
+            // authority surface.
+            window.ConfigureV0601AcceptanceRouting();
         }
 
         MainWindow = window;
