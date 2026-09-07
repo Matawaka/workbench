@@ -1,5 +1,5 @@
 {
-  "Schema": "matawaka.workbench-branding-source/v0.60",
+  "Schema": "matawaka.workbench-branding-source/v0.60.1",
   "Purpose": "WINDOWS_BRANDING_PRESENTATION_ONLY",
   "OriginalUserSuppliedAssets": {
     "WindowsIcon": {
@@ -10,12 +10,14 @@
     "LogoSplashPng": {
       "Dimensions": "1672x941",
       "Bytes": 2077023,
-      "Sha256": "d2372c33d550f5d5f30575ffd904edfcfe252dbd68784e3f1e5d5f60bd2b84de"
+      "Sha256": "d2372c33d550f5d5f30575ffd904edfcfe252dbd68784e3f1e5d5f60bd2b84de",
+      "DecodeVerified": true
     },
     "UpdateArtworkPng": {
       "Dimensions": "1672x941",
       "Bytes": 2308343,
-      "Sha256": "8fa5c51d1893213eb36becd231723d7c1aeb4a22504c5d811a3e54d9f79a4630"
+      "Sha256": "8fa5c51d1893213eb36becd231723d7c1aeb4a22504c5d811a3e54d9f79a4630",
+      "DecodeVerified": true
     }
   },
   "DerivedProductResources": {
@@ -27,18 +29,45 @@
       "Sha256": "b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e",
       "Status": "DERIVED_PRODUCT_RESOURCE_NOT_ORIGINAL_SOURCE_BYTES"
     },
-    "splash-v060.jpg": {
-      "Dimensions": "800x450",
-      "Bytes": 15008,
-      "Sha256": "3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c",
-      "Status": "ROUND_TRIP_OBSERVED_DERIVED_FROM_USER_LOGO_ARTWORK"
+    "Splash": {
+      "Format": "JPEG",
+      "Dimensions": "400x225",
+      "Bytes": 6864,
+      "Sha256": "3ac0eed186a546ee029cba69790d064948bae40de6334971f25b14e6fbc9951c",
+      "Derivation": "exact user logo PNG -> RGB -> 400x225 LANCZOS -> JPEG quality 50",
+      "Transport": "ordered ASCII base64 chunks embedded as manifest resources, concatenated and reverse-decoded at runtime",
+      "ChunkGitBlobSha": [
+        "c5a9b21b85e31a7713a3ed3157d801f1ffcf921a",
+        "66631925452b1769d2e943d2e71c9ed96f52027e",
+        "5e3a0e45716b6607c6cbeb16f889312627a5fe25",
+        "e2294e891885f68e40f5fe05e88fcd9751d0d0f7"
+      ],
+      "DecodeVerifiedBeforeTransport": true,
+      "Status": "SAFE_ASCII_TRANSPORT_DERIVED_FROM_EXACT_USER_SOURCE"
     },
-    "update-v060.jpg": {
-      "Dimensions": "800x450",
-      "Bytes": 10083,
-      "Sha256": "487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7",
-      "Status": "ROUND_TRIP_OBSERVED_DERIVED_FROM_USER_UPDATE_ARTWORK"
+    "UpdateArtwork": {
+      "Format": "JPEG",
+      "Dimensions": "400x225",
+      "Bytes": 9671,
+      "Sha256": "9cfccfeb2d067e87f619169c075cff42a01aa076f38c9d36c68941807920a483",
+      "Derivation": "exact user update PNG -> RGB -> 400x225 LANCZOS -> JPEG quality 50",
+      "Transport": "ordered ASCII base64 chunks embedded as manifest resources, concatenated and reverse-decoded at runtime",
+      "ChunkGitBlobSha": [
+        "4334116168ed6597e817d97e4ccc2c6eb5592b66",
+        "4fe99bcfd17bc36c1e5876c3619a45bb8837ebf8",
+        "0228112569e7905da25e239b07d1a40a49106a35",
+        "b23355c96e8487fa7840529e415923b2a786ada3",
+        "1a83ecd7023226a4eb84f52ed2e10c30934913f4"
+      ],
+      "DecodeVerifiedBeforeTransport": true,
+      "Status": "SAFE_ASCII_TRANSPORT_DERIVED_FROM_EXACT_USER_SOURCE"
     }
+  },
+  "DiscardedImageTransportAttempts": {
+    "Reason": "previous direct binary repository transport produced corrupt/truncated JPEG bytes; Windows CI independently failed image decode, so those byte identities are not admitted branding evidence",
+    "CorruptSplashSha256": "3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c",
+    "CorruptUpdateArtworkSha256": "487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7",
+    "ObservedFailure": "Corrupt JPEG data / Unsupported marker / GDI+ decode failure"
   },
   "DiscardedBinaryIconTransportAttempts": {
     "Reason": "direct binary connector transport did not preserve intended ICO identities; no observed replacement hash was silently admitted",
@@ -49,6 +78,7 @@
     ]
   },
   "SourceFrontier": "6541dc32182c970c8e1a6ade426a6cee7086511b",
+  "SafeTransportPredecessor": "4fe7687b475003e10c7022042e1dedb4279bd4c2",
   "AcceptedReleaseAtCandidateCreation": {
     "Tag": "workbench-v0.56.2-accepted",
     "Commit": "693886052c598e9ed02558ca60a1fd8901090236"
