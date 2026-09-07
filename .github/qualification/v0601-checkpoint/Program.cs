@@ -5,6 +5,15 @@ using System.Text.Json;
 
 namespace Matawaka.Workbench.App;
 
+// Qualification-only shim for the two exact constants referenced by the linked
+// internal checkpoint source. The real V0601QualifiedSourceBindings product file
+// remains byte-guarded and is not recompiled into this probe assembly.
+internal static class V0601QualifiedSourceBindings
+{
+    internal const string InstalledAcceptedPredecessor = "ea852feeb0e8d92a8977bb251693e7e977913dca";
+    internal const string PublicImplementationMain = "6541dc32182c970c8e1a6ade426a6cee7086511b";
+}
+
 internal static class ProgramFixed
 {
     private const string FirstParent = "ea852feeb0e8d92a8977bb251693e7e977913dca";
