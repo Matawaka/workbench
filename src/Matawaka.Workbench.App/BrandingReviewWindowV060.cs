@@ -269,12 +269,13 @@ internal sealed class BrandingReviewWindowV060 : Window
 
         var receipt = new
         {
-            Schema = "matawaka.workbench-v060-branding-review-smoke/v0.3",
+            Schema = "matawaka.workbench-v060-branding-review-smoke/v0.4",
             Status = "BRANDING_REVIEW_WINDOW_CONTENT_RENDERED",
             ProcessId = Environment.ProcessId,
             ProcessPath = Environment.ProcessPath,
             Title,
             TitleIconAssigned = Icon is not null,
+            NormalizedVisualCapture = true,
             SplashSourcePixelWidth = _splash.ImageEvidence.PixelWidth,
             SplashSourcePixelHeight = _splash.ImageEvidence.PixelHeight,
             SplashSourceLuminanceRange = _splash.ImageEvidence.LuminanceRange,
@@ -325,8 +326,29 @@ internal sealed class BrandingReviewWindowV060 : Window
             throw new InvalidOperationException(
                 $"Branding element has no rendered area: {element.GetType().Name} {width}x{height}");
 
+        // RenderTargetBitmap.Render(element) retains a nested element's layout offset.
+        // The first v4 artifact therefore proved non-black pixels but captured the
+        // Update image shifted and clipped. A VisualBrush maps the same live WPF
+        // visual into a fresh origin-normalized DrawingVisual so the evidence bitmap
+        // represents the full rendered element rather than its parent-relative offset.
+        var normalized = new DrawingVisual();
+        using (var drawing = normalized.RenderOpen())
+        {
+            var brush = new VisualBrush(element)
+            {
+                Stretch = Stretch.Fill,
+                AlignmentX = AlignmentX.Center,
+                AlignmentY = AlignmentY.Center,
+                ViewboxUnits = BrushMappingMode.Absolute,
+                Viewbox = new Rect(0, 0, element.ActualWidth, element.ActualHeight),
+                ViewportUnits = BrushMappingMode.Absolute,
+                Viewport = new Rect(0, 0, width, height)
+            };
+            drawing.DrawRectangle(brush, null, new Rect(0, 0, width, height));
+        }
+
         var rendered = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-        rendered.Render(element);
+        rendered.Render(normalized);
 
         var (min, max) = BrandingImageResourcesV060.MeasureVisibleLuminance(rendered);
         var encoder = new PngBitmapEncoder();
@@ -345,7 +367,7 @@ internal sealed class BrandingReviewWindowV060 : Window
 
             var receipt = new
             {
-                Schema = "matawaka.workbench-v060-branding-review-startup-failure/v0.3",
+                Schema = "matawaka.workbench-v060-branding-review-startup-failure/v0.4",
                 Status = "BRANDING_REVIEW_STARTUP_FAILED",
                 Mode = smoke ? "SMOKE" : "HUMAN_REVIEW",
                 ProcessId = Environment.ProcessId,
