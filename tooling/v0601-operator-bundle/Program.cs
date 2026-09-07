@@ -129,13 +129,16 @@ static string Git(string root, params string[] arguments)
     psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
     foreach (var argument in arguments) psi.ArgumentList.Add(argument);
     using var process = Process.Start(psi) ?? throw new InvalidDataException("failed to start git");
+    var stdoutTask = process.StandardOutput.ReadToEndAsync();
+    var stderrTask = process.StandardError.ReadToEndAsync();
     if (!process.WaitForExit(60_000))
     {
         try { process.Kill(entireProcessTree: true); } catch { }
         throw new InvalidDataException("git timed out");
     }
-    var stdout = process.StandardOutput.ReadToEnd();
-    var stderr = process.StandardError.ReadToEnd();
+    Task.WaitAll(stdoutTask, stderrTask);
+    var stdout = stdoutTask.Result;
+    var stderr = stderrTask.Result;
     if (process.ExitCode != 0)
         throw new InvalidDataException("git failed: " + stderr.Trim());
     return stdout;
