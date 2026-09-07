@@ -1,0 +1,68 @@
+name: Workbench v0.60.1 Operator Bundle
+
+on:
+  push:
+    branches:
+      - artifact/workbench-v0.60.1-operator-bundle-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prepare:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Checkout exact qualified candidate
+        uses: actions/checkout@v4
+        with:
+          ref: aa2bfa215d3cacca015d40cd8786706aff0a9f19
+          fetch-depth: 0
+          path: candidate
+      - name: Guard fixed remote frontier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $remote='https://github.com/Matawaka/workbench.git'
+          $main=(git ls-remote $remote refs/heads/main).Split("`t")[0]
+          if($main -ne '6541dc32182c970c8e1a6ade426a6cee7086511b'){throw "public main drifted: $main"}
+          $tag=git ls-remote $remote refs/tags/workbench-v0.60.1-accepted 'refs/tags/workbench-v0.60.1-accepted^{}'
+          if(-not [string]::IsNullOrWhiteSpace(($tag -join "`n"))){throw 'public v0.60.1 accepted tag unexpectedly exists'}
+      - name: Publish fixed no-ref import utility
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'operator-bundle'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          dotnet publish .\candidate\tooling\v0601-public-main-import\Matawaka.Workbench.V0601PublicImport.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe=Join-Path $out 'Matawaka.Workbench.V0601PublicImport.exe'
+          & $exe --self-test
+          if($LASTEXITCODE -ne 0){throw 'import utility self-test failed'}
+      - name: Build exact cumulative package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'operator-bundle'
+          dotnet run --project .\.github\artifact\v0601-operator-bundle\Builder.csproj -c Release -- .\candidate $out
+          $pkg=Join-Path $out 'workbench-v0.60.1-cumulative.zip'
+          $sha=(Get-FileHash $pkg -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($sha -ne '1fa4d657834ec211cd42dc9cebdfd77d2464ec1acf2a05b8f81b86f355999f15'){throw "qualified package identity mismatch: $sha"}
+          $imp=Join-Path $out 'Matawaka.Workbench.V0601PublicImport.exe'
+          $manifest=Get-Content (Join-Path $out 'operator-bundle-manifest.json') -Raw | ConvertFrom-Json
+          $manifest | Add-Member -NotePropertyName ImportUtilityFile -NotePropertyValue 'Matawaka.Workbench.V0601PublicImport.exe'
+          $manifest | Add-Member -NotePropertyName ImportUtilityBytes -NotePropertyValue ((Get-Item $imp).Length)
+          $manifest | Add-Member -NotePropertyName ImportUtilitySha256 -NotePropertyValue ((Get-FileHash $imp -Algorithm SHA256).Hash.ToLowerInvariant())
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8NoBOM (Join-Path $out 'operator-bundle-manifest.json')
+          Get-Content (Join-Path $out 'operator-bundle-manifest.json') -Raw | Write-Host
+      - name: Upload exact operator bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.60.1-operator-bundle
+          path: ${{ runner.temp }}/operator-bundle/*
+          if-no-files-found: error
+          compression-level: 0
