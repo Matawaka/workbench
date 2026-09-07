@@ -71,7 +71,7 @@ public partial class App : Application
 
         if (splash is not null)
         {
-            await Task.Delay(650);
+            await Task.Delay(900);
             splash.Close();
         }
     }
@@ -84,11 +84,13 @@ public partial class App : Application
             splash = new BrandingSplashWindowV060();
             splash.Show();
 
-            var reviewWindow = new BrandingReviewWindowV060(smoke);
+            var reviewWindow = new BrandingReviewWindowV060(smoke, splash);
             MainWindow = reviewWindow;
             reviewWindow.Show();
 
-            await Task.Delay(650);
+            // Human review sees the actual branded splash; CI keeps it available long
+            // enough for BrandingReviewWindowV060 to capture a real WPF render of it.
+            await Task.Delay(smoke ? 1400 : 900);
             splash.Close();
         }
         catch (Exception ex)
