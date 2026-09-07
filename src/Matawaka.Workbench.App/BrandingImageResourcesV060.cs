@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -8,30 +10,53 @@ internal readonly record struct BrandingImageEvidenceV060(
     int PixelWidth,
     int PixelHeight,
     int MinLuminance,
-    int MaxLuminance)
+    int MaxLuminance,
+    string Sha256,
+    int DecodedBytes)
 {
     internal int LuminanceRange => MaxLuminance - MinLuminance;
     internal bool HasVisibleVariation => LuminanceRange >= 16;
 }
 
 /// <summary>
-/// Exact, synchronous v0.60 branding image loader.
+/// Exact synchronous v0.60 branding image loader.
 ///
-/// The first human visual review proved that a WPF window reaching ContentRendered
-/// does not prove a pack-URI bitmap is actually visible. These images are therefore
-/// loaded from manifest resources into memory with BitmapCacheOption.OnLoad. Missing
-/// or undecodable bytes fail explicitly instead of silently degrading to a black frame.
+/// Binary image bytes are never stored through the GitHub Contents binary path.
+/// Valid locally-decoded JPEG bytes are transported as bounded ASCII base64 chunks.
+/// At runtime/build qualification the chunks are concatenated, reverse-decoded,
+/// SHA-256 checked, decoded with WPF BitmapDecoder(OnLoad), dimension checked and
+/// rejected if visually flat. This preserves the transport/evidence distinction:
+/// text transport identity is not image admission identity.
 /// </summary>
 internal static class BrandingImageResourcesV060
 {
-    internal const string SplashResourceNameV060 = "Matawaka.Workbench.App.Branding.SplashV060";
-    internal const string UpdateArtworkResourceNameV060 = "Matawaka.Workbench.App.Branding.UpdateArtworkV060";
+    internal const string ExpectedSplashSha256 = "3ac0eed186a546ee029cba69790d064948bae40de6334971f25b14e6fbc9951c";
+    internal const string ExpectedUpdateSha256 = "9cfccfeb2d067e87f619169c075cff42a01aa076f38c9d36c68941807920a483";
+    internal const int ExpectedPixelWidth = 400;
+    internal const int ExpectedPixelHeight = 225;
+
+    private static readonly string[] SplashChunkResources =
+    {
+        "Matawaka.Workbench.App.Branding.SplashBase64.001",
+        "Matawaka.Workbench.App.Branding.SplashBase64.002",
+        "Matawaka.Workbench.App.Branding.SplashBase64.003",
+        "Matawaka.Workbench.App.Branding.SplashBase64.004"
+    };
+
+    private static readonly string[] UpdateChunkResources =
+    {
+        "Matawaka.Workbench.App.Branding.UpdateBase64.001",
+        "Matawaka.Workbench.App.Branding.UpdateBase64.002",
+        "Matawaka.Workbench.App.Branding.UpdateBase64.003",
+        "Matawaka.Workbench.App.Branding.UpdateBase64.004",
+        "Matawaka.Workbench.App.Branding.UpdateBase64.005"
+    };
 
     internal static BrandingImageEvidenceV060 LoadSplash()
-        => LoadExactBitmap(SplashResourceNameV060);
+        => LoadExactBitmap(SplashChunkResources, ExpectedSplashSha256, "splash");
 
     internal static BrandingImageEvidenceV060 LoadUpdateArtwork()
-        => LoadExactBitmap(UpdateArtworkResourceNameV060);
+        => LoadExactBitmap(UpdateChunkResources, ExpectedUpdateSha256, "update-artwork");
 
     internal static (int MinLuminance, int MaxLuminance) MeasureVisibleLuminance(BitmapSource source)
     {
@@ -52,8 +77,6 @@ internal static class BrandingImageResourcesV060
         var max = 0;
         var observed = false;
 
-        // Sample every fourth pixel in both dimensions. This is deterministic,
-        // inexpensive and sufficient to reject a blank/flat presentation surface.
         for (var y = 0; y < height; y += 4)
         {
             var row = y * stride;
@@ -77,25 +100,51 @@ internal static class BrandingImageResourcesV060
         return observed ? (min, max) : (0, 0);
     }
 
-    private static BrandingImageEvidenceV060 LoadExactBitmap(string logicalName)
+    private static BrandingImageEvidenceV060 LoadExactBitmap(
+        IReadOnlyList<string> chunkResourceNames,
+        string expectedSha256,
+        string label)
     {
         var assembly = typeof(BrandingImageResourcesV060).Assembly;
-        using var resource = assembly.GetManifestResourceStream(logicalName)
-            ?? throw new InvalidOperationException($"Missing branding image manifest resource: {logicalName}");
+        var encoded = new StringBuilder();
 
+        foreach (var resourceName in chunkResourceNames)
+        {
+            using var resource = assembly.GetManifestResourceStream(resourceName)
+                ?? throw new InvalidOperationException($"Missing branding base64 chunk: {resourceName}");
+            using var reader = new StreamReader(resource, Encoding.ASCII, false, 1024, leaveOpen: false);
+            encoded.Append(reader.ReadToEnd().Trim());
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(encoded.ToString());
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException($"Branding {label} base64 transport is invalid.", ex);
+        }
+
+        var observedSha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        if (!string.Equals(observedSha256, expectedSha256, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"Branding {label} reverse-decoded SHA-256 mismatch: observed={observedSha256}; expected={expectedSha256}");
+
+        using var imageStream = new MemoryStream(bytes, writable: false);
         var decoder = BitmapDecoder.Create(
-            resource,
+            imageStream,
             BitmapCreateOptions.PreservePixelFormat,
             BitmapCacheOption.OnLoad);
 
         if (decoder.Frames.Count != 1)
             throw new InvalidOperationException(
-                $"Unexpected branding image frame count for {logicalName}: {decoder.Frames.Count}");
+                $"Unexpected branding {label} frame count: {decoder.Frames.Count}");
 
         var source = decoder.Frames[0];
-        if (source.PixelWidth <= 0 || source.PixelHeight <= 0)
+        if (source.PixelWidth != ExpectedPixelWidth || source.PixelHeight != ExpectedPixelHeight)
             throw new InvalidOperationException(
-                $"Decoded branding image has invalid dimensions for {logicalName}: {source.PixelWidth}x{source.PixelHeight}");
+                $"Unexpected branding {label} dimensions: {source.PixelWidth}x{source.PixelHeight}; expected={ExpectedPixelWidth}x{ExpectedPixelHeight}");
 
         if (source.CanFreeze && !source.IsFrozen)
             source.Freeze();
@@ -103,13 +152,15 @@ internal static class BrandingImageResourcesV060
         var (min, max) = MeasureVisibleLuminance(source);
         if (max - min < 16)
             throw new InvalidOperationException(
-                $"Decoded branding image is visually flat for {logicalName}: luminanceRange={max - min}");
+                $"Decoded branding {label} is visually flat: luminanceRange={max - min}");
 
         return new BrandingImageEvidenceV060(
             source,
             source.PixelWidth,
             source.PixelHeight,
             min,
-            max);
+            max,
+            observedSha256,
+            bytes.Length);
     }
 }
