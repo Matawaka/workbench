@@ -67,7 +67,23 @@ v0.52 artifact acquisition, v0.53 runtime execution, v0.54 runtime-tree
 materialization and the v0.55 provenance-bound outer-lease candidate. None of those
 primitives derives KONTUR authority from this backlog or scaffold.
 
-## Ownership boundary
+## 2026-09-07 source-bound model candidate
+
+Observed Workbench main: `6541dc32182c970c8e1a6ade426a6cee7086511b`;
+KONTUR main: `d155ba0a05325ba0fb57b7095ad91a67f4aaf456` (#46 merged).
+Both generic process and separate fixture-only model leases already exist.
+The KONTUR translator candidate retains its historical origin and creates
+separate non-authoritative process/model source bindings. This Workbench
+candidate wraps the existing model lease with exact source/review/output
+binding; it does not accept a process grant as model authority.
+
+See [`integrations/model-invocation/README.md`](integrations/model-invocation/README.md)
+for admission/refusal semantics, local tests and limits. Actual llama.cpp
+profile admission, honest isolation/resource/lifecycle qualification and the
+KONTUR return/review/display path remain later frontiers. No live model has
+been qualified by the new synthetic probe. Workflow coverage is not claimed.
+
+## Ownership boundary (unchanged)
 
 - Workbench remains generic local capability/runtime infrastructure.
 - KONTUR remains companion policy, player-cue semantics, response review and game-specific behavior.
