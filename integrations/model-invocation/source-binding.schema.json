@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:matawaka:model-invocation-source-binding:v0.1",
+  "title": "Model invocation source proposal; not authority or admission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "Schema",
+    "BindingId",
+    "SourceRepository",
+    "SourceFrontier",
+    "SourceArtifactSha256",
+    "RequestEnvelopeSha256",
+    "SourceAuthorityEffect",
+    "InvocationProfileId",
+    "ExpectedExecutableSha256",
+    "ExpectedModelSha256",
+    "MaxRequestBytes",
+    "MaxStdoutBytes",
+    "MaxStderrBytes",
+    "MaxOutputChars",
+    "MaxOutputTokens",
+    "TimeoutSeconds",
+    "TtlSeconds",
+    "MaxCalls",
+    "RequireProcessNetworkIsolation"
+  ],
+  "properties": {
+    "Schema": {
+      "const": "matawaka.model-invocation-source-binding/v0.1"
+    },
+    "BindingId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+    },
+    "SourceRepository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+    },
+    "SourceFrontier": {
+      "type": "string",
+      "pattern": "^(?!0{40}$)[0-9a-f]{40}$"
+    },
+    "SourceArtifactSha256": {
+      "type": "string",
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$"
+    },
+    "RequestEnvelopeSha256": {
+      "type": "string",
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$"
+    },
+    "SourceAuthorityEffect": {
+      "const": "NONE_BY_SOURCE_RECORD"
+    },
+    "InvocationProfileId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Proposal identity; runtime admission separately permits only FIXTURE_STDIO_V1."
+    },
+    "ExpectedExecutableSha256": {
+      "type": "string",
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$"
+    },
+    "ExpectedModelSha256": {
+      "type": "string",
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$"
+    },
+    "MaxRequestBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65536
+    },
+    "MaxStdoutBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
+    "MaxStderrBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 262144
+    },
+    "MaxOutputChars": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65536
+    },
+    "MaxOutputTokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "TimeoutSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 600
+    },
+    "TtlSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1800
+    },
+    "MaxCalls": {
+      "const": 1
+    },
+    "RequireProcessNetworkIsolation": {
+      "type": "boolean",
+      "description": "A true requirement is currently refused, never silently weakened."
+    }
+  }
+}
+

@@ -1,0 +1,53 @@
+{
+  "schema_version": "kontur-workbench-handoff-translation-v0.1",
+  "historical_origin_frontier": "15ea10671a8e3ca4533c429092ead3136a79a356",
+  "observed_kontur_main": "d155ba0a05325ba0fb57b7095ad91a67f4aaf456",
+  "observed_workbench_main": "6541dc32182c970c8e1a6ade426a6cee7086511b",
+  "runtime_source_binding": {
+    "Schema": "matawaka.runtime-execution-source-binding/v0.55",
+    "BindingId": "kgc-wb-local-model-16b8c591e7b9dac2b1d5a537",
+    "SourceRepository": "Matawaka/kontur",
+    "SourceFrontier": "15ea10671a8e3ca4533c429092ead3136a79a356",
+    "SourceArtifactSha256": "da837b0e8db50058df79aad58445fa6cd4ca9fec061c75e5da91e085853ee694",
+    "RequestEnvelopeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "SourceAuthorityEffect": "NONE_BY_SOURCE_RECORD",
+    "ProcessEffectCeiling": "EXACT_RUNTIME_ONLY",
+    "OneShot": true,
+    "MaxCalls": 1,
+    "TtlSeconds": 60,
+    "FreshHumanConfirmationRequired": true,
+    "NetworkAuthorized": false,
+    "ModelRequestAuthorized": false,
+    "GameAccessAuthorized": false,
+    "DisplayAuthorized": false
+  },
+  "model_source_binding": {
+    "Schema": "matawaka.model-invocation-source-binding/v0.1",
+    "BindingId": "kgc-wb-local-model-16b8c591e7b9dac2b1d5a537",
+    "SourceRepository": "Matawaka/kontur",
+    "SourceFrontier": "15ea10671a8e3ca4533c429092ead3136a79a356",
+    "SourceArtifactSha256": "da837b0e8db50058df79aad58445fa6cd4ca9fec061c75e5da91e085853ee694",
+    "RequestEnvelopeSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "SourceAuthorityEffect": "NONE_BY_SOURCE_RECORD",
+    "InvocationProfileId": "LLAMA_CPP_B10621_QWEN3_8B_Q4_K_M_V1",
+    "ExpectedExecutableSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ExpectedModelSha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+    "MaxRequestBytes": 65536,
+    "MaxStdoutBytes": 65536,
+    "MaxStderrBytes": 65536,
+    "MaxOutputChars": 600,
+    "MaxOutputTokens": 160,
+    "TimeoutSeconds": 60,
+    "TtlSeconds": 60,
+    "MaxCalls": 1,
+    "RequireProcessNetworkIsolation": true
+  },
+  "status": "TRANSLATED_NOT_AUTHORIZED_PROFILE_UNSUPPORTED",
+  "runtime_start_authorized": false,
+  "model_request_authorized": false,
+  "display_authorized": false,
+  "unresolved": [
+    "LLAMA_CPP_PROFILE_NOT_IMPLEMENTED",
+    "PROCESS_NETWORK_ISOLATION_NOT_PROVEN"
+  ]
+}
