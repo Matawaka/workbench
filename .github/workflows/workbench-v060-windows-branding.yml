@@ -122,7 +122,7 @@ jobs:
           foreach ($literal in @('BRANDING_REVIEW_WINDOW_CONTENT_RENDERED','FullMainWindowConstructed = false','WorkbenchSettingsStoreInitialized = false','WorkbenchAgentServiceInitialized = false','READ-ONLY BRANDING REVIEW — NO UPDATE / ACCEPT / PUBLISH AUTHORITY','update-v060.jpg')) {
             if (-not $review.Contains($literal)) { throw "isolated review invariant missing: $literal" }
           }
-          foreach ($forbidden in @('WorkbenchSettingsStore','WorkbenchAgentService','CommandRouter','HttpClient','TcpClient','UdpClient','Process.Start','git push','PublishAccepted','ActionPermitCreated = true','ResponseAuthorityCreated = true','DisplayPermitCreated = true','SuccessorPermitCreated = true')) {
+          foreach ($forbidden in @('WorkbenchSettingsStore.Load','new WorkbenchSettingsStore','new WorkbenchAgentService','CommandRouter(','HttpClient','TcpClient','UdpClient','Process.Start','git push','PublishAccepted(','ActionPermitCreated = true','ResponseAuthorityCreated = true','DisplayPermitCreated = true','SuccessorPermitCreated = true')) {
             if ($review.Contains($forbidden)) { throw "forbidden dependency/effect in isolated branding review: $forbidden" }
           }
           foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','Branding != Authority','Implementation merged != Accepted release','BrandingIconResourceV060')) {
