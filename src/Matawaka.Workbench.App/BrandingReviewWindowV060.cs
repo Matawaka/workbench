@@ -21,12 +21,12 @@ internal sealed class BrandingReviewWindowV060 : Window
     internal static readonly string SmokeReceiptPathV060 = Path.Combine(DiagnosticRootV060, "smoke.json");
     internal static readonly string FailureReceiptPathV060 = Path.Combine(DiagnosticRootV060, "failure.json");
     internal static readonly string SmokeSplashRenderPathV060 = Path.Combine(DiagnosticRootV060, "smoke-splash-render.png");
-    internal static readonly string SmokeUpdateRenderPathV060 = Path.Combine(DiagnosticRootV060, "smoke-update-render.png");
+    internal static readonly string SmokeCurrentBrandingRenderPathV060 = Path.Combine(DiagnosticRootV060, "smoke-current-branding-render.png");
 
     private readonly bool _smoke;
     private readonly BrandingSplashWindowV060 _splash;
-    private readonly BrandingImageEvidenceV060 _updateEvidence;
-    private readonly Image _artworkImage;
+    private readonly BrandingImageEvidenceV060 _currentBrandingEvidence;
+    private readonly Image _currentBrandingImage;
     private readonly List<Button> _reviewActionReplicas = new();
     private bool _contentRendered;
 
@@ -34,7 +34,7 @@ internal sealed class BrandingReviewWindowV060 : Window
     {
         _smoke = smoke;
         _splash = splash;
-        _updateEvidence = BrandingImageResourcesV060.LoadUpdateArtwork();
+        _currentBrandingEvidence = BrandingImageResourcesV060.LoadCurrentWorkbenchArtwork();
 
         Title = MainWindow.NormalTitleV060;
         Width = 1220;
@@ -48,16 +48,16 @@ internal sealed class BrandingReviewWindowV060 : Window
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
 
-        _artworkImage = new Image
+        _currentBrandingImage = new Image
         {
-            Source = _updateEvidence.Source,
-            Height = 300,
+            Source = _currentBrandingEvidence.Source,
+            Height = 240,
             Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             SnapsToDevicePixels = true
         };
-        RenderOptions.SetBitmapScalingMode(_artworkImage, BitmapScalingMode.HighQuality);
+        RenderOptions.SetBitmapScalingMode(_currentBrandingImage, BitmapScalingMode.HighQuality);
 
         Content = BuildContent();
         ContentRendered += OnContentRendered;
@@ -109,9 +109,8 @@ internal sealed class BrandingReviewWindowV060 : Window
             CornerRadius = new CornerRadius(5),
             Child = new TextBlock
             {
-                Text = $"Image decode: splash {_splash.ImageEvidence.PixelWidth}×{_splash.ImageEvidence.PixelHeight} " +
-                       $"(range {_splash.ImageEvidence.LuminanceRange})  |  update {_updateEvidence.PixelWidth}×{_updateEvidence.PixelHeight} " +
-                       $"(range {_updateEvidence.LuminanceRange})",
+                Text = $"Image decode: neutral artwork {_currentBrandingEvidence.PixelWidth}×{_currentBrandingEvidence.PixelHeight} " +
+                       $"(range {_currentBrandingEvidence.LuminanceRange}) — reused for splash/current branding",
                 Foreground = new SolidColorBrush(Color.FromRgb(174, 208, 230)),
                 FontSize = 12,
                 HorizontalAlignment = HorizontalAlignment.Center
@@ -197,13 +196,13 @@ internal sealed class BrandingReviewWindowV060 : Window
         var stack = new StackPanel();
         stack.Children.Add(new TextBlock
         {
-            Text = "Update Workbench artwork preview — exact v0.55.2 → v0.60 branding resource",
+            Text = "Matawaka Workbench — neutral current branding; historical version-transition artwork is not active UI",
             Foreground = new SolidColorBrush(Color.FromRgb(180, 218, 244)),
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 7)
         });
-        stack.Children.Add(_artworkImage);
+        stack.Children.Add(_currentBrandingImage);
 
         return new Border
         {
@@ -237,17 +236,18 @@ internal sealed class BrandingReviewWindowV060 : Window
         Directory.CreateDirectory(DiagnosticRootV060);
 
         var splashRender = CaptureImageSourceRenderAtOrigin(_splash.ImageElement, SmokeSplashRenderPathV060);
-        var updateRender = CaptureImageSourceRenderAtOrigin(_artworkImage, SmokeUpdateRenderPathV060);
+        var currentBrandingRender = CaptureImageSourceRenderAtOrigin(_currentBrandingImage, SmokeCurrentBrandingRenderPathV060);
 
         var receipt = new
         {
-            Schema = "matawaka.workbench-v060-branding-review-smoke/v0.5",
+            Schema = "matawaka.workbench-v060-branding-review-smoke/v0.6",
             Status = "BRANDING_REVIEW_WINDOW_CONTENT_RENDERED",
             ProcessId = Environment.ProcessId,
             ProcessPath = Environment.ProcessPath,
             Title,
             TitleIconAssigned = Icon is not null,
             OriginNormalizedWpfImageProbe = true,
+            NeutralArtworkSha256 = _currentBrandingEvidence.Sha256,
             SplashSourcePixelWidth = _splash.ImageEvidence.PixelWidth,
             SplashSourcePixelHeight = _splash.ImageEvidence.PixelHeight,
             SplashSourceLuminanceRange = _splash.ImageEvidence.LuminanceRange,
@@ -258,16 +258,17 @@ internal sealed class BrandingReviewWindowV060 : Window
             SplashRenderedPixelHeight = splashRender.PixelHeight,
             SplashRenderedLuminanceRange = splashRender.LuminanceRange,
             SplashRenderedHasVisibleVariation = splashRender.HasVisibleVariation,
-            UpdateSourcePixelWidth = _updateEvidence.PixelWidth,
-            UpdateSourcePixelHeight = _updateEvidence.PixelHeight,
-            UpdateSourceLuminanceRange = _updateEvidence.LuminanceRange,
-            UpdateSourceHasVisibleVariation = _updateEvidence.HasVisibleVariation,
-            UpdateElementActualWidth = _artworkImage.ActualWidth,
-            UpdateElementActualHeight = _artworkImage.ActualHeight,
-            UpdateRenderedPixelWidth = updateRender.PixelWidth,
-            UpdateRenderedPixelHeight = updateRender.PixelHeight,
-            UpdateRenderedLuminanceRange = updateRender.LuminanceRange,
-            UpdateRenderedHasVisibleVariation = updateRender.HasVisibleVariation,
+            CurrentBrandingSourcePixelWidth = _currentBrandingEvidence.PixelWidth,
+            CurrentBrandingSourcePixelHeight = _currentBrandingEvidence.PixelHeight,
+            CurrentBrandingSourceLuminanceRange = _currentBrandingEvidence.LuminanceRange,
+            CurrentBrandingSourceHasVisibleVariation = _currentBrandingEvidence.HasVisibleVariation,
+            CurrentBrandingElementActualWidth = _currentBrandingImage.ActualWidth,
+            CurrentBrandingElementActualHeight = _currentBrandingImage.ActualHeight,
+            CurrentBrandingRenderedPixelWidth = currentBrandingRender.PixelWidth,
+            CurrentBrandingRenderedPixelHeight = currentBrandingRender.PixelHeight,
+            CurrentBrandingRenderedLuminanceRange = currentBrandingRender.LuminanceRange,
+            CurrentBrandingRenderedHasVisibleVariation = currentBrandingRender.HasVisibleVariation,
+            HistoricalVersionTransitionArtworkActive = false,
             ReviewActionReplicaCount = _reviewActionReplicas.Count,
             ReviewActionReplicaHitTestingEnabled = _reviewActionReplicas.Any(button => button.IsHitTestVisible),
             ReviewActionReplicaFocusable = _reviewActionReplicas.Any(button => button.Focusable || button.IsTabStop),
@@ -299,10 +300,6 @@ internal sealed class BrandingReviewWindowV060 : Window
         if (liveImage.Source is null)
             throw new InvalidOperationException("Branding image has no WPF ImageSource.");
 
-        // A nested live Image carries parent-relative visual offsets. For evidence,
-        // construct a fresh WPF Image with the exact same BitmapSource and arrange it
-        // at origin. This still exercises WPF decoding/scaling/rendering, but removes
-        // parent layout geometry from the evidence bitmap.
         var probe = new Image
         {
             Source = liveImage.Source,
@@ -337,7 +334,7 @@ internal sealed class BrandingReviewWindowV060 : Window
             Directory.CreateDirectory(DiagnosticRootV060);
             var receipt = new
             {
-                Schema = "matawaka.workbench-v060-branding-review-startup-failure/v0.5",
+                Schema = "matawaka.workbench-v060-branding-review-startup-failure/v0.6",
                 Status = "BRANDING_REVIEW_STARTUP_FAILED",
                 Mode = smoke ? "SMOKE" : "HUMAN_REVIEW",
                 ProcessId = Environment.ProcessId,
@@ -383,11 +380,9 @@ internal sealed class BrandingReviewWindowV060 : Window
         "  v0.60   live result wiring reuses the exact reviewed Authority / Evidence projection\r\n" +
         "\r\n" +
         "Windows branding review:\r\n" +
-        "  isolated presentation-only startup path\r\n" +
         "  exact four normal maintenance actions shown as non-interactive visual replicas\r\n" +
-        "  Matawaka executable/window icon\r\n" +
-        "  startup splash\r\n" +
-        "  v0.55.2 -> v0.60 artwork\r\n" +
+        "  neutral Matawaka Workbench artwork used for splash/current branding\r\n" +
+        "  static historical version-transition artwork removed from active UI\r\n" +
         "\r\n" +
         "Boundaries:\r\n" +
         "  Branding != Authority\r\n" +
