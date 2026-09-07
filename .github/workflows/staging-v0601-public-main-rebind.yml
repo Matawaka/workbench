@@ -29,3 +29,34 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python .\.github\staging\rebind_v0601_public_main.py .\candidate
           if ($LASTEXITCODE -ne 0) { throw "rebind transaction failed: $LASTEXITCODE" }
+
+      - name: Record local rebind evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path .\candidate\.git)) { throw 'candidate checkout missing' }
+          $evidence = @(
+            "LocalHead=$((git -C .\candidate rev-parse HEAD).Trim())",
+            "Parents=$((git -C .\candidate show -s --format=%P HEAD).Trim())",
+            "Status=$((git -C .\candidate status --porcelain=v1 --untracked-files=all) -join ';')",
+            "RemoteFeature=$(((git -C .\candidate ls-remote origin refs/heads/feat/workbench-v0.60.1-operator-acceptance-closure).Split("`t"))[0])"
+          )
+          $evidence | Set-Content -Encoding utf8NoBOM .\candidate\rebind-local-evidence.txt
+          $evidence | Write-Host
+
+      - name: Upload exact staged rebind files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0.60.1-public-main-rebind-files
+          path: |
+            candidate/.github/qualification/v0601-checkpoint/Program.cs
+            candidate/.github/workflows/workbench-v0601-operator-acceptance.yml
+            candidate/src/Matawaka.Workbench.App/LocalCheckpointV0601Service.cs
+            candidate/src/Matawaka.Workbench.App/PublicMainImportReceiptV0601.cs
+            candidate/src/Matawaka.Workbench.App/V0601QualifiedSourceBindings.cs
+            candidate/tooling/v0601-public-main-import/Program.cs
+            candidate/rebind-local-evidence.txt
+          if-no-files-found: error
+          compression-level: 0
