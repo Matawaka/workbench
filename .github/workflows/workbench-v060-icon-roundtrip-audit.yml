@@ -1,0 +1,83 @@
+name: Workbench v0.60 Icon Roundtrip Audit
+
+on:
+  push:
+    branches:
+      - audit/workbench-v0.60-icon-roundtrip-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact audited source lineage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = '141960ed1818947a3eff84ec025ec04d72967482'
+          if ((git merge-base HEAD $source).Trim() -ne $source) { throw 'audit branch does not descend from exact source commit' }
+          $main = (git ls-remote https://github.com/Matawaka/workbench.git refs/heads/main).Split("`t")[0]
+          if ($main -ne '6541dc32182c970c8e1a6ade426a6cee7086511b') { throw "public main drifted during icon audit: $main" }
+          Write-Host "ICON_AUDIT_LINEAGE_PASS source=$source main=$main"
+
+      - name: Parse and render exact repository icon
+        id: inspect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourcePath = 'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico'
+          if (-not (Test-Path $sourcePath -PathType Leaf)) { throw 'audited repository icon missing' }
+          $observedBytes = (Get-Item $sourcePath).Length
+          $observedSha = (Get-FileHash $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($observedSha -ne 'd0729001d0efcc75aa778c6caf743950a7cfe09ec21edc27c6f56c3cd64a4210') { throw "audited icon identity changed: $observedSha" }
+
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::new((Resolve-Path $sourcePath).Path)
+          if ($null -eq $icon) { throw 'System.Drawing could not parse audited icon' }
+          if ($icon.Width -lt 16 -or $icon.Height -lt 16) { throw "audited icon unusable size: $($icon.Width)x$($icon.Height)" }
+
+          $out = Join-Path $env:RUNNER_TEMP 'v060-icon-roundtrip-audit'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item $sourcePath (Join-Path $out 'MatawakaWorkbench-observed.ico')
+          $bitmap = $icon.ToBitmap()
+          try {
+            $pngPath = Join-Path $out 'MatawakaWorkbench-observed.png'
+            $bitmap.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
+          }
+          finally {
+            $bitmap.Dispose()
+            $icon.Dispose()
+          }
+          $pngSha = (Get-FileHash $pngPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $pngBytes = (Get-Item $pngPath).Length
+          $receipt = [ordered]@{
+            schema = 'matawaka.workbench-v060-icon-roundtrip-audit/v0.1'
+            status = 'EXACT_REPOSITORY_ICON_PARSED_AND_RENDERED'
+            sourceCommit = '141960ed1818947a3eff84ec025ec04d72967482'
+            repositoryIconBytes = $observedBytes
+            repositoryIconSha256 = $observedSha
+            parsedWidth = 32
+            parsedHeight = 32
+            renderedPngBytes = $pngBytes
+            renderedPngSha256 = $pngSha
+            authorityCreated = $false
+            repositoryWritePerformed = $false
+            publicationPerformed = $false
+          }
+          $receipt | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $out 'icon-roundtrip-audit.json') -Encoding utf8NoBOM
+          "out=$out" >> $env:GITHUB_OUTPUT
+          Write-Host "ICON_ROUNDTRIP_PASS icoBytes=$observedBytes icoSha256=$observedSha renderedPngBytes=$pngBytes renderedPngSha256=$pngSha size=32x32"
+
+      - name: Upload exact icon audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v060-icon-roundtrip-audit
+          path: ${{ steps.inspect.outputs.out }}
+          if-no-files-found: error
