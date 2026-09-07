@@ -41,11 +41,11 @@ public partial class App : Application
 
         var semanticReviewOnly = provenanceReviewOnly || capabilityEvidenceReviewOnly;
 
-        SplashScreen? splash = null;
+        BrandingSplashWindowV060? splash = null;
         if (!semanticReviewOnly)
         {
-            splash = new SplashScreen("Assets/Branding/splash-v060.jpg");
-            splash.Show(autoClose: false);
+            splash = new BrandingSplashWindowV060();
+            splash.Show();
         }
 
         var window = new MainWindow();
@@ -72,30 +72,30 @@ public partial class App : Application
         if (splash is not null)
         {
             await Task.Delay(650);
-            splash.Close(TimeSpan.FromMilliseconds(180));
+            splash.Close();
         }
     }
 
     private async Task RunIsolatedBrandingReviewV060Async(bool smoke)
     {
-        SplashScreen? splash = null;
+        BrandingSplashWindowV060? splash = null;
         try
         {
-            splash = new SplashScreen("Assets/Branding/splash-v060.jpg");
-            splash.Show(autoClose: false);
+            splash = new BrandingSplashWindowV060();
+            splash.Show();
 
             var reviewWindow = new BrandingReviewWindowV060(smoke);
             MainWindow = reviewWindow;
             reviewWindow.Show();
 
             await Task.Delay(650);
-            splash.Close(TimeSpan.FromMilliseconds(180));
+            splash.Close();
         }
         catch (Exception ex)
         {
             try
             {
-                splash?.Close(TimeSpan.Zero);
+                splash?.Close();
             }
             catch
             {
