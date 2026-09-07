@@ -91,7 +91,7 @@ jobs:
           $unexpected = @($changed | Where-Object { $_ -notin $allowed })
           if ($unexpected.Count -ne 0) { throw "unexpected v0.60.1 source path(s): $($unexpected -join ', ')" }
           $routing = Get-Content src/Matawaka.Workbench.App/MainWindow.V0601.Acceptance.cs -Raw
-          foreach ($must in @('0.60.1','workbench-v0.60.1-accepted','FAILED_NO_RETRY','AutomaticPublishPerformed = false','HistoricalV060AcceptedTagCreated = false')) {
+          foreach ($must in @('0.60.1','workbench-v0.60.1-accepted','MarkFailedNoRetryAsync','AutomaticPublishPerformed = false','HistoricalV060AcceptedTagCreated = false')) {
             if (-not $routing.Contains($must)) { throw "v0.60.1 routing invariant missing: $must" }
           }
           foreach ($forbidden in @('HttpClient','TcpClient','UdpClient','git push','--force','ResponseAuthorityCreated = true','DisplayPermitCreated = true','ActionPermitCreated = true','SuccessorPermitCreated = true')) {
