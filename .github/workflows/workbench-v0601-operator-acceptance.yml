@@ -1,0 +1,163 @@
+name: Workbench v0.60.1 Operator Acceptance Closure
+
+on:
+  push:
+    branches:
+      - feat/workbench-v0.60.1-operator-acceptance-closure
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualification:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact public and accepted frontier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
+          if ($main -ne '6541dc32182c970c8e1a6ade426a6cee7086511b') { throw "public main drifted: $main" }
+          $accepted = git ls-remote $remote refs/tags/workbench-v0.56.2-accepted 'refs/tags/workbench-v0.56.2-accepted^{}'
+          $peeled = @($accepted | Where-Object { $_ -match '\^\{\}$' })
+          if ($peeled.Count -ne 1 -or $peeled[0].Split("`t")[0] -ne '693886052c598e9ed02558ca60a1fd8901090236') { throw 'accepted v0.56.2 drifted or ambiguous' }
+          foreach ($tag in @('workbench-v0.60-accepted','workbench-v0.60.1-accepted')) {
+            $found = git ls-remote $remote "refs/tags/$tag" "refs/tags/$tag^{}"
+            if (-not [string]::IsNullOrWhiteSpace(($found -join "`n"))) { throw "unexpected public tag exists: $tag" }
+          }
+          if ((git merge-base HEAD '3063c739a29e2524a3d45d5003095b515b6ad75f').Trim() -ne '3063c739a29e2524a3d45d5003095b515b6ad75f') { throw 'v0.60.1 does not descend from human-reviewed v0.60 head' }
+          Write-Host "V0601_FRONTIER_PASS main=$main accepted=693886052c598e9ed02558ca60a1fd8901090236 v060=absent v0601=absent"
+
+      - name: Guard reviewed v0.60 sources byte-identical
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $reviewed = '3063c739a29e2524a3d45d5003095b515b6ad75f'
+          $paths = @(
+            'src/Matawaka.Workbench.AgentHost/C2paProvenanceAdmissionService.cs',
+            'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs',
+            'src/Matawaka.Workbench.AgentHost/ProvenanceCapabilityEvidenceComposer.cs',
+            'src/Matawaka.Workbench.AgentHost/SemanticProvider.cs',
+            'src/Matawaka.Workbench.Runtime/CommandRouter.cs',
+            'src/Matawaka.Workbench.Runtime/LiveCapabilityEvidenceAuditV058.cs',
+            'src/Matawaka.Workbench.App/CapabilityEvidenceReviewV059.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V060.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs',
+            'src/Matawaka.Workbench.App/BrandingImageResourcesV060.cs',
+            'src/Matawaka.Workbench.App/BrandingReviewWindowV060.cs',
+            'src/Matawaka.Workbench.App/BrandingSplashWindowV060.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml',
+            'src/Matawaka.Workbench.App/MainWindow.xaml.cs',
+            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico.b64',
+            'src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json',
+            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.001',
+            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.002',
+            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.003',
+            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.b64.004'
+          )
+          foreach ($path in $paths) {
+            $expected = (git rev-parse "$reviewed`:$path").Trim()
+            $observed = (git hash-object $path).Trim()
+            if ($observed -ne $expected) { throw "reviewed v0.60 source drift: $path expected=$expected observed=$observed" }
+          }
+          Write-Host "V0601_REVIEWED_SOURCE_PASS paths=$($paths.Count)"
+
+      - name: Guard acceptance-only successor source surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $allowed = @(
+            '.github/workflows/workbench-v0601-operator-acceptance.yml',
+            'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/V0601QualifiedSourceBindings.cs',
+            'src/Matawaka.Workbench.App/PublicMainImportReceiptV0601.cs',
+            'src/Matawaka.Workbench.App/LocalCheckpointV0601Service.cs',
+            'src/Matawaka.Workbench.App/WorkbenchV0601AcceptanceHarness.cs',
+            'src/Matawaka.Workbench.App/MainWindow.V0601.Acceptance.cs',
+            'tooling/v0601-public-main-import/Matawaka.Workbench.V0601PublicImport.csproj',
+            'tooling/v0601-public-main-import/Program.cs'
+          )
+          $changed = @(git diff --name-only '3063c739a29e2524a3d45d5003095b515b6ad75f...HEAD')
+          $unexpected = @($changed | Where-Object { $_ -notin $allowed })
+          if ($unexpected.Count -ne 0) { throw "unexpected v0.60.1 source path(s): $($unexpected -join ', ')" }
+          $routing = Get-Content src/Matawaka.Workbench.App/MainWindow.V0601.Acceptance.cs -Raw
+          foreach ($must in @('0.60.1','workbench-v0.60.1-accepted','FAILED_NO_RETRY','AutomaticPublishPerformed = false','HistoricalV060AcceptedTagCreated = false')) {
+            if (-not $routing.Contains($must)) { throw "v0.60.1 routing invariant missing: $must" }
+          }
+          foreach ($forbidden in @('HttpClient','TcpClient','UdpClient','git push','--force','ResponseAuthorityCreated = true','DisplayPermitCreated = true','ActionPermitCreated = true','SuccessorPermitCreated = true')) {
+            if ($routing.Contains($forbidden)) { throw "forbidden acceptance authority/effect surfaced: $forbidden" }
+          }
+          Write-Host "V0601_ACCEPTANCE_SURFACE_PASS changed=$($changed.Count)"
+
+      - name: Build fixed no-ref import utility
+        shell: pwsh
+        run: |
+          dotnet build .\tooling\v0601-public-main-import\Matawaka.Workbench.V0601PublicImport.csproj -c Release --nologo
+          dotnet run --project .\tooling\v0601-public-main-import\Matawaka.Workbench.V0601PublicImport.csproj -c Release -- --self-test
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
+
+      - name: Preserve existing v0.60 live Authority Evidence qualification
+        shell: pwsh
+        run: dotnet run --project .\.github\qualification\v060-live-authority-evidence-surface\Probe.csproj -c Release
+
+      - name: Publish candidate and preserve neutral branding WPF smoke
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'workbench-v0601-candidate'
+          dotnet publish .\src\Matawaka.Workbench.App\Matawaka.Workbench.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'Matawaka.Workbench.App.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'v0.60.1 candidate executable missing' }
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $diag = Join-Path ([IO.Path]::GetTempPath()) 'Matawaka\Workbench\branding-review-v060'
+          Remove-Item (Join-Path $diag 'smoke.json') -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $diag 'failure.json') -Force -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath $exe -ArgumentList '--branding-review-smoke' -WorkingDirectory $out -PassThru
+          if (-not $p.WaitForExit(15000)) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw 'neutral branding smoke timed out' }
+          if ($p.ExitCode -ne 0) { if (Test-Path (Join-Path $diag 'failure.json')) { Get-Content (Join-Path $diag 'failure.json') -Raw | Write-Host }; throw "neutral branding smoke failed: $($p.ExitCode)" }
+          $r = Get-Content (Join-Path $diag 'smoke.json') -Raw | ConvertFrom-Json
+          if ($r.Status -ne 'BRANDING_REVIEW_WINDOW_CONTENT_RENDERED' -or $r.HistoricalVersionTransitionArtworkActive -ne $false -or $r.ReviewActionReplicaCount -ne 4) { throw 'neutral branding smoke contract failed' }
+          if ($r.SplashRenderedHasVisibleVariation -ne $true -or $r.CurrentBrandingRenderedHasVisibleVariation -ne $true) { throw 'neutral branding render variation not proven' }
+          "out=$out" >> $env:GITHUB_OUTPUT
+          "exe_sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "V0601_CANDIDATE_BUILD_PASS exeSha256=$sha neutralBranding=true"
+
+      - name: Guard checkpoint and import source policy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $checkpoint = Get-Content src/Matawaka.Workbench.App/LocalCheckpointV0601Service.cs -Raw
+          foreach ($must in @(
+            'ea852feeb0e8d92a8977bb251693e7e977913dca',
+            '6541dc32182c970c8e1a6ade426a6cee7086511b',
+            'workbench-v0.60.1-accepted',
+            'commit-tree',
+            'update-ref',
+            'RemotePushAllowed=false; NetworkAccessAllowed=false'
+          )) { if (-not $checkpoint.Contains($must)) { throw "checkpoint policy invariant missing: $must" } }
+          if ($checkpoint.Contains('git push') -or $checkpoint.Contains('HttpClient')) { throw 'checkpoint unexpectedly exposes remote/network effect' }
+          $import = Get-Content tooling/v0601-public-main-import/Program.cs -Raw
+          foreach ($must in @('https://github.com/Matawaka/workbench.git','IMPORT-EXACT-PUBLIC-6541','--no-write-fetch-head','RefMutationPerformed = false','RemoteWritePerformed = false','AutomaticRetryPerformed = false')) { if (-not $import.Contains($must)) { throw "import policy invariant missing: $must" } }
+          if ($import.Contains('push') -and -not $import.Contains('No push')) { throw 'unexpected push surface in import utility' }
+          Write-Host 'V0601_CHECKPOINT_IMPORT_POLICY_PASS'
+
+      - name: Clean repository boundary
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain=v1 --untracked-files=all
+          if (-not [string]::IsNullOrWhiteSpace(($dirty -join "`n"))) { throw "qualification dirtied repository: $($dirty -join '; ')" }
+          Write-Host 'V0601_CLEAN_REPOSITORY_PASS'
