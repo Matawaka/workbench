@@ -248,9 +248,17 @@ static void CreateJunction(string junction, string target)
 {
     if (Directory.Exists(junction)) return;
     Directory.CreateDirectory(Path.GetDirectoryName(junction)!);
-    var result = RunProcess("cmd.exe", Directory.GetCurrentDirectory(), TimeSpan.FromSeconds(30),
-        "/d", "/s", "/c", $"mklink /J \"{junction}\" \"{target}\"");
-    Require(Directory.Exists(junction), "junction was not created: " + result.Stdout + result.Stderr);
+    static string QuoteForPowerShell(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+    RunProcess(
+        "pwsh.exe",
+        Directory.GetCurrentDirectory(),
+        TimeSpan.FromSeconds(30),
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        $"New-Item -ItemType Junction -Path '{QuoteForPowerShell(junction)}' -Target '{QuoteForPowerShell(target)}' -Force | Out-Null");
+    Require(Directory.Exists(junction), "junction was not created.");
 }
 
 static IReadOnlyList<(string Status, string Path)> ReadSourceDelta(string root, string predecessor, string head)
