@@ -20,13 +20,26 @@ public partial class App : Application
             arg,
             global::Matawaka.Workbench.App.MainWindow.BrandingReviewOnlyArgumentV060,
             StringComparison.OrdinalIgnoreCase));
+        var brandingReviewSmoke = e.Args.Any(arg => string.Equals(
+            arg,
+            BrandingReviewWindowV060.SmokeArgumentV060,
+            StringComparison.OrdinalIgnoreCase));
 
-        var selectedReviewModes = new[] { provenanceReviewOnly, capabilityEvidenceReviewOnly, brandingReviewOnly }.Count(value => value);
+        if (brandingReviewOnly && brandingReviewSmoke)
+            throw new InvalidOperationException("Choose either branding review or branding review smoke, not both.");
+
+        var brandingReviewRequested = brandingReviewOnly || brandingReviewSmoke;
+        var selectedReviewModes = new[] { provenanceReviewOnly, capabilityEvidenceReviewOnly, brandingReviewRequested }.Count(value => value);
         if (selectedReviewModes > 1)
             throw new InvalidOperationException("Choose exactly one Workbench review-only mode.");
 
+        if (brandingReviewRequested)
+        {
+            await RunIsolatedBrandingReviewV060Async(brandingReviewSmoke);
+            return;
+        }
+
         var semanticReviewOnly = provenanceReviewOnly || capabilityEvidenceReviewOnly;
-        var anyReviewOnly = semanticReviewOnly || brandingReviewOnly;
 
         SplashScreen? splash = null;
         if (!semanticReviewOnly)
@@ -36,24 +49,21 @@ public partial class App : Application
         }
 
         var window = new MainWindow();
-        if (!anyReviewOnly)
+        if (!semanticReviewOnly)
         {
             window.ConfigureV0562Routing();
         }
 
-        if (!brandingReviewOnly)
+        if (!capabilityEvidenceReviewOnly)
         {
-            if (!capabilityEvidenceReviewOnly)
-            {
-                window.ConfigureV0561ProvenanceReviewRouting(provenanceReviewOnly);
-            }
-
-            window.ConfigureV059CapabilityEvidenceReviewRouting(capabilityEvidenceReviewOnly);
+            window.ConfigureV0561ProvenanceReviewRouting(provenanceReviewOnly);
         }
+
+        window.ConfigureV059CapabilityEvidenceReviewRouting(capabilityEvidenceReviewOnly);
 
         if (!semanticReviewOnly)
         {
-            window.ConfigureV060Branding(brandingReviewOnly);
+            window.ConfigureV060Branding(reviewOnly: false);
         }
 
         MainWindow = window;
@@ -63,6 +73,49 @@ public partial class App : Application
         {
             await Task.Delay(650);
             splash.Close(TimeSpan.FromMilliseconds(180));
+        }
+    }
+
+    private async Task RunIsolatedBrandingReviewV060Async(bool smoke)
+    {
+        SplashScreen? splash = null;
+        try
+        {
+            splash = new SplashScreen("Assets/Branding/splash-v060.jpg");
+            splash.Show(autoClose: false);
+
+            var reviewWindow = new BrandingReviewWindowV060(smoke);
+            MainWindow = reviewWindow;
+            reviewWindow.Show();
+
+            await Task.Delay(650);
+            splash.Close(TimeSpan.FromMilliseconds(180));
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                splash?.Close(TimeSpan.Zero);
+            }
+            catch
+            {
+                // Failure diagnostics must not mask the original startup exception.
+            }
+
+            BrandingReviewWindowV060.WriteStartupFailure(ex, smoke);
+
+            if (!smoke)
+            {
+                MessageBox.Show(
+                    "Matawaka Workbench v0.60 branding review could not start.\n\n" +
+                    "A local diagnostic receipt was written to:\n" +
+                    BrandingReviewWindowV060.FailureReceiptPathV060,
+                    "Matawaka Workbench — branding review startup failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+
+            Shutdown(-1);
         }
     }
 }
