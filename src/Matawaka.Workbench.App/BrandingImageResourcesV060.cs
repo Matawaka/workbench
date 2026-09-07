@@ -21,42 +21,33 @@ internal readonly record struct BrandingImageEvidenceV060(
 /// <summary>
 /// Exact synchronous v0.60 branding image loader.
 ///
-/// Binary image bytes are never stored through the GitHub Contents binary path.
-/// Valid locally-decoded JPEG bytes are transported as bounded ASCII base64 chunks.
-/// At runtime/build qualification the chunks are concatenated, reverse-decoded,
-/// SHA-256 checked, decoded with WPF BitmapDecoder(OnLoad), dimension checked and
-/// rejected if visually flat. This preserves the transport/evidence distinction:
-/// text transport identity is not image admission identity.
+/// The active product uses only the neutral Matawaka Workbench artwork. Binary image
+/// bytes are transported as bounded ASCII base64 chunks. At runtime/build qualification
+/// the chunks are concatenated, reverse-decoded, SHA-256 checked, decoded with WPF
+/// BitmapDecoder(OnLoad), dimension checked and rejected if visually flat.
+///
+/// The historical user-supplied v0.55.2 -> v0.60 transition artwork remains provenance
+/// evidence only and is not an active presentation surface.
 /// </summary>
 internal static class BrandingImageResourcesV060
 {
-    internal const string ExpectedSplashSha256 = "3ac0eed186a546ee029cba69790d064948bae40de6334971f25b14e6fbc9951c";
-    internal const string ExpectedUpdateSha256 = "9cfccfeb2d067e87f619169c075cff42a01aa076f38c9d36c68941807920a483";
+    internal const string ExpectedNeutralArtworkSha256 = "3ac0eed186a546ee029cba69790d064948bae40de6334971f25b14e6fbc9951c";
     internal const int ExpectedPixelWidth = 400;
     internal const int ExpectedPixelHeight = 225;
 
-    private static readonly string[] SplashChunkResources =
+    private static readonly string[] NeutralArtworkChunkResources =
     {
-        "Matawaka.Workbench.App.Branding.SplashBase64.001",
-        "Matawaka.Workbench.App.Branding.SplashBase64.002",
-        "Matawaka.Workbench.App.Branding.SplashBase64.003",
-        "Matawaka.Workbench.App.Branding.SplashBase64.004"
-    };
-
-    private static readonly string[] UpdateChunkResources =
-    {
-        "Matawaka.Workbench.App.Branding.UpdateBase64.001",
-        "Matawaka.Workbench.App.Branding.UpdateBase64.002",
-        "Matawaka.Workbench.App.Branding.UpdateBase64.003",
-        "Matawaka.Workbench.App.Branding.UpdateBase64.004",
-        "Matawaka.Workbench.App.Branding.UpdateBase64.005"
+        "Matawaka.Workbench.App.Branding.NeutralBase64.001",
+        "Matawaka.Workbench.App.Branding.NeutralBase64.002",
+        "Matawaka.Workbench.App.Branding.NeutralBase64.003",
+        "Matawaka.Workbench.App.Branding.NeutralBase64.004"
     };
 
     internal static BrandingImageEvidenceV060 LoadSplash()
-        => LoadExactBitmap(SplashChunkResources, ExpectedSplashSha256, "splash");
+        => LoadExactBitmap(NeutralArtworkChunkResources, ExpectedNeutralArtworkSha256, "startup-splash");
 
-    internal static BrandingImageEvidenceV060 LoadUpdateArtwork()
-        => LoadExactBitmap(UpdateChunkResources, ExpectedUpdateSha256, "update-artwork");
+    internal static BrandingImageEvidenceV060 LoadCurrentWorkbenchArtwork()
+        => LoadExactBitmap(NeutralArtworkChunkResources, ExpectedNeutralArtworkSha256, "current-workbench-artwork");
 
     internal static (int MinLuminance, int MaxLuminance) MeasureVisibleLuminance(BitmapSource source)
     {
