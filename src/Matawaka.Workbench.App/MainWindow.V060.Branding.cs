@@ -54,7 +54,7 @@ public partial class MainWindow
             "icon/splash/update artwork/progress text only", "no policy/provider/runtime/model/publication authority")
     };
 
-    private static BitmapFrame LoadV060BrandingIcon()
+    internal static BitmapFrame LoadV060BrandingIcon()
     {
         var assembly = typeof(MainWindow).Assembly;
         using var resource = assembly.GetManifestResourceStream(BrandingIconResourceV060)
@@ -79,20 +79,22 @@ public partial class MainWindow
         surface.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         surface.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        var updateArtwork = BrandingImageResourcesV060.LoadUpdateArtwork();
         var artwork = new Image
         {
-            Source = new BitmapImage(new Uri(
-                "pack://application:,,,/Matawaka.Workbench.App;component/Assets/Branding/update-v060.jpg",
-                UriKind.Absolute)),
+            Source = updateArtwork.Source,
             Height = 220,
             Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8)
+            Margin = new Thickness(8),
+            SnapsToDevicePixels = true
         };
+        RenderOptions.SetBitmapScalingMode(artwork, BitmapScalingMode.HighQuality);
+
         var artworkFrame = new Border
         {
-            Background = Brushes.Black,
+            Background = new SolidColorBrush(Color.FromRgb(2, 8, 18)),
             Child = artwork,
             Margin = new Thickness(0, 0, 0, 8)
         };
