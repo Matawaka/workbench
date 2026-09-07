@@ -16,7 +16,7 @@ internal sealed class BrandingSplashWindowV060 : Window
     private readonly Image _image;
 
     internal BrandingImageEvidenceV060 ImageEvidence { get; }
-    internal FrameworkElement ImageElement => _image;
+    internal Image ImageElement => _image;
     internal double RenderedImageWidth => _image.ActualWidth;
     internal double RenderedImageHeight => _image.ActualHeight;
 
