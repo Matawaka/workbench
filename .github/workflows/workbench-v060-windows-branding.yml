@@ -54,6 +54,12 @@ jobs:
           Add-Type -AssemblyName System.Drawing
           $ico = [System.Drawing.Icon]::new($iconPath)
           if ($ico.Width -ne 32 -or $ico.Height -ne 32) { throw "decoded icon is not exact 32x32 ICO: $($ico.Width)x$($ico.Height)" }
+          foreach ($imagePath in @($splash, $update)) {
+            $image = [System.Drawing.Image]::FromFile((Resolve-Path $imagePath))
+            try {
+              if ($image.Width -le 0 -or $image.Height -le 0) { throw "branding bitmap has invalid dimensions: $imagePath $($image.Width)x$($image.Height)" }
+            } finally { $image.Dispose() }
+          }
           $source = Get-Content src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json -Raw | ConvertFrom-Json
           if ($source.AuthorityEffect -ne 'NONE_BY_BRANDING') { throw 'branding provenance authority effect drifted' }
           if ($source.OriginalUserSuppliedAssets.WindowsIcon.Sha256 -ne '2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1') { throw 'original icon provenance drifted' }
@@ -84,13 +90,14 @@ jobs:
           }
           Write-Host "V060_BRANDING_PROTECTED_SOURCE_PASS paths=$($paths.Count)"
 
-      - name: Guard isolated review and custom splash route
+      - name: Guard render-proven isolated review and manifest image route
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $allowed = @(
             '.github/workflows/workbench-v060-windows-branding.yml',
             'src/Matawaka.Workbench.App/App.xaml.cs',
+            'src/Matawaka.Workbench.App/BrandingImageResourcesV060.cs',
             'src/Matawaka.Workbench.App/BrandingReviewWindowV060.cs',
             'src/Matawaka.Workbench.App/BrandingSplashWindowV060.cs',
             'src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs',
@@ -106,12 +113,13 @@ jobs:
           foreach ($required in $allowed) { if ($required -notin $changed) { throw "required branding path missing: $required" } }
 
           $app = Get-Content src/Matawaka.Workbench.App/App.xaml.cs -Raw
+          $loader = Get-Content src/Matawaka.Workbench.App/BrandingImageResourcesV060.cs -Raw
           $review = Get-Content src/Matawaka.Workbench.App/BrandingReviewWindowV060.cs -Raw
           $splash = Get-Content src/Matawaka.Workbench.App/BrandingSplashWindowV060.cs -Raw
           $branding = Get-Content src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs -Raw
           $project = Get-Content src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -Raw
 
-          foreach ($literal in @('BrandingReviewWindowV060.SmokeArgumentV060','RunIsolatedBrandingReviewV060Async','if (brandingReviewRequested)','new BrandingReviewWindowV060(smoke)','new BrandingSplashWindowV060()','window.ConfigureV060Branding(reviewOnly: false)')) {
+          foreach ($literal in @('BrandingReviewWindowV060.SmokeArgumentV060','RunIsolatedBrandingReviewV060Async','if (brandingReviewRequested)','new BrandingReviewWindowV060(smoke, splash)','new BrandingSplashWindowV060()','window.ConfigureV060Branding(reviewOnly: false)')) {
             if (-not $app.Contains($literal)) { throw "isolated startup binding missing: $literal" }
           }
           if ($app.Contains('new SplashScreen(') -or $app.Contains('System.Windows.SplashScreen')) { throw 'framework SplashScreen path remains reachable' }
@@ -119,23 +127,32 @@ jobs:
           $fullMainIndex = $app.IndexOf('var window = new MainWindow();')
           if ($isolationIndex -lt 0 -or $fullMainIndex -lt 0 -or $isolationIndex -gt $fullMainIndex) { throw 'branding review does not branch away before full MainWindow construction' }
 
-          foreach ($literal in @('BRANDING_REVIEW_WINDOW_CONTENT_RENDERED','FullMainWindowConstructed = false','WorkbenchSettingsStoreInitialized = false','WorkbenchAgentServiceInitialized = false','READ-ONLY BRANDING REVIEW — NO UPDATE / ACCEPT / PUBLISH AUTHORITY','update-v060.jpg')) {
-            if (-not $review.Contains($literal)) { throw "isolated review invariant missing: $literal" }
+          foreach ($literal in @('GetManifestResourceStream','BitmapCacheOption.OnLoad','SplashResourceNameV060','UpdateArtworkResourceNameV060','HasVisibleVariation','visually flat')) {
+            if (-not $loader.Contains($literal)) { throw "exact manifest bitmap loader invariant missing: $literal" }
           }
-          if (-not $splash.Contains('splash-v060.jpg')) { throw 'custom splash resource binding missing' }
+          foreach ($literal in @('BrandingImageResourcesV060.LoadSplash()','ImageEvidence.Source','RenderedImageWidth','RenderedImageHeight')) {
+            if (-not $splash.Contains($literal)) { throw "custom splash render invariant missing: $literal" }
+          }
+          foreach ($literal in @('BRANDING_REVIEW_WINDOW_CONTENT_RENDERED','CaptureElementRender','SmokeSplashRenderPathV060','SmokeUpdateRenderPathV060','ReviewActionReplicaCount','READ-ONLY BRANDING REVIEW — NO UPDATE / ACCEPT / PUBLISH AUTHORITY','VISUAL_REPLICA_NO_ACTION')) {
+            if (-not $review.Contains($literal)) { throw "isolated review/render invariant missing: $literal" }
+          }
+          $reviewReplicaCalls = ([regex]::Matches($review, 'buttons\.Children\.Add\(CreateReviewActionReplica\(')).Count
+          if ($reviewReplicaCalls -ne 4) { throw "isolated review must contain exact four maintenance visual replicas: $reviewReplicaCalls" }
+          if ($review.Contains('Click +=') -or $review.Contains('Command =')) { throw 'isolated review visual replicas unexpectedly bind action handlers' }
 
-          foreach ($surface in @($review, $splash)) {
+          foreach ($surface in @($loader, $review, $splash, $branding)) {
+            if ($surface.Contains('pack://application:')) { throw 'silent WPF pack-URI branding image route remains reachable' }
             foreach ($forbidden in @('WorkbenchSettingsStore.Load','new WorkbenchSettingsStore','new WorkbenchAgentService','CommandRouter(','HttpClient','TcpClient','UdpClient','Process.Start','git push','PublishAccepted(','ActionPermitCreated = true','ResponseAuthorityCreated = true','DisplayPermitCreated = true','SuccessorPermitCreated = true')) {
-              if ($surface.Contains($forbidden)) { throw "forbidden dependency/effect in isolated branding presentation: $forbidden" }
+              if ($surface.Contains($forbidden)) { throw "forbidden dependency/effect in branding presentation: $forbidden" }
             }
           }
-          foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','Branding != Authority','Implementation merged != Accepted release','BrandingIconResourceV060')) {
+          foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','Branding != Authority','Implementation merged != Accepted release','BrandingIconResourceV060','BrandingImageResourcesV060.LoadUpdateArtwork()')) {
             if (-not $branding.Contains($literal)) { throw "normal branding invariant missing: $literal" }
           }
-          foreach ($literal in @('<ApplicationIcon>$(BrandingGeneratedIconPath)</ApplicationIcon>','MatawakaWorkbench.ico.b64','DecodeBrandingApplicationIcon','splash-v060.jpg','update-v060.jpg')) {
-            if (-not $project.Contains($literal)) { throw "project resource binding missing: $literal" }
+          foreach ($literal in @('<ApplicationIcon>$(BrandingGeneratedIconPath)</ApplicationIcon>','MatawakaWorkbench.ico.b64','DecodeBrandingApplicationIcon','LogicalName="Matawaka.Workbench.App.Branding.SplashV060"','LogicalName="Matawaka.Workbench.App.Branding.UpdateArtworkV060"')) {
+            if (-not $project.Contains($literal)) { throw "project manifest-resource binding missing: $literal" }
           }
-          Write-Host "V060_BRANDING_ISOLATED_PRESENTATION_PASS changed=$($changed.Count)"
+          Write-Host "V060_BRANDING_RENDER_PROVEN_ROUTE_PASS changed=$($changed.Count) replicas=$reviewReplicaCalls"
 
       - name: Full Workbench Release build
         shell: pwsh
@@ -159,7 +176,7 @@ jobs:
           if ($null -eq $icon -or $icon.Width -lt 16 -or $icon.Height -lt 16) { throw 'published executable has no usable associated icon' }
           $exeSha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           $receipt = [ordered]@{
-            schema = 'matawaka.workbench-v060-windows-branding-qualification/v0.60.1'
+            schema = 'matawaka.workbench-v060-windows-branding-qualification/v0.60.2'
             status = 'WINDOWS_BRANDING_REVIEW_CANDIDATE_QUALIFIED_NOT_ACCEPTED'
             candidateHead = (git rev-parse HEAD).Trim()
             sourcePredecessor = '6541dc32182c970c8e1a6ade426a6cee7086511b'
@@ -168,7 +185,9 @@ jobs:
             brandingReviewArgument = '--branding-review-only'
             brandingReviewSmokeArgument = '--branding-review-smoke'
             brandingReviewRoute = 'DEDICATED_WINDOW_NO_MAINWINDOW_CONSTRUCTION'
-            splashRoute = 'DEDICATED_WPF_WINDOW_NO_FRAMEWORK_SPLASHSCREEN'
+            splashRoute = 'MANIFEST_DECODED_DEDICATED_WPF_WINDOW'
+            imageQualification = 'SOURCE_DECODE_PLUS_REAL_WPF_RENDER_EVIDENCE'
+            reviewMaintenanceActionReplicas = 4
             decodedIconSha256 = 'b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e'
             associatedIconObserved = "$($icon.Width)x$($icon.Height)"
             acceptedV060IdentityCreated = $false
@@ -178,20 +197,23 @@ jobs:
           "out=$out" >> $env:GITHUB_OUTPUT
           Write-Host "V060_WINDOWS_BRANDING_PUBLISH_PASS exeSha256=$exeSha associatedIcon=$($icon.Width)x$($icon.Height)"
 
-      - name: Real process-level isolated branding review smoke
+      - name: Real WPF rendered-image branding review smoke
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $out = '${{ steps.publish.outputs.out }}'
           $exe = Join-Path $out 'Matawaka.Workbench.App.exe'
-          $receipt = Join-Path ([IO.Path]::GetTempPath()) 'Matawaka\Workbench\branding-review-v060\smoke.json'
-          $failure = Join-Path ([IO.Path]::GetTempPath()) 'Matawaka\Workbench\branding-review-v060\failure.json'
-          Remove-Item $receipt -Force -ErrorAction SilentlyContinue
-          Remove-Item $failure -Force -ErrorAction SilentlyContinue
+          $diag = Join-Path ([IO.Path]::GetTempPath()) 'Matawaka\Workbench\branding-review-v060'
+          $receipt = Join-Path $diag 'smoke.json'
+          $failure = Join-Path $diag 'failure.json'
+          $splashRender = Join-Path $diag 'smoke-splash-render.png'
+          $updateRender = Join-Path $diag 'smoke-update-render.png'
+          foreach ($path in @($receipt, $failure, $splashRender, $updateRender)) { Remove-Item $path -Force -ErrorAction SilentlyContinue }
+
           $process = Start-Process -FilePath $exe -ArgumentList '--branding-review-smoke' -WorkingDirectory $out -PassThru
-          if (-not $process.WaitForExit(15000)) {
+          if (-not $process.WaitForExit(20000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            throw 'branding review smoke process did not terminate within 15 seconds'
+            throw 'branding review smoke process did not terminate within 20 seconds'
           }
           if ($process.ExitCode -ne 0) {
             if (Test-Path $failure) { Get-Content $failure -Raw | Write-Host }
@@ -200,18 +222,30 @@ jobs:
           if (-not (Test-Path $receipt -PathType Leaf)) { throw 'branding review smoke receipt missing after successful process exit' }
           $r = Get-Content $receipt -Raw | ConvertFrom-Json
           if ($r.Status -ne 'BRANDING_REVIEW_WINDOW_CONTENT_RENDERED') { throw "unexpected branding smoke status: $($r.Status)" }
-          foreach ($field in @('FullMainWindowConstructed','WorkbenchSettingsStoreInitialized','WorkbenchAgentServiceInitialized','MaintenanceAuthorityCreated','AcceptedReleaseIdentityCreated','PublicationPerformed','WorkbenchNetworkTransportPerformed','RuntimeOrModelExecutionPerformed')) {
+          foreach ($field in @('FullMainWindowConstructed','WorkbenchSettingsStoreInitialized','WorkbenchAgentServiceInitialized','MaintenanceAuthorityCreated','AcceptedReleaseIdentityCreated','PublicationPerformed','WorkbenchNetworkTransportPerformed','RuntimeOrModelExecutionPerformed','ReviewActionReplicaHitTestingEnabled','ReviewActionReplicaFocusable')) {
             if ($r.$field -ne $false) { throw "branding smoke non-effect failed: $field=$($r.$field)" }
           }
+          foreach ($field in @('TitleIconAssigned','SplashSourceHasVisibleVariation','SplashRenderedHasVisibleVariation','UpdateSourceHasVisibleVariation','UpdateRenderedHasVisibleVariation','DiagnosticFilesystemWriteOnly')) {
+            if ($r.$field -ne $true) { throw "branding visual proof failed: $field=$($r.$field)" }
+          }
+          foreach ($field in @('SplashSourcePixelWidth','SplashSourcePixelHeight','SplashElementActualWidth','SplashElementActualHeight','SplashRenderedPixelWidth','SplashRenderedPixelHeight','SplashRenderedLuminanceRange','UpdateSourcePixelWidth','UpdateSourcePixelHeight','UpdateElementActualWidth','UpdateElementActualHeight','UpdateRenderedPixelWidth','UpdateRenderedPixelHeight','UpdateRenderedLuminanceRange')) {
+            if ([double]$r.$field -le 0) { throw "branding visual metric missing/non-positive: $field=$($r.$field)" }
+          }
+          if ([int]$r.ReviewActionReplicaCount -ne 4) { throw "expected four review action replicas, observed $($r.ReviewActionReplicaCount)" }
           if ($r.ProcessNetworkIsolationProven -ne $false) { throw 'branding smoke must not claim OS process network isolation' }
-          if ($r.DiagnosticFilesystemWriteOnly -ne $true) { throw 'branding smoke diagnostic write classification missing' }
+          foreach ($render in @($splashRender, $updateRender)) {
+            if (-not (Test-Path $render -PathType Leaf)) { throw "render evidence missing: $render" }
+            if ((Get-Item $render).Length -le 1024) { throw "render evidence unexpectedly small: $render" }
+          }
           Copy-Item $receipt (Join-Path $out 'branding-review-smoke.json')
-          Write-Host "V060_BRANDING_REAL_PROCESS_SMOKE_PASS processExit=0 receipt=$receipt"
+          Copy-Item $splashRender (Join-Path $out 'branding-review-smoke-splash.png')
+          Copy-Item $updateRender (Join-Path $out 'branding-review-smoke-update.png')
+          Write-Host "V060_BRANDING_REAL_WPF_RENDER_SMOKE_PASS processExit=0 splashRange=$($r.SplashRenderedLuminanceRange) updateRange=$($r.UpdateRenderedLuminanceRange) replicas=$($r.ReviewActionReplicaCount)"
 
       - name: Upload isolated Windows branding review artifact
         uses: actions/upload-artifact@v4
         with:
-          name: workbench-v060-windows-branding-review-v3
+          name: workbench-v060-windows-branding-review-v4
           path: ${{ steps.publish.outputs.out }}
           if-no-files-found: error
 
