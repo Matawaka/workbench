@@ -26,8 +26,8 @@ internal readonly record struct BrandingImageEvidenceV060(
 /// the chunks are concatenated, reverse-decoded, SHA-256 checked, decoded with WPF
 /// BitmapDecoder(OnLoad), dimension checked and rejected if visually flat.
 ///
-/// The historical user-supplied v0.55.2 -> v0.60 transition artwork remains provenance
-/// evidence only and is not an active presentation surface.
+/// historical user-supplied v0.55.2 -> v0.60 transition artwork remains provenance evidence only
+/// and is not an active presentation surface.
 /// </summary>
 internal static class BrandingImageResourcesV060
 {
