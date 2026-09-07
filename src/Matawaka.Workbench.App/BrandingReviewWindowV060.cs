@@ -8,37 +8,20 @@ using System.Windows.Threading;
 namespace Matawaka.Workbench.App;
 
 /// <summary>
-/// Dedicated v0.60 branding review surface.
-///
-/// This window is intentionally isolated from MainWindow so human/CI branding review
-/// cannot initialize WorkbenchSettingsStore, WorkbenchAgentService, maintenance,
-/// local-app, runtime/model, acceptance or publication surfaces.
+/// Dedicated presentation-only v0.60 branding review surface.
+/// It does not construct MainWindow or initialize settings/agent/maintenance/runtime/publication surfaces.
 /// </summary>
 internal sealed class BrandingReviewWindowV060 : Window
 {
     internal const string SmokeArgumentV060 = "--branding-review-smoke";
 
     private static readonly string DiagnosticRootV060 = Path.Combine(
-        Path.GetTempPath(),
-        "Matawaka",
-        "Workbench",
-        "branding-review-v060");
+        Path.GetTempPath(), "Matawaka", "Workbench", "branding-review-v060");
 
-    internal static readonly string SmokeReceiptPathV060 = Path.Combine(
-        DiagnosticRootV060,
-        "smoke.json");
-
-    internal static readonly string FailureReceiptPathV060 = Path.Combine(
-        DiagnosticRootV060,
-        "failure.json");
-
-    internal static readonly string SmokeSplashRenderPathV060 = Path.Combine(
-        DiagnosticRootV060,
-        "smoke-splash-render.png");
-
-    internal static readonly string SmokeUpdateRenderPathV060 = Path.Combine(
-        DiagnosticRootV060,
-        "smoke-update-render.png");
+    internal static readonly string SmokeReceiptPathV060 = Path.Combine(DiagnosticRootV060, "smoke.json");
+    internal static readonly string FailureReceiptPathV060 = Path.Combine(DiagnosticRootV060, "failure.json");
+    internal static readonly string SmokeSplashRenderPathV060 = Path.Combine(DiagnosticRootV060, "smoke-splash-render.png");
+    internal static readonly string SmokeUpdateRenderPathV060 = Path.Combine(DiagnosticRootV060, "smoke-update-render.png");
 
     private readonly bool _smoke;
     private readonly BrandingSplashWindowV060 _splash;
@@ -82,10 +65,7 @@ internal sealed class BrandingReviewWindowV060 : Window
 
     private UIElement BuildContent()
     {
-        var root = new Grid
-        {
-            Margin = new Thickness(18)
-        };
+        var root = new Grid { Margin = new Thickness(18) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -202,11 +182,7 @@ internal sealed class BrandingReviewWindowV060 : Window
             Width = width,
             Height = 46,
             Margin = new Thickness(0, 0, rightMargin ? 6 : 0, 0),
-            Content = new TextBlock
-            {
-                Text = text,
-                TextAlignment = TextAlignment.Center
-            },
+            Content = new TextBlock { Text = text, TextAlignment = TextAlignment.Center },
             IsHitTestVisible = false,
             Focusable = false,
             IsTabStop = false,
@@ -247,15 +223,11 @@ internal sealed class BrandingReviewWindowV060 : Window
             return;
 
         _contentRendered = true;
-
         if (!_smoke)
             return;
 
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         WriteSmokeReceipt();
-
-        // Keep the real WPF window alive long enough for the hosted process smoke
-        // to observe the same rendered surfaces that were captured for evidence.
         await Task.Delay(750);
         Close();
     }
@@ -264,18 +236,18 @@ internal sealed class BrandingReviewWindowV060 : Window
     {
         Directory.CreateDirectory(DiagnosticRootV060);
 
-        var splashRender = CaptureElementRender(_splash.ImageElement, SmokeSplashRenderPathV060);
-        var updateRender = CaptureElementRender(_artworkImage, SmokeUpdateRenderPathV060);
+        var splashRender = CaptureImageSourceRenderAtOrigin(_splash.ImageElement, SmokeSplashRenderPathV060);
+        var updateRender = CaptureImageSourceRenderAtOrigin(_artworkImage, SmokeUpdateRenderPathV060);
 
         var receipt = new
         {
-            Schema = "matawaka.workbench-v060-branding-review-smoke/v0.4",
+            Schema = "matawaka.workbench-v060-branding-review-smoke/v0.5",
             Status = "BRANDING_REVIEW_WINDOW_CONTENT_RENDERED",
             ProcessId = Environment.ProcessId,
             ProcessPath = Environment.ProcessPath,
             Title,
             TitleIconAssigned = Icon is not null,
-            NormalizedVisualCapture = true,
+            OriginNormalizedWpfImageProbe = true,
             SplashSourcePixelWidth = _splash.ImageEvidence.PixelWidth,
             SplashSourcePixelHeight = _splash.ImageEvidence.PixelHeight,
             SplashSourceLuminanceRange = _splash.ImageEvidence.LuminanceRange,
@@ -316,39 +288,38 @@ internal sealed class BrandingReviewWindowV060 : Window
             JsonSerializer.Serialize(receipt, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static RenderEvidenceV060 CaptureElementRender(FrameworkElement element, string path)
+    private static RenderEvidenceV060 CaptureImageSourceRenderAtOrigin(Image liveImage, string path)
     {
-        element.UpdateLayout();
+        liveImage.UpdateLayout();
 
-        var width = (int)Math.Ceiling(element.ActualWidth);
-        var height = (int)Math.Ceiling(element.ActualHeight);
+        var width = (int)Math.Ceiling(liveImage.ActualWidth);
+        var height = (int)Math.Ceiling(liveImage.ActualHeight);
         if (width <= 0 || height <= 0)
-            throw new InvalidOperationException(
-                $"Branding element has no rendered area: {element.GetType().Name} {width}x{height}");
+            throw new InvalidOperationException($"Branding image has no rendered area: {width}x{height}");
+        if (liveImage.Source is null)
+            throw new InvalidOperationException("Branding image has no WPF ImageSource.");
 
-        // RenderTargetBitmap.Render(element) retains a nested element's layout offset.
-        // The first v4 artifact therefore proved non-black pixels but captured the
-        // Update image shifted and clipped. A VisualBrush maps the same live WPF
-        // visual into a fresh origin-normalized DrawingVisual so the evidence bitmap
-        // represents the full rendered element rather than its parent-relative offset.
-        var normalized = new DrawingVisual();
-        using (var drawing = normalized.RenderOpen())
+        // A nested live Image carries parent-relative visual offsets. For evidence,
+        // construct a fresh WPF Image with the exact same BitmapSource and arrange it
+        // at origin. This still exercises WPF decoding/scaling/rendering, but removes
+        // parent layout geometry from the evidence bitmap.
+        var probe = new Image
         {
-            var brush = new VisualBrush(element)
-            {
-                Stretch = Stretch.Fill,
-                AlignmentX = AlignmentX.Center,
-                AlignmentY = AlignmentY.Center,
-                ViewboxUnits = BrushMappingMode.Absolute,
-                Viewbox = new Rect(0, 0, element.ActualWidth, element.ActualHeight),
-                ViewportUnits = BrushMappingMode.Absolute,
-                Viewport = new Rect(0, 0, width, height)
-            };
-            drawing.DrawRectangle(brush, null, new Rect(0, 0, width, height));
-        }
+            Source = liveImage.Source,
+            Width = width,
+            Height = height,
+            Stretch = liveImage.Stretch,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            SnapsToDevicePixels = true
+        };
+        RenderOptions.SetBitmapScalingMode(probe, BitmapScalingMode.HighQuality);
+        probe.Measure(new Size(width, height));
+        probe.Arrange(new Rect(0, 0, width, height));
+        probe.UpdateLayout();
 
         var rendered = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-        rendered.Render(normalized);
+        rendered.Render(probe);
 
         var (min, max) = BrandingImageResourcesV060.MeasureVisibleLuminance(rendered);
         var encoder = new PngBitmapEncoder();
@@ -364,10 +335,9 @@ internal sealed class BrandingReviewWindowV060 : Window
         try
         {
             Directory.CreateDirectory(DiagnosticRootV060);
-
             var receipt = new
             {
-                Schema = "matawaka.workbench-v060-branding-review-startup-failure/v0.4",
+                Schema = "matawaka.workbench-v060-branding-review-startup-failure/v0.5",
                 Status = "BRANDING_REVIEW_STARTUP_FAILED",
                 Mode = smoke ? "SMOKE" : "HUMAN_REVIEW",
                 ProcessId = Environment.ProcessId,
@@ -386,14 +356,13 @@ internal sealed class BrandingReviewWindowV060 : Window
                 RuntimeOrModelExecutionPerformed = false,
                 DiagnosticFilesystemWriteOnly = true
             };
-
             File.WriteAllText(
                 FailureReceiptPathV060,
                 JsonSerializer.Serialize(receipt, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch
         {
-            // Best-effort diagnostics only. Never convert a logging failure into authority.
+            // Best-effort diagnostics only. Never convert logging failure into authority.
         }
     }
 
