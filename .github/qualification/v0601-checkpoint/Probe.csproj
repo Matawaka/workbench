@@ -6,6 +6,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <StartupObject>Matawaka.Workbench.App.ProgramFixed</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj" />
