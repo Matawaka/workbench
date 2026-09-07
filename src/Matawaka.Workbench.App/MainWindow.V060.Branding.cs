@@ -9,13 +9,12 @@ public partial class MainWindow
 {
     public const string BrandingReviewOnlyArgumentV060 = "--branding-review-only";
     public const string NormalTitleV060 = "Matawaka Workbench v0.60";
+    private const string BrandingIconResourceV060 = "Matawaka.Workbench.App.Branding.IconV060Base64";
 
     internal void ConfigureV060Branding(bool reviewOnly)
     {
         Title = NormalTitleV060;
-        Icon = BitmapFrame.Create(new Uri(
-            "pack://application:,,,/Matawaka.Workbench.App;component/Assets/Branding/MatawakaWorkbench.ico",
-            UriKind.Absolute));
+        Icon = LoadV060BrandingIcon();
 
         InstallV060UpdateArtwork();
         if (string.IsNullOrWhiteSpace(UpdatePlanTextBox.Text))
@@ -54,6 +53,21 @@ public partial class MainWindow
         ("branding-v060-authority-neutral", true,
             "icon/splash/update artwork/progress text only", "no policy/provider/runtime/model/publication authority")
     };
+
+    private static BitmapFrame LoadV060BrandingIcon()
+    {
+        var assembly = typeof(MainWindow).Assembly;
+        using var resource = assembly.GetManifestResourceStream(BrandingIconResourceV060)
+            ?? throw new InvalidOperationException($"Missing branding icon resource: {BrandingIconResourceV060}");
+        using var reader = new System.IO.StreamReader(resource, System.Text.Encoding.ASCII, false, 1024, leaveOpen: false);
+        var encoded = reader.ReadToEnd().Trim();
+        var bytes = Convert.FromBase64String(encoded);
+        using var iconStream = new System.IO.MemoryStream(bytes, writable: false);
+        var decoder = BitmapDecoder.Create(iconStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        if (decoder.Frames.Count != 1)
+            throw new InvalidOperationException($"Unexpected branding icon frame count: {decoder.Frames.Count}");
+        return decoder.Frames[0];
+    }
 
     private void InstallV060UpdateArtwork()
     {

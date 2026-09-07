@@ -6,7 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets\Branding\MatawakaWorkbench.ico</ApplicationIcon>
+    <BrandingIconBase64Path>$(MSBuildProjectDirectory)\Assets\Branding\MatawakaWorkbench.ico.b64</BrandingIconBase64Path>
+    <BrandingGeneratedIconPath>$(BaseIntermediateOutputPath)branding\MatawakaWorkbench.ico</BrandingGeneratedIconPath>
+    <ApplicationIcon>$(BrandingGeneratedIconPath)</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Matawaka.Workbench.Protocol\Matawaka.Workbench.Protocol.csproj" />
@@ -16,8 +18,12 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\.github\qualification\v056-provenance-admission\fixtures\uu-aap-955-qualification.json"
                       LogicalName="Matawaka.Workbench.App.ProvenanceReviewV0561.Qualification" />
-    <Resource Include="Assets\Branding\MatawakaWorkbench.ico" />
+    <EmbeddedResource Include="Assets\Branding\MatawakaWorkbench.ico.b64"
+                      LogicalName="Matawaka.Workbench.App.Branding.IconV060Base64" />
     <Resource Include="Assets\Branding\splash-v060.jpg" />
     <Resource Include="Assets\Branding\update-v060.jpg" />
   </ItemGroup>
+  <Target Name="DecodeBrandingApplicationIcon" BeforeTargets="GenerateWin32Resources;CoreCompile">
+    <Exec Command="powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$b64=[IO.File]::ReadAllText('$(BrandingIconBase64Path)').Trim(); [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName('$(BrandingGeneratedIconPath)')) | Out-Null; [IO.File]::WriteAllBytes('$(BrandingGeneratedIconPath)',[Convert]::FromBase64String($b64))&quot;" />
+  </Target>
 </Project>

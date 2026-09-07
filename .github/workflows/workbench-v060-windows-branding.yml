@@ -42,25 +42,26 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $expected = @{
-            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico' = 'b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e'
-            'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg' = '3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c'
-            'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg' = '487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7'
-          }
-          foreach ($path in $expected.Keys) {
-            if (-not (Test-Path $path -PathType Leaf)) { throw "branding resource missing: $path" }
-            $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($sha -ne $expected[$path]) { throw "branding resource hash mismatch: $path observed=$sha expected=$($expected[$path])" }
-          }
+          $splash = 'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg'
+          $update = 'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg'
+          if ((Get-FileHash $splash -Algorithm SHA256).Hash.ToLowerInvariant() -ne '3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c') { throw 'splash identity drifted' }
+          if ((Get-FileHash $update -Algorithm SHA256).Hash.ToLowerInvariant() -ne '487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7') { throw 'update artwork identity drifted' }
+          $iconSource = 'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico.b64'
+          $iconBytes = [Convert]::FromBase64String((Get-Content $iconSource -Raw).Trim())
+          if ($iconBytes.Length -ne 2499) { throw "decoded icon byte count drifted: $($iconBytes.Length)" }
+          $iconSha = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($iconBytes)).ToLowerInvariant()
+          if ($iconSha -ne 'b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e') { throw "decoded icon identity drifted: $iconSha" }
+          $iconCheck = Join-Path $env:RUNNER_TEMP 'MatawakaWorkbench.ico'
+          [IO.File]::WriteAllBytes($iconCheck, $iconBytes)
           Add-Type -AssemblyName System.Drawing
-          $ico = [System.Drawing.Icon]::new((Resolve-Path 'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico').Path)
-          if ($null -eq $ico -or $ico.Width -ne 32 -or $ico.Height -ne 32) { throw "product ICO is not exact usable 32x32 icon: $($ico.Width)x$($ico.Height)" }
+          $ico = [System.Drawing.Icon]::new($iconCheck)
+          if ($null -eq $ico -or $ico.Width -ne 32 -or $ico.Height -ne 32) { throw "decoded icon is not exact usable 32x32 ICO: $($ico.Width)x$($ico.Height)" }
           $source = Get-Content src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json -Raw | ConvertFrom-Json
           if ($source.AuthorityEffect -ne 'NONE_BY_BRANDING') { throw 'branding provenance authority effect drifted' }
           if ($source.OriginalUserSuppliedAssets.WindowsIcon.Sha256 -ne '2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1') { throw 'original user icon provenance drifted' }
           if ($source.OriginalUserSuppliedAssets.LogoSplashPng.Sha256 -ne 'd2372c33d550f5d5f30575ffd904edfcfe252dbd68784e3f1e5d5f60bd2b84de') { throw 'original logo provenance drifted' }
           if ($source.OriginalUserSuppliedAssets.UpdateArtworkPng.Sha256 -ne '8fa5c51d1893213eb36becd231723d7c1aeb4a22504c5d811a3e54d9f79a4630') { throw 'original update artwork provenance drifted' }
-          if ($source.DerivedProductResources.'MatawakaWorkbench.ico'.Sha256 -ne $expected['src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico']) { throw 'derived icon metadata drifted' }
+          if ($source.DerivedProductResources.'MatawakaWorkbench.ico'.Sha256 -ne $iconSha) { throw 'derived icon metadata drifted' }
           Write-Host 'V060_BRANDING_RESOURCE_IDENTITY_PASS icon=32x32 assets=3 provenance=true'
 
       - name: Guard protected authority and reviewed presentation byte identity
@@ -95,7 +96,7 @@ jobs:
             'src/Matawaka.Workbench.App/App.xaml.cs',
             'src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs',
             'src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj',
-            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico',
+            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico.b64',
             'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg',
             'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg',
             'src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json'
@@ -109,8 +110,8 @@ jobs:
           $project = Get-Content src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -Raw
           foreach ($literal in @('--branding-review-only','SplashScreen("Assets/Branding/splash-v060.jpg")','ConfigureV060Branding(brandingReviewOnly)')) { if (-not $app.Contains($literal)) { throw "startup branding binding missing: $literal" } }
           if (-not $app.Contains('if (!semanticReviewOnly)')) { throw 'semantic review-only modes not excluded from normal splash route' }
-          foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','update-v060.jpg','Branding != Authority','Implementation merged != Accepted release')) { if (-not $branding.Contains($literal)) { throw "branding invariant missing: $literal" } }
-          foreach ($literal in @('<ApplicationIcon>Assets\Branding\MatawakaWorkbench.ico</ApplicationIcon>','splash-v060.jpg','update-v060.jpg')) { if (-not $project.Contains($literal)) { throw "project resource binding missing: $literal" } }
+          foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','update-v060.jpg','Branding != Authority','Implementation merged != Accepted release','BrandingIconResourceV060')) { if (-not $branding.Contains($literal)) { throw "branding invariant missing: $literal" } }
+          foreach ($literal in @('<ApplicationIcon>$(BrandingGeneratedIconPath)</ApplicationIcon>','MatawakaWorkbench.ico.b64','DecodeBrandingApplicationIcon','splash-v060.jpg','update-v060.jpg')) { if (-not $project.Contains($literal)) { throw "project resource binding missing: $literal" } }
           foreach ($forbidden in @('HttpClient','TcpClient','UdpClient','Process.Start','git push','SuccessorPermitCreated = true','DisplayPermitCreated = true','ResponseAuthorityCreated = true','ActionPermitCreated = true')) { if ($branding.Contains($forbidden)) { throw "forbidden authority/effect surface in branding file: $forbidden" } }
           Write-Host "V060_BRANDING_ONLY_DIFF_PASS changed=$($changed.Count)"
 
@@ -145,7 +146,8 @@ jobs:
             brandingReviewArgument = '--branding-review-only'
             splashSha256 = '3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c'
             updateArtworkSha256 = '487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7'
-            iconSha256 = 'b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e'
+            decodedIconSha256 = 'b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e'
+            associatedIconObserved = "$($icon.Width)x$($icon.Height)"
             acceptedV060IdentityCreated = $false
             authorityCreatedByBranding = $false
           }
