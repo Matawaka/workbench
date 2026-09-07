@@ -78,6 +78,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $allowed = @(
             '.github/workflows/workbench-v0601-operator-acceptance.yml',
+            '.github/qualification/v0601-update-path/Probe.csproj',
+            '.github/qualification/v0601-update-path/Program.cs',
             'src/Matawaka.Workbench.App/App.xaml.cs',
             'src/Matawaka.Workbench.App/V0601QualifiedSourceBindings.cs',
             'src/Matawaka.Workbench.App/PublicMainImportReceiptV0601.cs',
@@ -154,6 +156,18 @@ jobs:
           foreach ($must in @('https://github.com/Matawaka/workbench.git','IMPORT-EXACT-PUBLIC-6541','--no-write-fetch-head','RefMutationPerformed = false','RemoteWritePerformed = false','AutomaticRetryPerformed = false')) { if (-not $import.Contains($must)) { throw "import policy invariant missing: $must" } }
           if ($import.Contains('push') -and -not $import.Contains('No push')) { throw 'unexpected push surface in import utility' }
           Write-Host 'V0601_CHECKPOINT_IMPORT_POLICY_PASS'
+
+      - name: Exercise exact cumulative v0.55.2 to v0.60.1 updater path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $receipt = Join-Path $env:RUNNER_TEMP 'v0601-update-path.json'
+          dotnet run --project .\.github\qualification\v0601-update-path\Probe.csproj -c Release | Out-File -Encoding utf8 $receipt
+          $r = Get-Content $receipt -Raw | ConvertFrom-Json
+          if ($r.status -ne 'V0552_TO_V0601_REAL_UPDATER_PATH_QUALIFIED') { throw "unexpected updater qualification status: $($r.status)" }
+          if ($r.no_op_count -ne 0 -or $r.hostile_package_mutation_refused -ne $true -or $r.hostile_dirty_predecessor_refused -ne $true -or $r.hostile_extra_staged_file_refused -ne $true -or $r.hostile_build_failure_rollback_clean -ne $true) { throw 'cumulative updater hostile/rollback matrix failed' }
+          if ($r.updater_built_candidate_neutral_branding_smoke -ne $true -or $r.launch_performed_by_orchestrator -ne $false -or $r.checkpoint_authorized_by_orchestrator -ne $false -or $r.publication_authorized_by_orchestrator -ne $false -or $r.accepted_tag_created -ne $false) { throw 'cumulative updater effect boundary widened' }
+          Get-Content $receipt -Raw | Write-Host
 
       - name: Clean repository boundary
         shell: pwsh
