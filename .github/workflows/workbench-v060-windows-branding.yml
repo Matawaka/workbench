@@ -108,7 +108,8 @@ jobs:
           $app = Get-Content src/Matawaka.Workbench.App/App.xaml.cs -Raw
           $branding = Get-Content src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs -Raw
           $project = Get-Content src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -Raw
-          foreach ($literal in @('--branding-review-only','SplashScreen("Assets/Branding/splash-v060.jpg")','ConfigureV060Branding(brandingReviewOnly)')) { if (-not $app.Contains($literal)) { throw "startup branding binding missing: $literal" } }
+          foreach ($literal in @('BrandingReviewOnlyArgumentV060','SplashScreen("Assets/Branding/splash-v060.jpg")','ConfigureV060Branding(brandingReviewOnly)')) { if (-not $app.Contains($literal)) { throw "startup branding binding missing: $literal" } }
+          if (-not $branding.Contains('--branding-review-only')) { throw 'branding review-only literal missing from branding contract' }
           if (-not $app.Contains('if (!semanticReviewOnly)')) { throw 'semantic review-only modes not excluded from normal splash route' }
           foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','update-v060.jpg','Branding != Authority','Implementation merged != Accepted release','BrandingIconResourceV060')) { if (-not $branding.Contains($literal)) { throw "branding invariant missing: $literal" } }
           foreach ($literal in @('<ApplicationIcon>$(BrandingGeneratedIconPath)</ApplicationIcon>','MatawakaWorkbench.ico.b64','DecodeBrandingApplicationIcon','splash-v060.jpg','update-v060.jpg')) { if (-not $project.Contains($literal)) { throw "project resource binding missing: $literal" } }
