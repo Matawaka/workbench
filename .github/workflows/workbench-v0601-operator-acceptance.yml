@@ -80,6 +80,8 @@ jobs:
             '.github/workflows/workbench-v0601-operator-acceptance.yml',
             '.github/qualification/v0601-update-path/Probe.csproj',
             '.github/qualification/v0601-update-path/Program.cs',
+            '.github/qualification/v0601-checkpoint/Probe.csproj',
+            '.github/qualification/v0601-checkpoint/Program.cs',
             'src/Matawaka.Workbench.App/App.xaml.cs',
             'src/Matawaka.Workbench.App/V0601QualifiedSourceBindings.cs',
             'src/Matawaka.Workbench.App/PublicMainImportReceiptV0601.cs',
@@ -149,6 +151,8 @@ jobs:
             'workbench-v0.60.1-accepted',
             'commit-tree',
             'update-ref',
+            'TransitionBootstrapV040Service.ConsumingState',
+            'lease.ProcessId != Environment.ProcessId',
             'RemotePushAllowed=false; NetworkAccessAllowed=false'
           )) { if (-not $checkpoint.Contains($must)) { throw "checkpoint policy invariant missing: $must" } }
           if ($checkpoint.Contains('git push') -or $checkpoint.Contains('HttpClient')) { throw 'checkpoint unexpectedly exposes remote/network effect' }
@@ -167,6 +171,24 @@ jobs:
           if ($r.status -ne 'V0552_TO_V0601_REAL_UPDATER_PATH_QUALIFIED') { throw "unexpected updater qualification status: $($r.status)" }
           if ($r.no_op_count -ne 0 -or $r.hostile_package_mutation_refused -ne $true -or $r.hostile_dirty_predecessor_refused -ne $true -or $r.hostile_extra_staged_file_refused -ne $true -or $r.hostile_build_failure_rollback_clean -ne $true) { throw 'cumulative updater hostile/rollback matrix failed' }
           if ($r.updater_built_candidate_neutral_branding_smoke -ne $true -or $r.launch_performed_by_orchestrator -ne $false -or $r.checkpoint_authorized_by_orchestrator -ne $false -or $r.publication_authorized_by_orchestrator -ne $false -or $r.accepted_tag_created -ne $false) { throw 'cumulative updater effect boundary widened' }
+          Get-Content $receipt -Raw | Write-Host
+
+      - name: Exercise one-shot first-boot two-parent checkpoint path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'v0601-checkpoint-probe'
+          dotnet publish .\.github\qualification\v0601-checkpoint\Probe.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'Probe.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'checkpoint probe executable missing' }
+          $receipt = Join-Path $env:RUNNER_TEMP 'v0601-checkpoint-path.json'
+          & $exe | Out-File -Encoding utf8 $receipt
+          if ($LASTEXITCODE -ne 0) { throw "checkpoint probe failed: $LASTEXITCODE" }
+          $r = Get-Content $receipt -Raw | ConvertFrom-Json
+          if ($r.status -ne 'V0601_FIRST_BOOT_CHECKPOINT_PATH_QUALIFIED') { throw "unexpected checkpoint qualification status: $($r.status)" }
+          if ($r.child.status -ne 'V0601_ONE_SHOT_TWO_PARENT_CHECKPOINT_QUALIFIED' -or $r.child.two_parent_commit_created -ne $true -or $r.child.parent_order_verified -ne $true -or $r.child.target_tag_peels_to_new_head -ne $true -or $r.child.working_tree_clean -ne $true) { throw 'checkpoint happy-path evidence incomplete' }
+          if ($r.child.one_shot_replay_refused -ne $true -or $r.child.hostile_state_refused -ne $true -or $r.child.hostile_pid_refused -ne $true -or $r.child.hostile_process_sha_refused -ne $true -or $r.child.hostile_acceptance_tamper_refused -ne $true -or $r.child.hostile_import_tamper_refused -ne $true -or $r.child.hostile_source_drift_refused -ne $true) { throw 'checkpoint hostile matrix incomplete' }
+          if ($r.child.historical_v060_tag_absent -ne $true -or $r.child.bootstrap_completed_accepted -ne $true -or $r.child.remote_push_allowed -ne $false -or $r.child.network_access_allowed -ne $false -or $r.child.automatic_retry_allowed -ne $false -or $r.publication_performed -ne $false -or $r.remote_ref_mutated -ne $false) { throw 'checkpoint effect boundary widened' }
           Get-Content $receipt -Raw | Write-Host
 
       - name: Clean repository boundary
