@@ -16,14 +16,12 @@ public partial class MainWindow
         Title = NormalTitleV060;
         Icon = LoadV060BrandingIcon();
 
-        InstallV060UpdateArtwork();
+        InstallV060CurrentBrandingArtwork();
         if (string.IsNullOrWhiteSpace(UpdatePlanTextBox.Text))
             UpdatePlanTextBox.Text = BuildV060ProgressSummary();
 
         if (!reviewOnly) return;
 
-        // Branding review is presentation-only. It deliberately detaches historical
-        // bootstrap/closing persistence and disables every maintenance/app action.
         Loaded -= Window_LoadedV040;
         Loaded -= Window_LoadedV055;
         Loaded -= Window_LoadedV0552;
@@ -48,10 +46,12 @@ public partial class MainWindow
             UpdatePlanTab.Content?.GetType().Name ?? "null", "Grid/V060BrandingUpdateSurface"),
         ("branding-v060-four-maintenance-actions", PrimaryMaintenanceSurface.Children.OfType<Button>().Count() == 4,
             PrimaryMaintenanceSurface.Children.OfType<Button>().Count().ToString(), "4"),
+        ("branding-v060-neutral-artwork", true,
+            "neutral Matawaka Workbench artwork; version-specific transition banner removed from active UI", "current branding != historical update path"),
         ("branding-v060-accepted-release-not-promoted", true,
             "v0.60 implementation/branding candidate; accepted release publication is separate", "branding != accepted release"),
         ("branding-v060-authority-neutral", true,
-            "icon/splash/update artwork/progress text only", "no policy/provider/runtime/model/publication authority")
+            "icon/splash/neutral artwork/progress text only", "no policy/provider/runtime/model/publication authority")
     };
 
     internal static BitmapFrame LoadV060BrandingIcon()
@@ -69,7 +69,7 @@ public partial class MainWindow
         return decoder.Frames[0];
     }
 
-    private void InstallV060UpdateArtwork()
+    private void InstallV060CurrentBrandingArtwork()
     {
         if (UpdatePlanTab.Content is Grid existing && existing.Uid == "V060BrandingUpdateSurface")
             return;
@@ -79,11 +79,11 @@ public partial class MainWindow
         surface.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         surface.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var updateArtwork = BrandingImageResourcesV060.LoadUpdateArtwork();
+        var currentArtwork = BrandingImageResourcesV060.LoadCurrentWorkbenchArtwork();
         var artwork = new Image
         {
-            Source = updateArtwork.Source,
-            Height = 220,
+            Source = currentArtwork.Source,
+            Height = 180,
             Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -124,8 +124,8 @@ public partial class MainWindow
         "\r\n" +
         "Windows branding candidate:\r\n" +
         "  Matawaka application/window icon\r\n" +
-        "  startup splash for normal/branding-review launch\r\n" +
-        "  v0.55.2 -> v0.60 artwork in Update Workbench only\r\n" +
+        "  neutral Matawaka Workbench startup/current branding artwork\r\n" +
+        "  historical v0.55.2 -> v0.60 transition artwork is not an active UI surface\r\n" +
         "\r\n" +
         "Boundaries:\r\n" +
         "  Branding != Authority\r\n" +
