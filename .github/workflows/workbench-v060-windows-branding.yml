@@ -21,56 +21,49 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Guard exact v0.60 merged predecessor and current public frontier
+      - name: Guard exact v0.60 implementation and accepted-release frontier
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $base = '6541dc32182c970c8e1a6ade426a6cee7086511b'
-          $mergeBase = (git merge-base HEAD $base).Trim()
-          if ($mergeBase -ne $base) { throw "branding candidate does not descend from exact v0.60 predecessor: $mergeBase" }
+          if ((git merge-base HEAD $base).Trim() -ne $base) { throw 'candidate does not descend from exact merged v0.60 implementation frontier' }
           $remote = 'https://github.com/Matawaka/workbench.git'
           $main = (git ls-remote $remote refs/heads/main).Split("`t")[0]
-          if ($main -ne $base) { throw "public main drifted after branding candidate was cut: $main" }
-          Write-Host "V060_BRANDING_PREDECESSOR_PASS base=$base main=$main"
-
-      - name: Guard accepted release continuity and no v0.60 accepted identity
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $remote = 'https://github.com/Matawaka/workbench.git'
+          if ($main -ne $base) { throw "public main drifted: $main" }
           $accepted = git ls-remote $remote refs/tags/workbench-v0.56.2-accepted 'refs/tags/workbench-v0.56.2-accepted^{}'
           $peeled = @($accepted | Where-Object { $_ -match '\^\{\}$' })
-          if ($peeled.Count -ne 1) { throw 'accepted v0.56.2 peeled tag observation missing/ambiguous' }
-          $commit = $peeled[0].Split("`t")[0]
-          if ($commit -ne '693886052c598e9ed02558ca60a1fd8901090236') { throw "accepted v0.56.2 drifted: $commit" }
+          if ($peeled.Count -ne 1) { throw 'v0.56.2 accepted tag missing/ambiguous' }
+          if ($peeled[0].Split("`t")[0] -ne '693886052c598e9ed02558ca60a1fd8901090236') { throw 'accepted v0.56.2 drifted' }
           $v060 = git ls-remote $remote refs/tags/workbench-v0.60-accepted 'refs/tags/workbench-v0.60-accepted^{}'
-          if (-not [string]::IsNullOrWhiteSpace(($v060 -join "`n"))) { throw 'v0.60 accepted identity already exists unexpectedly' }
-          Write-Host "V060_ACCEPTED_IDENTITY_SEPARATION_PASS accepted=$commit v060=absent"
+          if (-not [string]::IsNullOrWhiteSpace(($v060 -join "`n"))) { throw 'v0.60 accepted identity already exists' }
+          Write-Host "V060_BRANDING_FRONTIER_PASS main=$main accepted=693886052c598e9ed02558ca60a1fd8901090236 v060=absent"
 
-      - name: Guard exact derived branding resource identities
+      - name: Guard exact derived branding resources and source provenance
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $expected = @{
-            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico' = 'fabca6277cb1c525ca8a5ef7ceae2635d0ded0b89281f4dfda8a83fc31ae4deb'
+            'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico' = 'b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e'
             'src/Matawaka.Workbench.App/Assets/Branding/splash-v060.jpg' = '3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c'
             'src/Matawaka.Workbench.App/Assets/Branding/update-v060.jpg' = '487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7'
           }
           foreach ($path in $expected.Keys) {
-            if (-not (Test-Path $path -PathType Leaf)) { throw "branding asset missing: $path" }
+            if (-not (Test-Path $path -PathType Leaf)) { throw "branding resource missing: $path" }
             $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($sha -ne $expected[$path]) { throw "branding asset hash mismatch: $path observed=$sha expected=$($expected[$path])" }
+            if ($sha -ne $expected[$path]) { throw "branding resource hash mismatch: $path observed=$sha expected=$($expected[$path])" }
           }
           Add-Type -AssemblyName System.Drawing
-          $icoPath = (Resolve-Path 'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico').Path
-          $ico = [System.Drawing.Icon]::new($icoPath)
-          if ($null -eq $ico -or $ico.Width -lt 16 -or $ico.Height -lt 16) { throw 'product ICO is not a usable Windows icon' }
+          $ico = [System.Drawing.Icon]::new((Resolve-Path 'src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico').Path)
+          if ($null -eq $ico -or $ico.Width -ne 32 -or $ico.Height -ne 32) { throw "product ICO is not exact usable 32x32 icon: $($ico.Width)x$($ico.Height)" }
           $source = Get-Content src/Matawaka.Workbench.App/Assets/Branding/branding-source.v060.json -Raw | ConvertFrom-Json
-          if ($source.AuthorityEffect -ne 'NONE_BY_BRANDING') { throw 'branding provenance metadata authority effect drifted' }
-          if ($source.DerivedProductResources.'MatawakaWorkbench.ico'.Sha256 -ne $expected['src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico']) { throw 'branding metadata/icon identity drifted' }
-          Write-Host "V060_BRANDING_ASSET_IDENTITY_PASS assets=3 icon=$($ico.Width)x$($ico.Height) provenance=true"
+          if ($source.AuthorityEffect -ne 'NONE_BY_BRANDING') { throw 'branding provenance authority effect drifted' }
+          if ($source.OriginalUserSuppliedAssets.WindowsIcon.Sha256 -ne '2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1') { throw 'original user icon provenance drifted' }
+          if ($source.OriginalUserSuppliedAssets.LogoSplashPng.Sha256 -ne 'd2372c33d550f5d5f30575ffd904edfcfe252dbd68784e3f1e5d5f60bd2b84de') { throw 'original logo provenance drifted' }
+          if ($source.OriginalUserSuppliedAssets.UpdateArtworkPng.Sha256 -ne '8fa5c51d1893213eb36becd231723d7c1aeb4a22504c5d811a3e54d9f79a4630') { throw 'original update artwork provenance drifted' }
+          if ($source.DerivedProductResources.'MatawakaWorkbench.ico'.Sha256 -ne $expected['src/Matawaka.Workbench.App/Assets/Branding/MatawakaWorkbench.ico']) { throw 'derived icon metadata drifted' }
+          Write-Host 'V060_BRANDING_RESOURCE_IDENTITY_PASS icon=32x32 assets=3 provenance=true'
 
-      - name: Guard protected authority and reviewed presentation source byte identity
+      - name: Guard protected authority and reviewed presentation byte identity
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -87,14 +80,13 @@ jobs:
             'src/Matawaka.Workbench.App/MainWindow.xaml'
           )
           foreach ($path in $paths) {
-            if (-not (Test-Path $path -PathType Leaf)) { throw "protected source missing: $path" }
             $expected = (git rev-parse "$base`:$path").Trim()
             $observed = (git hash-object $path).Trim()
             if ($observed -ne $expected) { throw "protected source drift: $path expected=$expected observed=$observed" }
           }
           Write-Host "V060_BRANDING_PROTECTED_SOURCE_PASS paths=$($paths.Count)"
 
-      - name: Guard branding-only source shape
+      - name: Guard branding-only diff and no authority surface
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -110,32 +102,23 @@ jobs:
           )
           $changed = @(git diff --name-only 6541dc32182c970c8e1a6ade426a6cee7086511b...HEAD)
           $unexpected = @($changed | Where-Object { $_ -notin $allowed })
-          if ($unexpected.Count -ne 0) { throw "unexpected non-branding changed path(s): $($unexpected -join ', ')" }
-          foreach ($required in $allowed) { if ($required -notin $changed) { throw "expected branding path missing from candidate diff: $required" } }
-
+          if ($unexpected.Count -ne 0) { throw "unexpected changed path(s): $($unexpected -join ', ')" }
+          foreach ($required in $allowed) { if ($required -notin $changed) { throw "required branding path missing: $required" } }
           $app = Get-Content src/Matawaka.Workbench.App/App.xaml.cs -Raw
           $branding = Get-Content src/Matawaka.Workbench.App/MainWindow.V060.Branding.cs -Raw
           $project = Get-Content src/Matawaka.Workbench.App/Matawaka.Workbench.App.csproj -Raw
-          foreach ($literal in @('--branding-review-only','SplashScreen("Assets/Branding/splash-v060.jpg")','ConfigureV060Branding(brandingReviewOnly)')) {
-            if (-not $app.Contains($literal)) { throw "startup branding binding missing: $literal" }
-          }
-          if (-not $app.Contains('if (!semanticReviewOnly)')) { throw 'historical semantic review modes are not excluded from v0.60 splash/branding route' }
-          foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','update-v060.jpg','Branding != Authority','Implementation merged != Accepted release')) {
-            if (-not $branding.Contains($literal)) { throw "branding presentation invariant missing: $literal" }
-          }
-          foreach ($literal in @('<ApplicationIcon>Assets\Branding\MatawakaWorkbench.ico</ApplicationIcon>','splash-v060.jpg','update-v060.jpg')) {
-            if (-not $project.Contains($literal)) { throw "project branding resource missing: $literal" }
-          }
-          foreach ($forbidden in @('HttpClient','TcpClient','UdpClient','Process.Start','git push','SuccessorPermitCreated = true','DisplayPermitCreated = true')) {
-            if ($branding.Contains($forbidden)) { throw "forbidden authority/effect surface in branding file: $forbidden" }
-          }
-          Write-Host "V060_BRANDING_SOURCE_SHAPE_PASS changed=$($changed.Count)"
+          foreach ($literal in @('--branding-review-only','SplashScreen("Assets/Branding/splash-v060.jpg")','ConfigureV060Branding(brandingReviewOnly)')) { if (-not $app.Contains($literal)) { throw "startup branding binding missing: $literal" } }
+          if (-not $app.Contains('if (!semanticReviewOnly)')) { throw 'semantic review-only modes not excluded from normal splash route' }
+          foreach ($literal in @('Matawaka Workbench v0.60','V060BrandingUpdateSurface','update-v060.jpg','Branding != Authority','Implementation merged != Accepted release')) { if (-not $branding.Contains($literal)) { throw "branding invariant missing: $literal" } }
+          foreach ($literal in @('<ApplicationIcon>Assets\Branding\MatawakaWorkbench.ico</ApplicationIcon>','splash-v060.jpg','update-v060.jpg')) { if (-not $project.Contains($literal)) { throw "project resource binding missing: $literal" } }
+          foreach ($forbidden in @('HttpClient','TcpClient','UdpClient','Process.Start','git push','SuccessorPermitCreated = true','DisplayPermitCreated = true','ResponseAuthorityCreated = true','ActionPermitCreated = true')) { if ($branding.Contains($forbidden)) { throw "forbidden authority/effect surface in branding file: $forbidden" } }
+          Write-Host "V060_BRANDING_ONLY_DIFF_PASS changed=$($changed.Count)"
 
       - name: Full Workbench Release build
         shell: pwsh
         run: dotnet build .\Matawaka.Workbench.sln -c Release --nologo
 
-      - name: Preserve v0.60 live authority-evidence qualification
+      - name: Preserve existing v0.60 live Authority / Evidence qualification
         shell: pwsh
         run: dotnet run --project .\.github\qualification\v060-live-authority-evidence-surface\Probe.csproj -c Release
 
@@ -162,15 +145,14 @@ jobs:
             brandingReviewArgument = '--branding-review-only'
             splashSha256 = '3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c'
             updateArtworkSha256 = '487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7'
-            iconSha256 = 'fabca6277cb1c525ca8a5ef7ceae2635d0ded0b89281f4dfda8a83fc31ae4deb'
+            iconSha256 = 'b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e'
             acceptedV060IdentityCreated = $false
             authorityCreatedByBranding = $false
           }
           $receiptPath = Join-Path $out 'branding-qualification.json'
           $receipt | ConvertTo-Json -Depth 6 | Set-Content $receiptPath -Encoding utf8NoBOM
           "out=$out" >> $env:GITHUB_OUTPUT
-          "exe_sha=$exeSha" >> $env:GITHUB_OUTPUT
-          Write-Host "V060_WINDOWS_BRANDING_PUBLISH_PASS exeSha256=$exeSha icon=$($icon.Width)x$($icon.Height)"
+          Write-Host "V060_WINDOWS_BRANDING_PUBLISH_PASS exeSha256=$exeSha associatedIcon=$($icon.Width)x$($icon.Height)"
 
       - name: Upload isolated Windows branding review artifact
         uses: actions/upload-artifact@v4
