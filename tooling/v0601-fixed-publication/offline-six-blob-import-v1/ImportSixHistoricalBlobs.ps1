@@ -68,7 +68,7 @@ if ($args.Count -ne 0) { 'IMPORT_REFUSED: ARGUMENTS_NOT_ACCEPTED'; return }
         $payloadHandle=$null; $p=$null; $m=$null
         try {
             if ($family -eq 'hash-object') {
-                # These are internal operation tokens, not a caller-supplied command or stdin transport.
+                # Internal operation tokens, not caller commands or a text stdin transport.
                 Need ($null -ne $data -and ($op -ceq 'hash-object -t blob --stdin' -or ($attemptStarted -and $op -ceq 'hash-object -w -t blob --stdin'))) 'OBJECT_WRITE_NOT_AUTHORIZED'
                 $pin=@($objects | Where-Object { $_[1] -eq $data.Length -and $_[2] -ceq (Sha $data) })
                 Need ($pin.Count -eq 1) 'UNPINNED_OBJECT_BYTES'
@@ -78,7 +78,6 @@ if ($args.Count -ne 0) { 'IMPORT_REFUSED: ARGUMENTS_NOT_ACCEPTED'; return }
                 $locked=New-Object IO.MemoryStream
                 try { $payloadHandle.CopyTo($locked); Need ((Sha $locked.ToArray()) -ceq $selected[2]) 'LOCKED_PAYLOAD_HASH_MISMATCH' } finally { $locked.Dispose() }
                 $writeFlag=''; if ($op -ceq 'hash-object -w -t blob --stdin') { $writeFlag='-w ' }
-                # Git reads only this exact locked external payload. No text/BOM conversion or filters.
                 $op='hash-object '+$writeFlag+'--no-filters -t blob -- "'+$payloadPath+'"'
             }
             if ($family -eq 'config') { Need ($op -ceq 'config --local --no-includes --null --list') 'CONFIG_WRITE_NOT_AUTHORIZED' }
@@ -117,14 +116,19 @@ if ($args.Count -ne 0) { 'IMPORT_REFUSED: ARGUMENTS_NOT_ACCEPTED'; return }
     }
     function Metadata {
         $meta=@{}; $obj=@{}; $total=0L; $count=0
-        $stack=New-Object 'System.Collections.Generic.Stack[string]'; $stack.Push((Join-Path $root '.git'))
+        $stack=New-Object 'System.Collections.Generic.Stack[object]'
+        $stack.Push([pscustomobject]@{ Physical=(Join-Path $root '.git'); Relative='' })
         while ($stack.Count) {
-            foreach ($p in [IO.Directory]::EnumerateFileSystemEntries($stack.Pop())) {
+            $frame=$stack.Pop()
+            foreach ($p in [IO.Directory]::EnumerateFileSystemEntries($frame.Physical)) {
                 NoReparse $p; $attr=[IO.File]::GetAttributes($p)
-                if (($attr -band [IO.FileAttributes]::Directory) -ne 0) { $stack.Push($p); continue }
+                # Never subtract lengths of independently canonicalized Windows 8.3/long paths.
+                $leaf=[IO.Path]::GetFileName($p); Need ($leaf -ne '' -and $leaf -notmatch '[\r\n\x00/\\]') 'GIT_STORE_PATH_INVALID'
+                $rel=$frame.Relative+$leaf
+                if (($attr -band [IO.FileAttributes]::Directory) -ne 0) { $stack.Push([pscustomobject]@{ Physical=$p; Relative=($rel+'/') }); continue }
                 $count++; Need ($count -le 20000) 'GIT_FILE_COUNT_LIMIT'
                 $b=ReadBytes $p; $total+=$b.Length; Need ($total -le 536870912) 'GIT_STORE_BYTE_LIMIT'
-                $rel=$p.Substring(([IO.Path]::GetFullPath((Join-Path $root '.git'))).Length+1).Replace('\','/')
+                Need (-not $obj.ContainsKey($rel) -and -not $meta.ContainsKey($rel)) 'GIT_STORE_PATH_COLLISION'
                 if ($rel.StartsWith('objects/')) { $obj[$rel]=Sha $b } else { $meta[$rel]=Sha $b }
             }
         }
@@ -185,7 +189,7 @@ if ($args.Count -ne 0) { 'IMPORT_REFUSED: ARGUMENTS_NOT_ACCEPTED'; return }
             $payload[$o[0]]=$b
         }
         $before=Snapshot; BeforeGate $before
-        # The no-write probe uses the same pinned-file path and no-filters semantics as the later write.
+        # No-write probe uses the same locked-file path and no-filters semantics as the later write.
         foreach ($o in $objects) {
             $probe=[Text.Encoding]::ASCII.GetString((GitBytes 'hash-object -t blob --stdin' $payload[$o[0]])).Trim()
             Need ($probe -ceq $o[0]) 'PAYLOAD_GIT_CHANNEL_ID_MISMATCH'
