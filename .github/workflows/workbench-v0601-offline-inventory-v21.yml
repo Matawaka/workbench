@@ -1,0 +1,68 @@
+name: Workbench v0601 offline object inventory v21
+on:
+  push:
+    branches: [tooling/workbench-v0.60.1-fixed-publication-v1]
+    paths:
+      - tooling/v0601-fixed-publication/diagnostic-v21/**
+      - .github/workflows/workbench-v0601-offline-inventory-v21.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-inventory:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exact fixture-only Git toolchains outside source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'v0601-inventory-v21-fixtures'
+          New-Item -ItemType Directory $stage | Out-Null
+          $zip = Join-Path $stage 'MinGit-2.55.0.4-64-bit.zip'
+          Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.4/MinGit-2.55.0.4-64-bit.zip' -OutFile $zip -TimeoutSec 120
+          if ((Get-Item $zip).Length -ne 38792847 -or (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4e03f94c2ffbf70be337e005cee02661c732dbfc81031a078bda9299b9a7d644') { throw 'UPSTREAM_ARCHIVE_IDENTITY_MISMATCH' }
+          Expand-Archive $zip (Join-Path $stage 'mingit')
+          $git = Join-Path $stage 'mingit\cmd\git.exe'
+          if ((Get-FileHash $git -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9') { throw 'GIT_IMAGE_IDENTITY_MISMATCH' }
+          $v = & $git --no-lazy-fetch --version
+          if ($LASTEXITCODE -ne 0 -or $v -cne 'git version 2.55.0.windows.4') { throw 'CAPABILITY_GATE_FAILED' }
+          Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip' -OutFile (Join-Path $stage 'old-fixture-only.zip') -TimeoutSec 120
+          Expand-Archive (Join-Path $stage 'old-fixture-only.zip') (Join-Path $stage 'old-fixture-only')
+          $vold = & (Join-Path $stage 'old-fixture-only\cmd\git.exe') --version
+          if ($LASTEXITCODE -ne 0 -or $vold -cne 'git version 2.44.0.windows.1') { throw 'HISTORICAL_FIXTURE_VERSION_MISMATCH' }
+          "INVENTORY_STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Preserve exact v2 diagnostic regression
+        shell: pwsh
+        run: |
+          python tooling/v0601-fixed-publication/diagnostic-v2/qualify.py tooling/v0601-fixed-publication/diagnostic-v2/OfflineObjectDiagnosticV2.ps1 "$env:INVENTORY_STAGE\mingit\cmd\git.exe" "$env:INVENTORY_STAGE\old-fixture-only\cmd\git.exe" "$env:INVENTORY_STAGE\v2-regression.json"
+          if ($LASTEXITCODE -ne 0) { throw 'V2_REGRESSION_FAILED' }
+      - name: Exact OID arrays and tag observation Windows qualification
+        shell: pwsh
+        run: |
+          python tooling/v0601-fixed-publication/diagnostic-v21/qualify.py tooling/v0601-fixed-publication/diagnostic-v21/OfflineObjectInventoryV21.ps1 "$env:INVENTORY_STAGE\mingit\cmd\git.exe" "$env:INVENTORY_STAGE\old-fixture-only\cmd\git.exe" "$env:INVENTORY_STAGE\v21-qualification.json"
+          if ($LASTEXITCODE -ne 0) { throw 'V21_QUALIFICATION_FAILED' }
+      - name: Assemble script-only delivery after PASS
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'v0601-inventory-v21-delivery'
+          New-Item -ItemType Directory $out | Out-Null
+          Copy-Item tooling/v0601-fixed-publication/diagnostic-v21/OfflineObjectInventoryV21.ps1 $out
+          Copy-Item "$env:INVENTORY_STAGE\v2-regression.json" $out
+          Copy-Item "$env:INVENTORY_STAGE\v21-qualification.json" $out
+          $files = @(Get-ChildItem $out -File | Sort-Object Name | ForEach-Object { @{Path=$_.Name;Bytes=$_.Length;Sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()} })
+          @{Schema='matawaka.workbench-offline-inventory-v21-delivery/v0.1';SourceSha=$env:GITHUB_SHA;Files=$files;ExistingToolchain='MinGit-2.55.0.4-64-bit';RequiredGitExeSha256='c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9';NoNewToolchainRequired=$true;NewPreflightAdmitted=$false;PublicationAuthorized=$false} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $out 'delivery-manifest.json') -Encoding utf8
+          "INVENTORY_DELIVERY=$out" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: v0601-offline-object-inventory-v21-win
+          path: ${{ env.INVENTORY_DELIVERY }}/*
+          if-no-files-found: error
+          retention-days: 30
