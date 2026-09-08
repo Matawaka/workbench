@@ -65,30 +65,44 @@ if ($args.Count -ne 0) { 'IMPORT_REFUSED: ARGUMENTS_NOT_ACCEPTED'; return }
         Need ((FileSha $git) -ceq $gitSha) 'GIT_IMAGE_MISMATCH'
         $family = ($op -split ' ')[0]
         Need ($family -in @('--version','config','rev-parse','cat-file','for-each-ref','rev-list','ls-files','hash-object')) 'COMMAND_NOT_ADMITTED'
-        if ($family -eq 'hash-object') {
-            Need ($null -ne $data -and ($op -ceq 'hash-object -t blob --stdin' -or ($attemptStarted -and $op -ceq 'hash-object -w -t blob --stdin'))) 'OBJECT_WRITE_NOT_AUTHORIZED'
-        }
-        if ($family -eq 'config') { Need ($op -ceq 'config --local --no-includes --null --list') 'CONFIG_WRITE_NOT_AUTHORIZED' }
-        $p = New-Object Diagnostics.Process; $s = New-Object Diagnostics.ProcessStartInfo
-        $s.FileName=$git; $s.UseShellExecute=$false; $s.CreateNoWindow=$true
-        $s.Arguments='--no-pager --no-lazy-fetch --no-replace-objects --no-optional-locks -C "'+$root+'" -c core.commitGraph=false -c core.fsmonitor=false -c core.untrackedCache=false -c gc.auto=0 -c maintenance.auto=false -c protocol.allow=never -c credential.helper= -c credential.interactive=false '+$op
-        $s.RedirectStandardInput=$true; $s.RedirectStandardOutput=$true; $s.RedirectStandardError=$true
-        $s.EnvironmentVariables.Clear()
-        foreach ($k in @('SystemRoot','WINDIR','PATH','TEMP','TMP','COMSPEC')) { $v=[Environment]::GetEnvironmentVariable($k); if ($null -ne $v) { $s.EnvironmentVariables[$k]=$v } }
-        foreach ($pair in @(@('GIT_CONFIG_NOSYSTEM','1'),@('GIT_CONFIG_GLOBAL','NUL'),@('GIT_NO_LAZY_FETCH','1'),@('GIT_NO_REPLACE_OBJECTS','1'),@('GIT_OPTIONAL_LOCKS','0'),@('GIT_ALLOW_PROTOCOL',''),@('GIT_TERMINAL_PROMPT','0'),@('LC_ALL','C'))) { $s.EnvironmentVariables[$pair[0]]=$pair[1] }
-        $p.StartInfo=$s; $m=New-Object IO.MemoryStream
+        $payloadHandle=$null; $p=$null; $m=$null
         try {
+            if ($family -eq 'hash-object') {
+                # These are internal operation tokens, not a caller-supplied command or stdin transport.
+                Need ($null -ne $data -and ($op -ceq 'hash-object -t blob --stdin' -or ($attemptStarted -and $op -ceq 'hash-object -w -t blob --stdin'))) 'OBJECT_WRITE_NOT_AUTHORIZED'
+                $pin=@($objects | Where-Object { $_[1] -eq $data.Length -and $_[2] -ceq (Sha $data) })
+                Need ($pin.Count -eq 1) 'UNPINNED_OBJECT_BYTES'
+                $selected=$pin[0]; $payloadPath=Join-Path $bundle ($selected[0]+'.blob'); NoReparse $payloadPath
+                $payloadHandle=[IO.File]::Open($payloadPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+                Need ($payloadHandle.Length -eq $selected[1]) 'LOCKED_PAYLOAD_SIZE_MISMATCH'
+                $locked=New-Object IO.MemoryStream
+                try { $payloadHandle.CopyTo($locked); Need ((Sha $locked.ToArray()) -ceq $selected[2]) 'LOCKED_PAYLOAD_HASH_MISMATCH' } finally { $locked.Dispose() }
+                $writeFlag=''; if ($op -ceq 'hash-object -w -t blob --stdin') { $writeFlag='-w ' }
+                # Git reads only this exact locked external payload. No text/BOM conversion or filters.
+                $op='hash-object '+$writeFlag+'--no-filters -t blob -- "'+$payloadPath+'"'
+            }
+            if ($family -eq 'config') { Need ($op -ceq 'config --local --no-includes --null --list') 'CONFIG_WRITE_NOT_AUTHORIZED' }
+            $p = New-Object Diagnostics.Process; $s = New-Object Diagnostics.ProcessStartInfo
+            $s.FileName=$git; $s.UseShellExecute=$false; $s.CreateNoWindow=$true
+            $s.Arguments='--no-pager --no-lazy-fetch --no-replace-objects --no-optional-locks -C "'+$root+'" -c core.commitGraph=false -c core.fsmonitor=false -c core.untrackedCache=false -c gc.auto=0 -c maintenance.auto=false -c protocol.allow=never -c credential.helper= -c credential.interactive=false '+$op
+            $s.RedirectStandardInput=$true; $s.RedirectStandardOutput=$true; $s.RedirectStandardError=$true
+            $s.EnvironmentVariables.Clear()
+            foreach ($k in @('SystemRoot','WINDIR','PATH','TEMP','TMP','COMSPEC')) { $v=[Environment]::GetEnvironmentVariable($k); if ($null -ne $v) { $s.EnvironmentVariables[$k]=$v } }
+            foreach ($pair in @(@('GIT_CONFIG_NOSYSTEM','1'),@('GIT_CONFIG_GLOBAL','NUL'),@('GIT_NO_LAZY_FETCH','1'),@('GIT_NO_REPLACE_OBJECTS','1'),@('GIT_OPTIONAL_LOCKS','0'),@('GIT_ALLOW_PROTOCOL',''),@('GIT_TERMINAL_PROMPT','0'),@('LC_ALL','C'))) { $s.EnvironmentVariables[$pair[0]]=$pair[1] }
+            $p.StartInfo=$s; $m=New-Object IO.MemoryStream
             Need ($p.Start()) 'GIT_START_FAILED'
             $output=$p.StandardOutput.BaseStream.CopyToAsync($m); $errorOutput=$p.StandardError.ReadToEndAsync()
-            if ($null -ne $data) { $p.StandardInput.BaseStream.Write($data,0,$data.Length); $p.StandardInput.BaseStream.Flush() }
-            # Close raw bytes, not StreamWriter: text preambles must never enter a Git blob.
             $p.StandardInput.BaseStream.Close()
             if (-not $p.WaitForExit(60000)) { try { $p.Kill() } catch {}; throw 'GIT_TIMEOUT' }
             Need ($output.Wait(5000) -and $errorOutput.Wait(5000)) 'GIT_DRAIN_TIMEOUT'
             Need ($m.Length -le 16777216 -and $errorOutput.Result.Length -le 131072) 'GIT_OUTPUT_LIMIT'
             Need ($p.ExitCode -eq 0) ('GIT_'+($family.TrimStart('-').ToUpperInvariant().Replace('-','_'))+'_EXIT_'+$p.ExitCode)
             return ,$m.ToArray()
-        } finally { $m.Dispose(); $p.Dispose() }
+        } finally {
+            if ($null -ne $p) { try { if (-not $p.HasExited) { $p.Kill() } } catch {}; $p.Dispose() }
+            if ($null -ne $m) { $m.Dispose() }
+            if ($null -ne $payloadHandle) { $payloadHandle.Dispose() }
+        }
     }
     function GitText([string]$op) { return ([Text.Encoding]::UTF8.GetString((GitBytes $op))).TrimEnd([char[]]"`r`n") }
     function Walk([string]$oid) {
@@ -171,7 +185,7 @@ if ($args.Count -ne 0) { 'IMPORT_REFUSED: ARGUMENTS_NOT_ACCEPTED'; return }
             $payload[$o[0]]=$b
         }
         $before=Snapshot; BeforeGate $before
-        # Prove this exact binary stdin channel without -w BEFORE any write authority exists.
+        # The no-write probe uses the same pinned-file path and no-filters semantics as the later write.
         foreach ($o in $objects) {
             $probe=[Text.Encoding]::ASCII.GetString((GitBytes 'hash-object -t blob --stdin' $payload[$o[0]])).Trim()
             Need ($probe -ceq $o[0]) 'PAYLOAD_GIT_CHANNEL_ID_MISMATCH'
