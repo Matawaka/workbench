@@ -34,7 +34,7 @@ jobs:
       - name: Windows PowerShell exact local object import qualification
         shell: pwsh
         run: |
-          python tooling/v0601-fixed-publication/offline-six-blob-import-v1/qualify.py tooling/v0601-fixed-publication/offline-six-blob-import-v1/ImportSixHistoricalBlobs.ps1 "$env:RUNNER_TEMP/mingit/cmd/git.exe" "$env:RUNNER_TEMP/six-blobs" "$env:RUNNER_TEMP/six-blobs/import-qualification.json"
+          python tooling/v0601-fixed-publication/offline-six-blob-import-v1/qualify_extended.py tooling/v0601-fixed-publication/offline-six-blob-import-v1/ImportSixHistoricalBlobs.ps1 "$env:RUNNER_TEMP/mingit/cmd/git.exe" "$env:RUNNER_TEMP/six-blobs" "$env:RUNNER_TEMP/six-blobs/import-qualification.json"
           if ($LASTEXITCODE -ne 0) { throw 'IMPORT_QUALIFICATION_FAILED' }
       - name: Bind delivered script and all exact payload bytes after PASS
         shell: pwsh
