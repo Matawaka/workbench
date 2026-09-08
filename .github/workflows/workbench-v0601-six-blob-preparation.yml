@@ -11,7 +11,7 @@ permissions:
 jobs:
   classify-six-blobs:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,10 +24,35 @@ jobs:
         run: |
           python tooling/v0601-fixed-publication/offline-six-blob-import-v1/acquire.py "$env:RUNNER_TEMP/six-blobs"
           if ($LASTEXITCODE -ne 0) { throw 'EXACT_BLOB_ACQUISITION_AUDIT_FAILED' }
+      - name: Fixed MinGit for disposable Windows fixtures only
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP/MinGit.zip"
+          Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.4/MinGit-2.55.0.4-64-bit.zip' -OutFile $zip -TimeoutSec 120
+          if ((Get-Item $zip).Length -ne 38792847 -or (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4e03f94c2ffbf70be337e005cee02661c732dbfc81031a078bda9299b9a7d644') { throw 'GIT_ARCHIVE_IDENTITY_MISMATCH' }
+          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP/mingit"
+      - name: Windows PowerShell exact local object import qualification
+        shell: pwsh
+        run: |
+          python tooling/v0601-fixed-publication/offline-six-blob-import-v1/qualify.py tooling/v0601-fixed-publication/offline-six-blob-import-v1/ImportSixHistoricalBlobs.ps1 "$env:RUNNER_TEMP/mingit/cmd/git.exe" "$env:RUNNER_TEMP/six-blobs" "$env:RUNNER_TEMP/six-blobs/import-qualification.json"
+          if ($LASTEXITCODE -ne 0) { throw 'IMPORT_QUALIFICATION_FAILED' }
+      - name: Bind delivered script and all exact payload bytes after PASS
+        shell: pwsh
+        run: |
+          Copy-Item tooling/v0601-fixed-publication/offline-six-blob-import-v1/ImportSixHistoricalBlobs.ps1 "$env:RUNNER_TEMP/six-blobs/ImportSixHistoricalBlobs.ps1"
+          $env:SIX_BLOB_STAGE = "$env:RUNNER_TEMP/six-blobs"
+          @'
+          import hashlib,json,os,pathlib
+          p=pathlib.Path(os.environ['SIX_BLOB_STAGE'])
+          files=[{'Path':f.name,'Bytes':f.stat().st_size,'Sha256':hashlib.sha256(f.read_bytes()).hexdigest()} for f in sorted(p.iterdir()) if f.is_file()]
+          assert len(files)==9
+          (p/'delivery-manifest.json').write_text(json.dumps({'Schema':'matawaka.offline-six-blob-import-delivery/v0.1','SourceSha':os.environ['GITHUB_SHA'],'Files':files,'OperatorHostTested':False,'PublicationAuthorized':False},indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'DELIVERY_MANIFEST_FAILED' }
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: v0601-exact-six-historical-blobs
+          name: v0601-qualified-offline-six-blob-import
           path: ${{ runner.temp }}/six-blobs/*
           if-no-files-found: error
           retention-days: 30
