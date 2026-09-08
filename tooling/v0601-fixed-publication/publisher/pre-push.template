@@ -1,0 +1,26 @@
+#!/bin/sh
+# Generated only after explicit confirmation. Exact advertised old/new IDs, not a second ls-remote.
+# Inputs substitute validated hexadecimal OIDs and a shell-quoted fixed endpoint only.
+set -eu
+[ "$#" -eq 2 ] || exit 91
+[ "$1" = @REMOTE@ ] && [ "$2" = @REMOTE@ ] || exit 92
+seen_main=0
+seen_tag=0
+while IFS=' ' read -r local_ref local_oid remote_ref remote_oid extra; do
+    [ -z "${extra:-}" ] || exit 93
+    case "$remote_ref" in
+      refs/heads/main)
+        [ "$seen_main" -eq 0 ] || exit 94
+        [ "$local_ref" = '@HEAD@' ] && [ "$local_oid" = '@HEAD@' ] && [ "$remote_oid" = '@BASE@' ] || exit 95
+        seen_main=1
+        ;;
+      refs/tags/workbench-v0.60.1-accepted)
+        [ "$seen_tag" -eq 0 ] || exit 96
+        [ "$local_ref" = '@TAGOID@' ] && [ "$local_oid" = '@TAGOID@' ] && [ "$remote_oid" = '0000000000000000000000000000000000000000' ] || exit 97
+        seen_tag=1
+        ;;
+      *) exit 98 ;;
+    esac
+done
+[ "$seen_main" -eq 1 ] && [ "$seen_tag" -eq 1 ] || exit 99
+printf '%s\n' 'V0601_EXACT_ADVERTISEMENT_VERIFIED'
