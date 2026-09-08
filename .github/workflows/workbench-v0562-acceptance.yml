@@ -1,0 +1,125 @@
+name: Workbench v0.56.2 Acceptance Qualification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/workbench-v0562-acceptance.yml'
+      - '.github/workflows/workbench-v0562-publish-accepted.yml'
+      - '.github/workflows/workbench-v0561-provenance-human-review.yml'
+      - '.github/qualification/v0562-acceptance/**'
+      - 'src/Matawaka.Workbench.App/App.xaml.cs'
+      - 'src/Matawaka.Workbench.App/MainWindow.V0562.cs'
+      - 'src/Matawaka.Workbench.App/QualifiedV0561EvidenceV0562.cs'
+      - 'src/Matawaka.Workbench.App/MainWindow.V0561.cs'
+      - 'src/Matawaka.Workbench.App/ProvenanceReviewV0561.cs'
+      - 'src/Matawaka.Workbench.AgentHost/C2paProvenanceAdmissionService.cs'
+      - 'src/Matawaka.Workbench.Protocol/ProvenanceAdmission.cs'
+      - 'ACCEPTANCE-v0.56.2.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualify-v0562-acceptance:
+    # Historical PR qualification is applicable only to the exact v0.56.1 predecessor.
+    # Manual dispatch semantics remain unchanged; successor PRs are skipped, not reinterpreted.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.sha == '991fc9c08431141a63a8b53c2f0f138a4f58dc28' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact qualified v0.56.1 predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '991fc9c08431141a63a8b53c2f0f138a4f58dc28'
+          $tree = '8640750016e5c6512231a237cf9456899cca1db1'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          git cat-file -e "$expected^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact qualified v0.56.1 predecessor is unavailable.' }
+          $observedTree = (git rev-parse "$expected^{tree}").Trim()
+          if ($observedTree -ne $tree) { throw "Qualified v0.56.1 tree mismatch: $observedTree" }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact qualified v0.56.1 predecessor is not an ancestor of candidate.' }
+
+      - name: Verify accepted predecessor and fresh target tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remote = 'https://github.com/Matawaka/workbench.git'
+          $oldTag = 'workbench-v0.55.2-accepted'
+          $oldObject = '81fbd3d6265b497e7509b7655554789b5a0dcf8d'
+          $oldCommit = 'ea852feeb0e8d92a8977bb251693e7e977913dca'
+          $target = 'workbench-v0.56.2-accepted'
+          $old = @(git ls-remote $remote "refs/tags/$oldTag" "refs/tags/$oldTag^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe fixed accepted predecessor tag.' }
+          $raw = ($old | Where-Object { $_ -match "refs/tags/$oldTag$" } | Select-Object -First 1)
+          $peeled = ($old | Where-Object { $_ -match "refs/tags/$([regex]::Escape($oldTag))\^\{\}$" } | Select-Object -First 1)
+          if (-not $raw -or -not $peeled) { throw 'Accepted predecessor annotated tag/readback is incomplete.' }
+          if (($raw -split "`t")[0] -ne $oldObject) { throw 'Accepted predecessor tag object drifted.' }
+          if (($peeled -split "`t")[0] -ne $oldCommit) { throw 'Accepted predecessor tag peeled commit drifted.' }
+          $targetObserved = @(git ls-remote $remote "refs/tags/$target" "refs/tags/$target^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe fixed target tag state.' }
+          if ($targetObserved.Count -ne 0) { throw "Target accepted tag already exists: $target" }
+
+      - name: Verify exact post-merge v0.56.1 Actions evidence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api repos/Matawaka/workbench/actions/runs/34020015287 | ConvertFrom-Json
+          if ($run.event -ne 'workflow_dispatch' -or $run.head_branch -ne 'main' -or $run.head_sha -ne '991fc9c08431141a63a8b53c2f0f138a4f58dc28' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+            throw 'Exact post-merge v0.56.1 run no longer matches accepted evidence.'
+          }
+          $artifact = gh api repos/Matawaka/workbench/actions/artifacts/9985185887 | ConvertFrom-Json
+          if ($artifact.workflow_run.id -ne 34020015287 -or $artifact.workflow_run.head_sha -ne '991fc9c08431141a63a8b53c2f0f138a4f58dc28' -or $artifact.digest -ne 'sha256:5bd2cf7902321ae8b55dddd9675bebf734dc0261f86587fb1c05ac75906e1975') {
+            throw 'Exact post-merge v0.56.1 artifact no longer matches accepted evidence.'
+          }
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build v0.56.2 acceptance probe
+        shell: pwsh
+        run: dotnet build .github/qualification/v0562-acceptance/Probe.csproj -c Release
+
+      - name: Qualify v0.56.2 acceptance and publication boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project .github/qualification/v0562-acceptance/Probe.csproj -c Release --no-build | Out-File -Encoding utf8 "$env:RUNNER_TEMP\v0562-acceptance-qualification.json"
+          $receipt = Get-Content "$env:RUNNER_TEMP\v0562-acceptance-qualification.json" -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'READY_FOR_POST_MERGE_QUALIFICATION_BEFORE_PUBLICATION') { throw "Unexpected qualification status: $($receipt.status)" }
+          if ($receipt.publication_main_push_allowed -ne $false -or $receipt.publication_force_allowed -ne $false -or $receipt.publication_arbitrary_ref_or_remote_allowed -ne $false) {
+            throw 'v0.56.2 qualification widened publication authority.'
+          }
+
+      - name: Verify candidate repository remains clean
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Qualification changed repository working tree:`n$dirty" }
+
+      - name: Upload v0.56.2 qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0562-acceptance-qualification
+          path: ${{ runner.temp }}/v0562-acceptance-qualification.json
+          if-no-files-found: error
+          retention-days: 30

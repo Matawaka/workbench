@@ -1,0 +1,198 @@
+name: Workbench v0.56.2 Publish Accepted
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Exact canonical main SHA to accept'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type PUBLISH_WORKBENCH_V0.56.2_ACCEPTED exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-fixed-accepted-tag:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact canonical candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact human-confirmed invocation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ('${{ github.repository }}' -ne 'Matawaka/workbench') { throw 'Unexpected repository.' }
+          if ('${{ github.ref }}' -ne 'refs/heads/main') { throw 'Accepted publication is allowed only from canonical main.' }
+          $expected = '${{ inputs.expected_sha }}'.Trim().ToLowerInvariant()
+          $actual = '${{ github.sha }}'.Trim().ToLowerInvariant()
+          if ($expected.Length -ne 40 -or $expected -notmatch '^[0-9a-f]{40}$') { throw 'expected_sha must be one exact Git commit SHA.' }
+          if ($actual -ne $expected) { throw "Canonical main changed before publication: expected $expected, observed $actual" }
+          if ('${{ inputs.confirmation }}' -cne 'PUBLISH_WORKBENCH_V0.56.2_ACCEPTED') { throw 'Exact publication confirmation phrase was not supplied.' }
+          git merge-base --is-ancestor 991fc9c08431141a63a8b53c2f0f138a4f58dc28 HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Qualified v0.56.1 frontier is not an ancestor of publication candidate.' }
+
+      - name: Verify accepted predecessor and target absence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $oldTag = 'workbench-v0.55.2-accepted'
+          $oldObject = '81fbd3d6265b497e7509b7655554789b5a0dcf8d'
+          $oldCommit = 'ea852feeb0e8d92a8977bb251693e7e977913dca'
+          $target = 'workbench-v0.56.2-accepted'
+          $old = @(git ls-remote origin "refs/tags/$oldTag" "refs/tags/$oldTag^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe accepted predecessor tag.' }
+          $raw = ($old | Where-Object { $_ -match "refs/tags/$oldTag$" } | Select-Object -First 1)
+          $peeled = ($old | Where-Object { $_ -match "refs/tags/$([regex]::Escape($oldTag))\^\{\}$" } | Select-Object -First 1)
+          if (-not $raw -or -not $peeled) { throw 'Accepted predecessor annotated tag/readback is incomplete.' }
+          if (($raw -split "`t")[0] -ne $oldObject) { throw 'Accepted predecessor tag object drifted.' }
+          if (($peeled -split "`t")[0] -ne $oldCommit) { throw 'Accepted predecessor peeled commit drifted.' }
+          $targetObserved = @(git ls-remote origin "refs/tags/$target" "refs/tags/$target^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe target accepted tag state.' }
+          if ($targetObserved.Count -ne 0) { throw "Target accepted tag already exists: $target" }
+
+      - name: Verify exact post-merge v0.56.1 Actions evidence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api repos/Matawaka/workbench/actions/runs/34020015287 | ConvertFrom-Json
+          if ($run.event -ne 'workflow_dispatch' -or $run.head_branch -ne 'main' -or $run.head_sha -ne '991fc9c08431141a63a8b53c2f0f138a4f58dc28' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+            throw 'Exact post-merge v0.56.1 qualification run no longer matches accepted evidence.'
+          }
+          $artifact = gh api repos/Matawaka/workbench/actions/artifacts/9985185887 | ConvertFrom-Json
+          if ($artifact.workflow_run.id -ne 34020015287 -or $artifact.workflow_run.head_sha -ne '991fc9c08431141a63a8b53c2f0f138a4f58dc28' -or $artifact.digest -ne 'sha256:5bd2cf7902321ae8b55dddd9675bebf734dc0261f86587fb1c05ac75906e1975') {
+            throw 'Exact post-merge v0.56.1 artifact no longer matches accepted evidence.'
+          }
+
+      - name: Full Workbench Release build
+        shell: pwsh
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build and run v0.56.2 acceptance probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build .github/qualification/v0562-acceptance/Probe.csproj -c Release
+          dotnet run --project .github/qualification/v0562-acceptance/Probe.csproj -c Release --no-build | Out-File -Encoding utf8 "$env:RUNNER_TEMP\v0562-prepublication-qualification.json"
+          $receipt = Get-Content "$env:RUNNER_TEMP\v0562-prepublication-qualification.json" -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'READY_FOR_POST_MERGE_QUALIFICATION_BEFORE_PUBLICATION') { throw 'Pre-publication qualification did not pass.' }
+
+      - name: Verify exact remote main immediately before effect
+        id: remote_before
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ inputs.expected_sha }}'.Trim().ToLowerInvariant()
+          $line = @(git ls-remote origin refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $line.Count -ne 1) { throw 'Unable to read exact remote main before accepted-tag effect.' }
+          $remoteMain = (($line[0] -split "`t")[0]).Trim().ToLowerInvariant()
+          if ($remoteMain -ne $expected) { throw "Remote main drifted before accepted-tag effect: $remoteMain" }
+          "remote_main=$remoteMain" >> $env:GITHUB_OUTPUT
+
+      - name: Verify repository clean before effect
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Pre-publication qualification changed source tree:`n$dirty" }
+
+      - name: Publish exact accepted tag only
+        id: publish_tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = 'workbench-v0.56.2-accepted'
+          $expected = '${{ inputs.expected_sha }}'.Trim().ToLowerInvariant()
+          git config user.name 'Matawaka Accepted Publication'
+          git config user.email '319695216+Matawaka@users.noreply.github.com'
+          git tag -a $target $expected -m 'Accepted Workbench v0.56.2: qualified v0.56.1 provenance boundary plus bounded acceptance closure'
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to create exact local accepted tag.' }
+          $localPeeled = (git rev-list -n 1 $target).Trim().ToLowerInvariant()
+          if ($localPeeled -ne $expected) { throw 'Local accepted tag does not peel to exact human-confirmed SHA.' }
+          $tagObject = (git rev-parse "refs/tags/$target").Trim().ToLowerInvariant()
+          git push origin "refs/tags/workbench-v0.56.2-accepted:refs/tags/workbench-v0.56.2-accepted"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact accepted tag push failed.' }
+          "tag_object=$tagObject" >> $env:GITHUB_OUTPUT
+
+      - name: Read back exact accepted publication
+        id: readback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = 'workbench-v0.56.2-accepted'
+          $expected = '${{ inputs.expected_sha }}'.Trim().ToLowerInvariant()
+          $tagLines = @(git ls-remote origin "refs/tags/$target" "refs/tags/$target^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to read back accepted target tag.' }
+          $raw = ($tagLines | Where-Object { $_ -match "refs/tags/$target$" } | Select-Object -First 1)
+          $peeled = ($tagLines | Where-Object { $_ -match "refs/tags/$([regex]::Escape($target))\^\{\}$" } | Select-Object -First 1)
+          if (-not $raw -or -not $peeled) { throw 'Accepted target tag readback is incomplete.' }
+          $rawSha = (($raw -split "`t")[0]).Trim().ToLowerInvariant()
+          $peeledSha = (($peeled -split "`t")[0]).Trim().ToLowerInvariant()
+          if ($peeledSha -ne $expected) { throw "Accepted target tag peels to unexpected commit: $peeledSha" }
+          $mainLines = @(git ls-remote origin refs/heads/main)
+          if ($LASTEXITCODE -ne 0 -or $mainLines.Count -ne 1) { throw 'Unable to read back canonical main.' }
+          $mainAfter = (($mainLines[0] -split "`t")[0]).Trim().ToLowerInvariant()
+          if ($mainAfter -ne $expected) { throw "Canonical main changed during accepted-tag publication: $mainAfter" }
+          "tag_ref=$rawSha" >> $env:GITHUB_OUTPUT
+          "tag_peeled=$peeledSha" >> $env:GITHUB_OUTPUT
+          "main_after=$mainAfter" >> $env:GITHUB_OUTPUT
+
+      - name: Write publication receipt
+        shell: pwsh
+        run: |
+          $receipt = [ordered]@{
+            schema = 'matawaka.workbench-fixed-github-accepted-tag-publication-receipt/v0.56.2'
+            version = '0.56.2'
+            workflow_run_id = '${{ github.run_id }}'
+            event = '${{ github.event_name }}'
+            repository = '${{ github.repository }}'
+            expected_sha = '${{ inputs.expected_sha }}'
+            source_ref = '${{ github.ref }}'
+            accepted_predecessor_tag = 'workbench-v0.55.2-accepted'
+            accepted_predecessor_commit = 'ea852feeb0e8d92a8977bb251693e7e977913dca'
+            target_tag = 'workbench-v0.56.2-accepted'
+            remote_main_before = '${{ steps.remote_before.outputs.remote_main }}'
+            remote_main_after = '${{ steps.readback.outputs.main_after }}'
+            remote_tag_object = '${{ steps.readback.outputs.tag_ref }}'
+            remote_tag_peeled_commit = '${{ steps.readback.outputs.tag_peeled }}'
+            local_tag_object = '${{ steps.publish_tag.outputs.tag_object }}'
+            post_merge_v0561_run = 34020015287
+            post_merge_v0561_artifact = 9985185887
+            post_merge_v0561_artifact_sha256 = '5bd2cf7902321ae8b55dddd9675bebf734dc0261f86587fb1c05ac75906e1975'
+            human_confirmation_phrase_matched = $true
+            main_push_performed = $false
+            force_push_performed = $false
+            arbitrary_remote_used = $false
+            arbitrary_ref_used = $false
+            github_release_created = $false
+            automatic_retry_performed = $false
+            source_mutation_performed = $false
+            model_invocation_performed = $false
+            runtime_execution_performed = $false
+            authority_created = $false
+            git_tag_signature_verified = $false
+            status = 'PUBLISHED_ACCEPTED_V0562_TAG_ONLY'
+          }
+          $receipt | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\v0562-publication-receipt.json"
+
+      - name: Upload exact publication receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v0562-accepted-publication-receipt
+          path: ${{ runner.temp }}/v0562-publication-receipt.json
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,76 @@
+{
+  "Schema": "matawaka.workbench-branding-source/v0.60",
+  "Purpose": "WINDOWS_BRANDING_PRESENTATION_ONLY",
+  "OriginalUserSuppliedAssets": {
+    "WindowsIcon": {
+      "FileName": "Matawaka-Workbench(1).ico",
+      "Bytes": 121162,
+      "Sha256": "2ed0a99dc80e0862bb3631471704bf6cb9819c904741e036f2df2e549e944ec1"
+    },
+    "LogoSplashPng": {
+      "Dimensions": "1672x941",
+      "Bytes": 2077023,
+      "Sha256": "d2372c33d550f5d5f30575ffd904edfcfe252dbd68784e3f1e5d5f60bd2b84de"
+    },
+    "UpdateArtworkPng": {
+      "Dimensions": "1672x941",
+      "Bytes": 2308343,
+      "Sha256": "8fa5c51d1893213eb36becd231723d7c1aeb4a22504c5d811a3e54d9f79a4630",
+      "Status": "HISTORICAL_USER_ASSET_NOT_ACTIVE_PRODUCT_PRESENTATION",
+      "Reason": "Human visual review found the static v0.55.2 -> v0.60 transition artwork mechanically valid but no longer appropriate as a current Workbench surface."
+    }
+  },
+  "ActiveDerivedProductResources": {
+    "MatawakaWorkbench.ico": {
+      "Derivation": "single 32x32 Windows ICO selected from the exact user-supplied multi-size icon source",
+      "Transport": "ASCII base64 source file decoded at build/runtime; decoded bytes are the product identity",
+      "TransportPath": "Assets/Branding/MatawakaWorkbench.ico.b64",
+      "DecodedBytes": 2499,
+      "Sha256": "b0075c89786c94d0d837f0c015896672c04567162513e4ed3c4a176ee7421b4e",
+      "Status": "DERIVED_PRODUCT_RESOURCE_NOT_ORIGINAL_SOURCE_BYTES"
+    },
+    "NeutralWorkbenchArtwork": {
+      "DerivedFrom": "LogoSplashPng",
+      "Dimensions": "400x225",
+      "Bytes": 6864,
+      "Sha256": "3ac0eed186a546ee029cba69790d064948bae40de6334971f25b14e6fbc9951c",
+      "Transport": "four exact ASCII base64 chunks reverse-decoded at runtime/build qualification",
+      "TransportPaths": [
+        "Assets/Branding/splash-v060.b64.001",
+        "Assets/Branding/splash-v060.b64.002",
+        "Assets/Branding/splash-v060.b64.003",
+        "Assets/Branding/splash-v060.b64.004"
+      ],
+      "UsedFor": [
+        "startup splash",
+        "neutral Workbench branding panel"
+      ],
+      "Status": "ACTIVE_NEUTRAL_BRANDING_RESOURCE"
+    }
+  },
+  "DiscardedImageTransportAttempts": {
+    "Reason": "direct binary connector transport produced corrupt or identity-drifted branding image bytes; no observed replacement hash was silently admitted",
+    "HistoricalCorruptDerivedSha256": [
+      "3190870e5eb27d25c9b89d798f14800de79c90e6981bf4c2be18be7fbfda120c",
+      "487a36bfec58ce55f51d02126bc991a0621e59fd32d1b58fead205525c0e10a7"
+    ]
+  },
+  "HumanVisualReview": {
+    "MechanicsAndLayout": "PASS",
+    "VersionTransitionArtwork": "REMOVE_FROM_ACTIVE_UI",
+    "Replacement": "NEUTRAL_MATAWAKA_WORKBENCH_ARTWORK_PLUS_CURRENT_TEXT_STATUS"
+  },
+  "SourceFrontier": "6541dc32182c970c8e1a6ade426a6cee7086511b",
+  "AcceptedReleaseAtCandidateCreation": {
+    "Tag": "workbench-v0.56.2-accepted",
+    "Commit": "693886052c598e9ed02558ca60a1fd8901090236"
+  },
+  "AuthorityEffect": "NONE_BY_BRANDING",
+  "NonEffects": [
+    "branding does not create accepted release identity",
+    "branding does not change capability policy",
+    "branding does not change provider or SemanticHost authority",
+    "branding does not create runtime/model/network/process authority",
+    "branding does not create ResponseAuthority, DisplayPermit, ActionPermit or SuccessorPermit"
+  ]
+}

@@ -1,0 +1,147 @@
+name: Workbench v0.60 Live Authority Evidence Surface
+
+on:
+  pull_request:
+    paths:
+      - 'src/Matawaka.Workbench.App/MainWindow.xaml.cs'
+      - 'src/Matawaka.Workbench.App/MainWindow.V060.cs'
+      - 'src/Matawaka.Workbench.App/CapabilityEvidenceReviewV059.cs'
+      - '.github/qualification/v060-live-authority-evidence-surface/**'
+      - '.github/workflows/workbench-v060-live-authority-evidence-surface.yml'
+      - 'LIVE-AUTHORITY-EVIDENCE-SURFACE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  qualify-v060-live-authority-evidence-surface:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact post-v0.59 predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = 'a17a8b064c0b07271cbeb61e48d7bc85e7bc8554'
+          $tree = '999a3f9348e955fae9069d229c67da40ba0e5498'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          git cat-file -e "$expected^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact post-v0.59 predecessor is unavailable.' }
+          $observedTree = (git rev-parse "$expected^{tree}").Trim()
+          if ($observedTree -ne $tree) { throw "Post-v0.59 predecessor tree mismatch: $observedTree" }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact post-v0.59 predecessor is not an ancestor of candidate.' }
+
+      - name: Verify accepted v0.56.2 continuity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'workbench-v0.56.2-accepted'
+          $tagObject = '0728333e33d07a4d9a07376d288fc0cd667254e2'
+          $peeledCommit = '693886052c598e9ed02558ca60a1fd8901090236'
+          $observed = @(git ls-remote https://github.com/Matawaka/workbench.git "refs/tags/$tag" "refs/tags/$tag^{}")
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to observe accepted v0.56.2 tag.' }
+          $raw = ($observed | Where-Object { $_ -match "refs/tags/$tag$" } | Select-Object -First 1)
+          $peeled = ($observed | Where-Object { $_ -match "refs/tags/$([regex]::Escape($tag))\^\{\}$" } | Select-Object -First 1)
+          if (-not $raw -or -not $peeled) { throw 'Accepted v0.56.2 tag readback incomplete.' }
+          if (($raw -split "`t")[0] -ne $tagObject) { throw 'Accepted v0.56.2 tag object drifted.' }
+          if (($peeled -split "`t")[0] -ne $peeledCommit) { throw 'Accepted v0.56.2 peeled commit drifted.' }
+
+      - name: Verify exact v0.59 human-reviewed qualification evidence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $run = gh api repos/Matawaka/workbench/actions/runs/34025987736 | ConvertFrom-Json
+          if ($run.head_sha -ne 'a7407421c47ee7b65619197506b507cfaf8d20de' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+            throw 'Exact v0.59 qualification run no longer matches accepted human-review evidence.'
+          }
+          $artifact = gh api repos/Matawaka/workbench/actions/artifacts/9987078500 | ConvertFrom-Json
+          if ($artifact.workflow_run.id -ne 34025987736 -or $artifact.workflow_run.head_sha -ne 'a7407421c47ee7b65619197506b507cfaf8d20de' -or $artifact.digest -ne 'sha256:e070df1bb7faa6d30d840dc650d1241a22f74a3d391886f3f324443b9f28a569') {
+            throw 'Exact v0.59 qualification artifact no longer matches accepted human-review evidence.'
+          }
+          $pr = gh api repos/Matawaka/workbench/pulls/96 | ConvertFrom-Json
+          if (-not $pr.merged -or $pr.merge_commit_sha -ne 'a17a8b064c0b07271cbeb61e48d7bc85e7bc8554') {
+            throw 'v0.59 human-reviewed candidate is not the exact merged predecessor.'
+          }
+
+      - name: Verify protected authority/runtime and reviewed presentation sources remain exact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'a17a8b064c0b07271cbeb61e48d7bc85e7bc8554'
+          $expected = @{
+            'src/Matawaka.Workbench.Runtime/CommandRouter.cs' = '08df01117ab5b657f493bcafc706fd568370b0a6'
+            'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs' = '852de740c4ff94e0cffe751efb0abcf96e1a1c4c'
+            'src/Matawaka.Workbench.AgentHost/SemanticProvider.cs' = '4e8477216e1222608a7f85ff0f79d4573ca79c67'
+            'src/Matawaka.Workbench.AgentHost/ProvenanceCapabilityEvidenceComposer.cs' = '83286837e903d942eb0cc8b22de0f23f43ce1255'
+            'src/Matawaka.Workbench.Runtime/LiveCapabilityEvidenceAuditV058.cs' = 'e6bc8ffe7295bb56fb3749315c251816aa9633c8'
+            'src/Matawaka.Workbench.App/CapabilityEvidenceReviewV059.cs' = '678312ffae76706617d0c06d4f5c06f8bc799ac5'
+          }
+          foreach ($path in $expected.Keys) {
+            $baseBlob = (git rev-parse "$base`:$path").Trim()
+            $headBlob = (git rev-parse "HEAD`:$path").Trim()
+            if ($baseBlob -ne $expected[$path]) { throw "Unexpected predecessor blob for ${path}: $baseBlob" }
+            if ($headBlob -ne $baseBlob) { throw "v0.60 modified protected authority/runtime/reviewed presentation source: ${path}; base=$baseBlob head=$headBlob" }
+          }
+
+      - name: Verify no v0.60 accepted identity exists
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $refs = @(git ls-remote https://github.com/Matawaka/workbench.git 'refs/tags/workbench-v0.60*')
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect v0.60 tag namespace.' }
+          if ($refs.Count -ne 0) { throw "Unexpected v0.60 tag/ref already exists: $($refs -join '; ')" }
+
+      - name: Full Workbench Release build
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build v0.60 qualification probe
+        run: dotnet build .github/qualification/v060-live-authority-evidence-surface/Probe.csproj -c Release
+
+      - name: Qualify live authority-evidence display wiring
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:RUNNER_TEMP\v060-live-authority-evidence-surface.json"
+          dotnet run --project .github/qualification/v060-live-authority-evidence-surface/Probe.csproj -c Release --no-build | Out-File -Encoding utf8 $out
+          if ($LASTEXITCODE -ne 0) { throw 'v0.60 qualification probe failed.' }
+          $receipt = Get-Content $out -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'LIVE_AUTHORITY_EVIDENCE_SURFACE_QUALIFIED_NO_AUTHORITY_CHANGE') { throw 'Unexpected v0.60 qualification status.' }
+          if (-not $receipt.live_allow_real_command_result -or -not $receipt.live_allow_human_reviewed_projection_reused -or -not $receipt.live_deny_preserved) {
+            throw 'v0.60 live wiring qualification did not prove required live result semantics.'
+          }
+          if ($receipt.accepted_release_identity_changed -or $receipt.external_effect_authority_created) {
+            throw 'v0.60 qualification reported release or authority expansion.'
+          }
+
+      - name: Verify candidate repository remains clean
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw "Qualification changed repository working tree:`n$dirty" }
+
+      - name: Upload v0.60 qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-v060-live-authority-evidence-surface
+          path: ${{ runner.temp }}/v060-live-authority-evidence-surface.json
+          if-no-files-found: error
+          retention-days: 30

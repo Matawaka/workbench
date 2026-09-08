@@ -1,0 +1,14 @@
+{
+  "schema": "matawaka.workbench-provenance-admission-fixture-source/v0.56",
+  "tracking_issue": 84,
+  "source_repository": "Matawaka/uu-aap",
+  "source_frontier": "0e74f89695bbcb02c759000752696c322d908f7a",
+  "source_tree": "beff957c276242a81a44668a970b20757b5585b6",
+  "source_path": "scripts/c2pa-workbench-release-observation-binding/v0.1/qualification-receipt.json",
+  "source_git_blob": "4ae93b36d5c8a6c2f00cbc53840221834e09ee26",
+  "source_sha256": "ba2284c66ae4a48583a0918a1c7d4d6a96cf83e66c632b7d55a4aa0ec4d0b9c5",
+  "source_bytes": 2415,
+  "source_verdict": "WORKBENCH_V0552_PUBLIC_RELEASE_OBSERVATION_HASH_BOUND_BY_STANDARD_C2PA_EXTERNAL_REFERENCE",
+  "historical_operator_publication_receipt_reconstructed": false,
+  "fixture_is_exact_accepted_uu_aap_qualification": true
+}

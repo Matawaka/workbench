@@ -1737,13 +1737,17 @@ public partial class MainWindow : Window
             AgentTextBox.AppendText(CommandCodec.Serialize(result.Agent));
         }
 
-        OutputTabs.SelectedItem = result.TerminalState switch
+        var liveCapabilityEvidenceRendered = TryShowLiveCapabilityEvidenceV060(result);
+        if (!liveCapabilityEvidenceRendered)
         {
-            CommandTerminalState.Denied when result.Authority is not null => AuthorityTab,
-            CommandTerminalState.Completed when result.Semantic is not null => SemanticTab,
-            CommandTerminalState.Completed when result.Evidence is not null => EvidenceTab,
-            _ => ResultTab
-        };
+            OutputTabs.SelectedItem = result.TerminalState switch
+            {
+                CommandTerminalState.Denied when result.Authority is not null => AuthorityTab,
+                CommandTerminalState.Completed when result.Semantic is not null => SemanticTab,
+                CommandTerminalState.Completed when result.Evidence is not null => EvidenceTab,
+                _ => ResultTab
+            };
+        }
     }
 
     private void ApplyTerminalState(CommandTerminalState state, string summary)
