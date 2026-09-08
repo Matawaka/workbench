@@ -1,0 +1,33 @@
+name: Workbench v0601 exact six blob preparation
+on:
+  push:
+    branches: [tooling/workbench-v0.60.1-fixed-publication-v1]
+    paths:
+      - tooling/v0601-fixed-publication/offline-six-blob-import-v1/**
+      - .github/workflows/workbench-v0601-six-blob-preparation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  classify-six-blobs:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exact public Git and API blob identity
+        shell: pwsh
+        run: |
+          python tooling/v0601-fixed-publication/offline-six-blob-import-v1/acquire.py "$env:RUNNER_TEMP/six-blobs"
+          if ($LASTEXITCODE -ne 0) { throw 'EXACT_BLOB_ACQUISITION_AUDIT_FAILED' }
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: v0601-exact-six-historical-blobs
+          path: ${{ runner.temp }}/six-blobs/*
+          if-no-files-found: error
+          retention-days: 30
