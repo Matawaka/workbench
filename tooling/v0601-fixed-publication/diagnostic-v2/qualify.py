@@ -9,7 +9,8 @@ FIRST = 'ea852feeb0e8d92a8977bb251693e7e977913dca'
 SECOND = 'ac083598711caa0c399cc0d2c385b980c083024a'
 ROOT = r'K:\Matawaka\Workbench'
 PINNED_GIT = r'K:\Matawaka\Tools\Git\MinGit-2.55.0.4-64-bit\cmd\git.exe'
-ENV = {k:v for k,v in os.environ.items() if not k.upper().startswith(('GIT_', 'GCM_'))}
+# Parent pwsh 7 exports a PSModulePath incompatible with Desktop PowerShell 5.1 modules.
+ENV = {k:v for k,v in os.environ.items() if not k.upper().startswith(('GIT_', 'GCM_')) and k.upper() != 'PSMODULEPATH'}
 ENV.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='NUL', GIT_TERMINAL_PROMPT='0', GIT_AUTHOR_NAME='Fixture', GIT_AUTHOR_EMAIL='fixture@example.invalid', GIT_COMMITTER_NAME='Fixture', GIT_COMMITTER_EMAIL='fixture@example.invalid')
 RESULTS = []
 def git(root, *args):
