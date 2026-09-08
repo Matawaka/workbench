@@ -40,6 +40,8 @@ def run_case(name, mutation=None, wanted=None, old=False, partial=False):
             packs=list((root/'.git/objects/pack').glob('*.promisor')); assert packs, 'NOT_A_REAL_PARTIAL_CLONE'
         if mutation: mutation(root,f)
         code=SCRIPT.replace(ROOT,str(root)).replace(PINNED_GIT,OLD_GIT if old else GIT).replace(HEAD,f['head']).replace(FIRST,f['first']).replace(SECOND,f['second'])
+        # Only the disposable synthetic fixture gets exception detail, never the operator script.
+        code=code.replace('$message = $_.Exception.Message', "Write-Output ('FIXTURE_ERROR: ' + $_.Exception.ToString() + ' AT ' + $_.ScriptStackTrace); $message = $_.Exception.Message")
         test_script=base/'fixture.ps1'; test_script.write_text(code,encoding='utf-8')
         before=snapshot(root)
         proc=subprocess.run(['powershell.exe','-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(test_script)],capture_output=True,timeout=150,env=ENV)
@@ -47,8 +49,9 @@ def run_case(name, mutation=None, wanted=None, old=False, partial=False):
         assert not err, (name,'UNEXPECTED_STDERR',err[:600])
         assert snapshot(root)==before, (name,'REPOSITORY_BYTES_CHANGED')
         if isinstance(wanted,str):
-            assert 'DIAGNOSTIC_REFUSED: '+wanted in text,(name,text[:800]); outcome={'refusal':wanted}
+            assert 'DIAGNOSTIC_REFUSED: '+wanted in text,(name,text[:2400]); outcome={'refusal':wanted}
         else:
+            assert text.startswith('{'), (name,'NOT_JSON',text[:3000])
             value=json.loads(text); assert value['HeadRefsConfigIndexStable'] is True and value['PublicationAuthorized'] is False
             assert value['GitVersion']=='git version 2.55.0.windows.4'
             ct=value['CurrentTreeMissingBoundaryObjects']; ht=value['FullHistoryMissingBoundaryObjects']
