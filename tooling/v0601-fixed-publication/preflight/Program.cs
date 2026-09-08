@@ -193,7 +193,8 @@ internal static class Inspect
         // Re-read raw files to close accidental source movement during normalized Git hashing.
         foreach(var (p,data) in raw)Safe.Need(Safe.Hash(Safe.Read(Safe.Under(root,p)))==Safe.Hash(data),"SOURCE_CHANGED_DURING_PREFLIGHT");
         var sourceDigest=Safe.Hash(Safe.Utf8.GetBytes(string.Join("\n",entries.Select(e=>$"{e.Path}\t{e.Mode}\t{e.Oid}\t{Safe.Hash(raw[e.Path])}"))));
-        Safe.Need(refsBefore.SequenceEqual(await git.Run("for-each-ref","--format=%(refname) %(objectname)")),"REFS_CHANGED_DURING_PREFLIGHT");
+        var refsAfter=await git.Run("for-each-ref","--format=%(refname) %(objectname)");
+        Safe.Need(refsBefore.SequenceEqual(refsAfter),"REFS_CHANGED_DURING_PREFLIGHT");
         Safe.Need(await git.Text("rev-parse","--verify","HEAD")==head,"HEAD_CHANGED_DURING_PREFLIGHT");
         return new(head,branch,tree,spec.First,spec.Second,tag,tagType,peel,Safe.Hash(rawTag),rawTag.Length,Safe.Hash(rawCommit),entries.Length,sourceDigest,Safe.Hash(refsBefore),Safe.Hash(Safe.Read(Safe.Under(root,".git/index"))),Safe.Hash(Safe.Read(Safe.Under(root,".git/config"))),git.ExeSha,await git.Text("--version"));
     }

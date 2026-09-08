@@ -32,6 +32,9 @@ jobs:
       - name: Release build and real local preflight qualification
         shell: bash
         run: dotnet run --project tooling/v0601-fixed-publication/preflight-tests/Preflight.Tests.csproj --configuration Release
+      - name: Full synthetic canonical evidence chain qualification
+        shell: bash
+        run: dotnet run --project tooling/v0601-fixed-publication/evidence-tests/Evidence.Tests.csproj --configuration Release
       - name: Build local-only Windows operator preflight
         if: runner.os == 'Windows'
         shell: pwsh
@@ -61,6 +64,7 @@ jobs:
           path: |
             tooling/v0601-fixed-publication/qualification/transport-qualification.json
             preflight-qualification.json
+            evidence-qualification.json
           if-no-files-found: error
       - name: Upload Windows local-only preflight
         if: success() && runner.os == 'Windows'

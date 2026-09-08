@@ -1,5 +1,5 @@
 """Real local Git transports; no GitHub, credentials, operator root, or production push.
-Tests the same embedded hook template used by the standalone publisher.
+Tests the guard template proposed for the separately qualified standalone publisher.
 """
 from pathlib import Path
 import os, subprocess, tempfile, json, hashlib, time
@@ -31,24 +31,23 @@ class Fixture:
   (self.repo/'one.txt').write_text('accepted\n');run('add','one.txt',cwd=self.repo)
   tree=run('write-tree',cwd=self.repo).stdout.decode().strip()
   self.head=run('commit-tree',tree,'-p',self.old,'-p',self.base,stdin=b'accepted fixture\n',cwd=self.repo).stdout.decode().strip()
-  # Fixture setup only; production publisher never changes accepted refs.
   run('update-ref','refs/heads/fixture-accepted',self.head,cwd=self.repo)
   run('tag','-a',TAG.removeprefix('refs/tags/'),self.head,'-m','fixture accepted',cwd=self.repo)
   self.tag=run('rev-parse',TAG,cwd=self.repo).stdout.decode().strip()
   run('init','--bare','-q',self.remote)
-  run('push','-q',str(self.remote),self.base+':refs/heads/main',cwd=self.repo)
+  run('push','-q',self.remote.as_posix(),self.base+':refs/heads/main',cwd=self.repo)
   run('init','--bare','-q',self.view)
-  (self.view/'objects/info/alternates').write_text(str(self.repo/'.git/objects').replace('\\','/')+'\n')
+  (self.view/'objects/info/alternates').write_text(str(self.repo/'.git/objects').replace('\\','/')+'\n',newline='\n')
   self.hooks.mkdir();self.hook=self.hooks/'pre-push'
-  self.hook.write_text(render(self.head,self.base,self.tag,str(self.remote)),newline='\n'); self.hook.chmod(0o700)
+  self.hook.write_text(render(self.head,self.base,self.tag,self.remote.as_posix()),newline='\n'); self.hook.chmod(0o700)
   self.before=run('for-each-ref',cwd=self.repo).stdout
  def ref(self,ref):
-  p=run('--git-dir='+str(self.remote),'rev-parse','--verify',ref,ok=False)
+  p=run('--git-dir='+self.remote.as_posix(),'rev-parse','--verify',ref,ok=False)
   return p.stdout.decode().strip() if p.returncode==0 else None
- def update(self,ref,value):run('--git-dir='+str(self.remote),'update-ref',ref,value)
+ def update(self,ref,value):run('--git-dir='+self.remote.as_posix(),'update-ref',ref,value)
  def push(self,extra=(),hook=True):
   hooks=self.hooks if hook else self.root/'no-hooks'
-  return run('--git-dir='+str(self.view),'-c','core.hooksPath='+str(hooks),'-c','push.followTags=false','-c','push.recurseSubmodules=no','-c','push.gpgSign=false','push','--atomic','--porcelain','--no-follow-tags','--recurse-submodules=no','--no-signed',str(self.remote),self.head+':refs/heads/main',self.tag+':'+TAG,*extra,ok=False)
+  return run('--git-dir='+str(self.view),'-c','core.hooksPath='+str(hooks),'-c','push.followTags=false','-c','push.recurseSubmodules=no','-c','push.gpgSign=false','push','--atomic','--porcelain','--no-follow-tags','--recurse-submodules=no','--no-signed',self.remote.as_posix(),self.head+':refs/heads/main',self.tag+':'+TAG,*extra,ok=False)
  def unchanged_local(self):assert self.before==run('for-each-ref',cwd=self.repo).stdout
 
 def test(name, fn):
@@ -60,30 +59,29 @@ def happy(f):
  p=f.push();assert p.returncode==0,p.stderr;assert b'V0601_EXACT_ADVERTISEMENT_VERIFIED' in p.stdout+p.stderr
  assert f.ref('refs/heads/main')==f.head and f.ref(TAG)==f.tag
  assert f.ref('refs/tags/workbench-v0.60-accepted') is None
- assert len(run('--git-dir='+str(f.remote),'for-each-ref',stdin=None).stdout.splitlines())==2
+ assert len(run('--git-dir='+f.remote.as_posix(),'for-each-ref',stdin=None).stdout.splitlines())==2
 
 def older_unguarded(f):
  f.update('refs/heads/main',f.old);p=f.push(hook=False)
- assert p.returncode==0 # This proves atomic FF alone admits an unexpected old ancestor.
+ assert p.returncode==0
 
 def older_guarded(f):
  f.update('refs/heads/main',f.old);p=f.push();assert p.returncode!=0
  assert f.ref('refs/heads/main')==f.old and f.ref(TAG) is None
 
 def existing_tag(f, same):
- # copy only fixture objects before arranging competing server state
- run('push','-q',str(f.remote),f.tag+':refs/tags/fixture-object-stage',cwd=f.repo)
+ run('push','-q',f.remote.as_posix(),f.tag+':refs/tags/fixture-object-stage',cwd=f.repo)
  f.update(TAG,f.tag if same else f.base)
  p=f.push();assert p.returncode!=0
  assert f.ref('refs/heads/main')==f.base
  assert f.ref(TAG)==(f.tag if same else f.base)
 
 def target_main(f):
- run('push','-q',str(f.remote),f.head+':refs/heads/main',cwd=f.repo)
+ run('push','-q',f.remote.as_posix(),f.head+':refs/heads/main',cwd=f.repo)
  p=f.push();assert p.returncode!=0 and f.ref(TAG) is None
 
 def atomic_unsupported(f):
- run('--git-dir='+str(f.remote),'config','receive.advertiseAtomic','false')
+ run('--git-dir='+f.remote.as_posix(),'config','receive.advertiseAtomic','false')
  p=f.push();assert p.returncode!=0;assert f.ref('refs/heads/main')==f.base and f.ref(TAG) is None
 
 def extra_ref(f):
@@ -91,24 +89,22 @@ def extra_ref(f):
  assert f.ref('refs/heads/main')==f.base and f.ref(TAG) is None and f.ref('refs/heads/extra') is None
 
 def after_advertisement(f,tag=False):
- # Add a fixture-only server race just before real hook returns success.
- f.hook.write_text(f.hook.read_text()+f"git --git-dir='{str(f.remote).replace(chr(92),'/')}' update-ref '{TAG if tag else 'refs/heads/main'}' '{f.base if tag else f.old}'\n",newline='\n')
+ f.hook.write_text(f.hook.read_text()+f"git --git-dir='{f.remote.as_posix()}' update-ref '{TAG if tag else 'refs/heads/main'}' '{f.base if tag else f.old}'\n",newline='\n')
  p=f.push();assert p.returncode!=0
  assert f.ref('refs/heads/main')==(f.base if tag else f.old)
  assert f.ref(TAG)==(f.base if tag else None)
 
 def hostile_config(f):
- # Network view must not inherit a redirect or malicious hook from the source repo.
  marker=f.root/'BAD_HOOK';bad=f.root/'bad-hooks';bad.mkdir()
  h=bad/'pre-push';h.write_text('#!/bin/sh\ntouch "'+str(marker).replace('\\','/')+'"\nexit 1\n',newline='\n');h.chmod(0o700)
  run('config','core.hooksPath',str(bad),cwd=f.repo)
- run('config','url.'+str(f.root/'elsewhere')+'.insteadOf',str(f.remote),cwd=f.repo)
+ run('config','url.'+str(f.root/'elsewhere')+'.insteadOf',f.remote.as_posix(),cwd=f.repo)
  run('config','push.followTags','true',cwd=f.repo)
  run('config','push.pushOption','UNREVIEWED',cwd=f.repo)
  happy(f); assert not marker.exists()
 
 def rejects_input(f,lines):
- p=subprocess.run(['sh',str(f.hook),str(f.remote),str(f.remote)],input=lines(f).encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=ENV,timeout=5)
+ p=subprocess.run(['sh',str(f.hook),f.remote.as_posix(),f.remote.as_posix()],input=lines(f).encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=ENV,timeout=5)
  assert p.returncode!=0
 
 def mainline(f):return f'{f.head} {f.head} refs/heads/main {f.base}\n'
