@@ -30,7 +30,9 @@ def fixture(root):
     git(root,'config','remote.fixture.promisor','true'); git(root,'config','remote.fixture.url','file:///not-authorized.invalid/no-remote')
     return dict(first=first,second=second,head=head,tree=tree,oldblob=oldblob,currentblob=currentblob)
 def remove(root, oid):
-    (root/'.git/objects'/oid[:2]/oid[2:]).unlink()
+    # Fixture corruption only, BEFORE the immutable observation baseline. Never operator code.
+    p=root/'.git/objects'/oid[:2]/oid[2:]
+    p.chmod(0o666); p.unlink()
 def run_case(name, mutation=None, wanted=None, old=False, partial=False):
     with tempfile.TemporaryDirectory(prefix='v0601-win-diagnostic-') as t:
         base=pathlib.Path(t); root=base/'subject'; f=fixture(root)
