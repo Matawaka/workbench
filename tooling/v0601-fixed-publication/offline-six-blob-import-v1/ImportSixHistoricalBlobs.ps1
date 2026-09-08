@@ -1,5 +1,6 @@
 # Fixed local object-store recovery. NOT Update, Accept, publication or network authority.
 # Run only the qualified delivery; no arguments, config overrides or automatic retries.
+if ($args.Count -ne 0) { 'IMPORT_REFUSED: ARGUMENTS_NOT_ACCEPTED'; return }
 & {
     $ErrorActionPreference = 'Stop'
     $root = 'K:\Matawaka\Workbench'
@@ -64,7 +65,9 @@
         Need ((FileSha $git) -ceq $gitSha) 'GIT_IMAGE_MISMATCH'
         $family = ($op -split ' ')[0]
         Need ($family -in @('--version','config','rev-parse','cat-file','for-each-ref','rev-list','ls-files','hash-object')) 'COMMAND_NOT_ADMITTED'
-        if ($family -eq 'hash-object') { Need ($attemptStarted -and $op -ceq 'hash-object -w -t blob --stdin' -and $null -ne $data) 'OBJECT_WRITE_NOT_AUTHORIZED' }
+        if ($family -eq 'hash-object') {
+            Need ($null -ne $data -and ($op -ceq 'hash-object -t blob --stdin' -or ($attemptStarted -and $op -ceq 'hash-object -w -t blob --stdin'))) 'OBJECT_WRITE_NOT_AUTHORIZED'
+        }
         if ($family -eq 'config') { Need ($op -ceq 'config --local --no-includes --null --list') 'CONFIG_WRITE_NOT_AUTHORIZED' }
         $p = New-Object Diagnostics.Process; $s = New-Object Diagnostics.ProcessStartInfo
         $s.FileName=$git; $s.UseShellExecute=$false; $s.CreateNoWindow=$true
@@ -77,8 +80,9 @@
         try {
             Need ($p.Start()) 'GIT_START_FAILED'
             $output=$p.StandardOutput.BaseStream.CopyToAsync($m); $errorOutput=$p.StandardError.ReadToEndAsync()
-            if ($null -ne $data) { $p.StandardInput.BaseStream.Write($data,0,$data.Length) }
-            $p.StandardInput.Close()
+            if ($null -ne $data) { $p.StandardInput.BaseStream.Write($data,0,$data.Length); $p.StandardInput.BaseStream.Flush() }
+            # Close raw bytes, not StreamWriter: text preambles must never enter a Git blob.
+            $p.StandardInput.BaseStream.Close()
             if (-not $p.WaitForExit(60000)) { try { $p.Kill() } catch {}; throw 'GIT_TIMEOUT' }
             Need ($output.Wait(5000) -and $errorOutput.Wait(5000)) 'GIT_DRAIN_TIMEOUT'
             Need ($m.Length -le 16777216 -and $errorOutput.Result.Length -le 131072) 'GIT_OUTPUT_LIMIT'
@@ -166,7 +170,13 @@
             Need ($b.Length -eq $o[1] -and (Sha $b) -ceq $o[2]) 'PAYLOAD_IDENTITY_MISMATCH'
             $payload[$o[0]]=$b
         }
-        $before=Snapshot; BeforeGate $before; $previewAt=[DateTime]::UtcNow
+        $before=Snapshot; BeforeGate $before
+        # Prove this exact binary stdin channel without -w BEFORE any write authority exists.
+        foreach ($o in $objects) {
+            $probe=[Text.Encoding]::ASCII.GetString((GitBytes 'hash-object -t blob --stdin' $payload[$o[0]])).Trim()
+            Need ($probe -ceq $o[0]) 'PAYLOAD_GIT_CHANNEL_ID_MISMATCH'
+        }
+        $previewAt=[DateTime]::UtcNow
         Write-Output ('LOCAL PREVIEW: '+$root+'; HEAD='+$head+'; TAG_OBJECT='+$tagObject)
         Write-Output 'Only six exact historical blob objects (17695 raw bytes) and new local attempt/receipt files may be added.'
         Write-Output 'No source/ref/tag/config/index change, no fetch/network, no publication, no retry. Not all-six atomic: partial failure remains recorded and must not be retried.'
