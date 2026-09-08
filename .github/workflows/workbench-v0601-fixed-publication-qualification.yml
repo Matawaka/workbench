@@ -1,0 +1,71 @@
+name: Workbench v0.60.1 fixed publication preparation
+on:
+  push:
+    branches: ['tooling/workbench-v0.60.1-fixed-publication-v1']
+    paths:
+      - 'tooling/v0601-fixed-publication/**'
+      - '.github/workflows/workbench-v0601-fixed-publication-qualification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qualify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Local transport CAS and atomic qualification
+        shell: bash
+        run: python tooling/v0601-fixed-publication/qualification/test_transport.py
+      - name: Release build and real local preflight qualification
+        shell: bash
+        run: dotnet run --project tooling/v0601-fixed-publication/preflight-tests/Preflight.Tests.csproj --configuration Release
+      - name: Build local-only Windows operator preflight
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet publish tooling/v0601-fixed-publication/preflight/Preflight.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=false -p:IncludeAllContentForSelfExtract=false -p:DebugType=None -p:DebugSymbols=false -o artifacts/v0601-publication-preflight
+          if ($LASTEXITCODE -ne 0) { throw 'Preflight publish failed' }
+          $root = Join-Path $PWD 'artifacts/v0601-publication-preflight'
+          $files = @(Get-ChildItem $root -File -Recurse | Sort-Object FullName | ForEach-Object {
+            [ordered]@{ Path = [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\','/'); Bytes = $_.Length; Sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+          })
+          [ordered]@{
+            Schema = 'matawaka.workbench-v0601-publication-preflight-bundle/v0.1'
+            SourceCommit = '${{ github.sha }}'
+            Files = $files
+            ToolRole = 'LOCAL_PREFLIGHT_ONLY'
+            ProductionNetworkImplementationPresent = $false
+            ProductionPushImplementationPresent = $false
+            PublicationAuthorityCreated = $false
+            RuntimeNativeLibrariesSelfExtracted = $false
+            Note = 'Keep the full directory together. Run the EXE outside the accepted Workbench repository. Native runtime DLLs remain separate; no implicit self-extraction is requested.'
+          } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $root 'bundle-manifest.json') -Encoding utf8NoBOM
+      - name: Upload qualification records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v0601-publication-qualification-${{ matrix.os }}
+          path: |
+            tooling/v0601-fixed-publication/qualification/transport-qualification.json
+            preflight-qualification.json
+          if-no-files-found: error
+      - name: Upload Windows local-only preflight
+        if: success() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: v0601-publication-preflight-win-x64
+          path: artifacts/v0601-publication-preflight/
+          if-no-files-found: error
