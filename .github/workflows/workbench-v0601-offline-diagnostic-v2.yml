@@ -1,0 +1,79 @@
+name: Workbench v0601 offline diagnostic v2
+on:
+  push:
+    branches: [tooling/workbench-v0.60.1-fixed-publication-v1]
+    paths:
+      - tooling/v0601-fixed-publication/diagnostic-v2/**
+      - .github/workflows/workbench-v0601-offline-diagnostic-v2.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-diagnostic:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Acquire and verify fixed MinGit outside source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'v0601-diagnostic-toolchain'
+          New-Item -ItemType Directory $stage | Out-Null
+          $zip = Join-Path $stage 'MinGit-2.55.0.4-64-bit.zip'
+          Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.4/MinGit-2.55.0.4-64-bit.zip' -OutFile $zip -TimeoutSec 120
+          if ((Get-Item $zip).Length -ne 38792847 -or (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4e03f94c2ffbf70be337e005cee02661c732dbfc81031a078bda9299b9a7d644') { throw 'UPSTREAM_ARCHIVE_IDENTITY_MISMATCH' }
+          $env:DIAGNOSTIC_STAGE = $stage
+          @'
+          import hashlib,json,os,pathlib,stat,zipfile
+          stage=pathlib.Path(os.environ['DIAGNOSTIC_STAGE']); archive=stage/'MinGit-2.55.0.4-64-bit.zip'; entries=[]; names=set()
+          with zipfile.ZipFile(archive) as z:
+              assert len(z.infolist())<=10000
+              assert sum(i.file_size for i in z.infolist())<=512*1024*1024
+              for i in z.infolist():
+                  p=pathlib.PurePosixPath(i.filename); low=i.filename.casefold()
+                  assert not p.is_absolute() and '..' not in p.parts and '\\' not in i.filename and ':' not in i.filename
+                  assert low not in names and not stat.S_ISLNK(i.external_attr>>16); names.add(low)
+                  assert p.suffix.lower() not in {'.ttf','.otf','.woff','.woff2','.eot'}, 'FONT_PAYLOAD_NOT_FOR_DELIVERY'
+                  if not i.is_dir():
+                      b=z.read(i); entries.append({'Path':i.filename,'Bytes':len(b),'Sha256':hashlib.sha256(b).hexdigest()})
+              z.extractall(stage/'mingit')
+          manifest={'Schema':'matawaka.external-mingit-delivery-observation/v0.1','SourceSha':os.environ['GITHUB_SHA'],'UpstreamRelease':'v2.55.0.windows.4','AssetId':510402653,'ArchiveBytes':archive.stat().st_size,'ArchiveSha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'Files':entries,'InstallationPerformed':False,'SystemGitReplaced':False,'PathChanged':False,'OperatorHostTested':False,'PublicationAuthorized':False}
+          (stage/'toolchain-manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'ARCHIVE_AUDIT_FAILED' }
+          $git = Join-Path $stage 'mingit\cmd\git.exe'
+          $v = & $git --no-lazy-fetch --version
+          if ($LASTEXITCODE -ne 0 -or $v -cne 'git version 2.55.0.windows.4') { throw 'CAPABILITY_GATE_FAILED' }
+          Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip' -OutFile (Join-Path $stage 'old-fixture-only.zip') -TimeoutSec 120
+          Expand-Archive (Join-Path $stage 'old-fixture-only.zip') (Join-Path $stage 'old-fixture-only')
+          $vold = & (Join-Path $stage 'old-fixture-only\cmd\git.exe') --version
+          if ($LASTEXITCODE -ne 0 -or $vold -cne 'git version 2.44.0.windows.1') { throw 'HISTORICAL_FIXTURE_VERSION_MISMATCH' }
+          "DIAGNOSTIC_STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Real Windows PowerShell diagnostic qualification
+        shell: pwsh
+        run: |
+          python tooling/v0601-fixed-publication/diagnostic-v2/qualify.py tooling/v0601-fixed-publication/diagnostic-v2/OfflineObjectDiagnosticV2.ps1 "$env:DIAGNOSTIC_STAGE\mingit\cmd\git.exe" "$env:DIAGNOSTIC_STAGE\old-fixture-only\cmd\git.exe" "$env:DIAGNOSTIC_STAGE\diagnostic-qualification.json"
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_DIAGNOSTIC_QUALIFICATION_FAILED' }
+      - name: Assemble delivery after PASS only
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'v0601-diagnostic-delivery'
+          New-Item -ItemType Directory $out | Out-Null
+          Copy-Item "$env:DIAGNOSTIC_STAGE\MinGit-2.55.0.4-64-bit.zip" $out
+          Copy-Item "$env:DIAGNOSTIC_STAGE\toolchain-manifest.json" $out
+          Copy-Item "$env:DIAGNOSTIC_STAGE\diagnostic-qualification.json" $out
+          Copy-Item tooling/v0601-fixed-publication/diagnostic-v2/OfflineObjectDiagnosticV2.ps1 $out
+          "DIAGNOSTIC_DELIVERY=$out" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: v0601-offline-diagnostic-v2-win-x64
+          path: ${{ env.DIAGNOSTIC_DELIVERY }}/*
+          if-no-files-found: error
+          retention-days: 30
