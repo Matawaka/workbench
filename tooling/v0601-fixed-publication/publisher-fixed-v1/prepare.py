@@ -9,7 +9,7 @@ for name,sha in pins.items():
 # Make only a fixture class accessible to the new separately compiled fixture driver.
 s=(out/'V2Tests.cs').read_text();assert s.count('private sealed class F:IDisposable')==1
 (out/'V2Tests.cs').write_text(s.replace('private sealed class F:IDisposable','internal sealed class F:IDisposable'),encoding='utf-8',newline='\n')
-for name in ['Publisher.cs','PublisherTests.cs']:
+for name in ['Publisher.cs','PublisherTests.cs','NetworkTests.cs']:
     (out/name).write_bytes((here/name).read_bytes().replace(b'\r\n',b'\n'))
 archive=pathlib.Path(sys.argv[2]);b=archive.read_bytes()
 assert len(b)==38792847 and hashlib.sha256(b).hexdigest()=='4e03f94c2ffbf70be337e005cee02661c732dbfc81031a078bda9299b9a7d644'
@@ -19,6 +19,7 @@ assert len(files)==365 and sum(x['Bytes'] for x in files)==93886493
 (out/'mingit-files.json').write_text(json.dumps(files,indent=2)+'\n',encoding='utf-8',newline='\n')
 base='<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><EnableDefaultCompileItems>false</EnableDefaultCompileItems><TreatWarningsAsErrors>true</TreatWarningsAsErrors>{props}</PropertyGroup><ItemGroup><Compile Include="GeneratedVerifier.cs"/><Compile Include="V2.cs"/><Compile Include="Publisher.cs"/>{tests}<EmbeddedResource Include="mingit-files.json" LogicalName="mingit-files.json"/></ItemGroup></Project>'
 (out/'Publisher.csproj').write_text(base.format(props='<AssemblyName>Matawaka.Workbench.V0601FixedPublisher</AssemblyName><StartupObject>Matawaka.V0601FixedPublisher.PublisherEntryPoint</StartupObject>',tests=''),encoding='utf-8')
-(out/'PublisherTests.csproj').write_text(base.format(props='<AssemblyName>PublisherTests</AssemblyName><StartupObject>Matawaka.V0601FixedPublisher.PublisherTests</StartupObject><DefineConstants>QUALIFICATION</DefineConstants>',tests='<Compile Include="LegacySourceTests.cs"/><Compile Include="LegacyEvidenceTests.cs"/><Compile Include="V2Tests.cs"/><Compile Include="PublisherTests.cs"/>'),encoding='utf-8')
+for name in ['PublisherTests','NetworkTests']:
+    (out/(name+'.csproj')).write_text(base.format(props='<AssemblyName>'+name+'</AssemblyName><StartupObject>Matawaka.V0601FixedPublisher.'+name+'</StartupObject><DefineConstants>QUALIFICATION</DefineConstants>',tests='<Compile Include="LegacySourceTests.cs"/><Compile Include="LegacyEvidenceTests.cs"/><Compile Include="V2Tests.cs"/><Compile Include="'+name+'.cs"/>'),encoding='utf-8')
 (out/'publisher-materialization.json').write_text(json.dumps({'InheritedQualifiedSourceSha256':pins,'MinGitArchiveSha256':hashlib.sha256(b).hexdigest(),'MinGitFiles':365,'NoOriginalSourceFilesChanged':True,'ProductionCliOverrides':False},indent=2),encoding='utf-8')
 print('MATERIALIZED_FIXED_PUBLISHER_SOURCE',out)
