@@ -136,8 +136,10 @@ internal static class Classification
         Match("AUTHENTICATION_CHALLENGE_UNSATISFIED", "unable to get password from user", "could not read username", "could not read password");
         Match("ACCESS_FORBIDDEN", "returned error: 403", "write access to repository not granted");
         Match("REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE", "returned error: 404", "repository not found");
-        if (Regex.IsMatch(s, @"(?m)^fatal: repository '[^\r\n']{1,4096}' not found\r?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
-            categories.Add("REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE");
+        if (s.Split('\n').Any(line => {
+            var value = line.TrimEnd('\r');
+            return value.Length <= 4096 && value.StartsWith("fatal: repository '", StringComparison.Ordinal) && value.EndsWith("' not found", StringComparison.Ordinal);
+        })) categories.Add("REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE");
         Match("RATE_LIMITED", "returned error: 429");
         Match("REDIRECT_REFUSED", "returned error: 301", "returned error: 302", "returned error: 307", "returned error: 308", "unable to update url base from redirection");
         Match("TLS_FAILED", "ssl certificate problem", "tls connect error", "ssl connect error", "certificate verify failed", "error setting certificate file");
