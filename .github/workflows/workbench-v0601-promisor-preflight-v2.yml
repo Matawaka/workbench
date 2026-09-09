@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           dotnet-version: '10.0.x'
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -47,9 +47,16 @@ jobs:
         run: |
           dotnet publish "$env:RUNNER_TEMP/preflight-v2-source/PreflightV2.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o "$env:RUNNER_TEMP/preflight-v2-delivery"
           if ($LASTEXITCODE -ne 0) { throw 'PREFLIGHT_BUILD_FAILED' }
-          $exe = "$env:RUNNER_TEMP/preflight-v2-delivery/Matawaka.Workbench.V0601PublicationPreflightV2.exe"
-          $probe = & $exe --arbitrary-argument 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 1 -or $probe -notmatch 'ARGUMENTS_NOT_ACCEPTED') { throw 'PRODUCTION_CLI_ARGUMENT_GUARD_FAILED' }
+          @'
+          import json,os,pathlib,subprocess
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'preflight-v2-delivery'
+          p=subprocess.run([str(out/'Matawaka.Workbench.V0601PublicationPreflightV2.exe'),'--arbitrary-argument'],capture_output=True,text=True,timeout=30)
+          assert p.returncode==1 and 'REFUSED: ARGUMENTS_NOT_ACCEPTED' in p.stderr, (p.returncode,p.stdout,p.stderr)
+          report={'Schema':'matawaka.workbench-preflight-v2-cli-qualification/v0.1','Passed':True,'ExpectedRefusalExit':1,'ObservedExit':p.returncode,'ArgumentGuardVerified':True,'OperatorHostAccessed':False,'ProductionPublicationPerformed':False}
+          (out/'cli-qualification.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+          print('PRODUCTION_CLI_ARGUMENT_GUARD_PASS_EXPECTED_EXIT_1')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'PRODUCTION_CLI_ARGUMENT_GUARD_FAILED' }
       - name: Bind exact binary generated source and qualification reports
         shell: pwsh
         run: |
