@@ -79,8 +79,8 @@ internal static class BoundedProcess
                     finally { try { process.StandardInput.Close(); } catch (IOException) { } }
                 }
                 tasks = new[] {
-                    stdout.Drain(process.StandardOutput.BaseStream, maximum, cancellation.Token),
-                    stderr.Drain(process.StandardError.BaseStream, maximum, cancellation.Token),
+                    stdout.Drain(process.StandardOutput.BaseStream, maximum, cancellation.Token, fault),
+                    stderr.Drain(process.StandardError.BaseStream, maximum, cancellation.Token, fault),
                     WriteInput(), process.WaitForExitAsync(cancellation.Token)
                 };
                 var all = Task.WhenAll(tasks);
