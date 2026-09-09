@@ -1,0 +1,89 @@
+name: Workbench v0601 post-permission recheck v1
+on:
+  push:
+    branches: [tooling/workbench-v0.60.1-fixed-publication-v1]
+    paths:
+      - 'tooling/v0601-fixed-publication/permission-recheck-v1/**'
+      - '.github/workflows/workbench-v0601-permission-recheck-v1.yml'
+permissions:
+  contents: read
+jobs:
+  windows-permission-recheck:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Obtain exact fixture MinGit and materialize unchanged source dependencies
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP/recheck-MinGit.zip"
+          Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.4/MinGit-2.55.0.4-64-bit.zip' -OutFile $zip -TimeoutSec 120
+          if ((Get-Item $zip).Length -ne 38792847 -or (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4e03f94c2ffbf70be337e005cee02661c732dbfc81031a078bda9299b9a7d644') { throw 'MINGIT_ARCHIVE_IDENTITY_MISMATCH' }
+          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP/recheck-mingit"
+          python tooling/v0601-fixed-publication/permission-recheck-v1/prepare.py "$env:RUNNER_TEMP/recheck-source" $zip
+          if ($LASTEXITCODE -ne 0) { throw 'RECHECK_MATERIALIZATION_FAILED' }
+      - name: New permission-change reconciliation and immutable incident tests
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:RUNNER_TEMP/recheck-mingit/cmd;" + $env:PATH
+          Set-Location "$env:RUNNER_TEMP/recheck-source"
+          dotnet run --project PermissionRecheckTests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'PERMISSION_RECHECK_QUALIFICATION_FAILED' }
+      - name: Unchanged HTTPS discovery stream and inherited source evidence guard regressions
+        shell: pwsh
+        run: |
+          $env:DIAGNOSTIC_TEST_GIT_ROOT = "$env:RUNNER_TEMP/recheck-mingit"
+          $env:PATH = "$env:DIAGNOSTIC_TEST_GIT_ROOT/cmd;" + $env:PATH
+          Set-Location "$env:RUNNER_TEMP/recheck-source"
+          foreach ($project in @('DiagnosticTests.csproj','V2Tests.csproj','PublisherTests.csproj','NetworkTests.csproj')) {
+            dotnet run --project $project -c Release
+            if ($LASTEXITCODE -ne 0) { throw "INHERITED_QUALIFICATION_FAILED_$project" }
+          }
+      - name: Build only recheck and verify production zero-argument guard
+        shell: pwsh
+        run: |
+          dotnet publish "$env:RUNNER_TEMP/recheck-source/PermissionRecheck.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o "$env:RUNNER_TEMP/recheck-delivery"
+          if ($LASTEXITCODE -ne 0) { throw 'RECHECK_BUILD_FAILED' }
+          @'
+          import os,pathlib,subprocess
+          exe=pathlib.Path(os.environ['RUNNER_TEMP'])/'recheck-delivery/Matawaka.Workbench.V0601PermissionRecheck.exe'
+          p=subprocess.run([str(exe),'--argument-probe'],capture_output=True,timeout=20)
+          assert p.returncode==1 and b'ARGUMENTS_NOT_ACCEPTED' in p.stderr,'PRODUCTION_ARGUMENT_GUARD_FAILED'
+          print('PRODUCTION_ARGUMENT_GUARD_PASS_NO_OPERATOR_ACCESS')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'RECHECK_ARGUMENT_GUARD_FAILED' }
+      - name: Bind source reports and executable
+        shell: pwsh
+        run: |
+          @'
+          import os,pathlib,json,zipfile,shutil,hashlib
+          temp=pathlib.Path(os.environ['RUNNER_TEMP']);src=temp/'recheck-source';out=temp/'recheck-delivery'
+          reports=['permission-recheck-qualification.json','discovery-diagnostic-qualification.json','preflight-qualification.json','evidence-qualification.json','promisor-v2-qualification.json','publisher-qualification.json','publisher-https-qualification.json']
+          for name in reports:
+              j=json.loads((src/name).read_text(encoding='utf-8-sig'));assert j['Passed'] and all(x['Passed'] for x in j['Checks'])
+              shutil.copyfile(src/name,out/name)
+          for name in ['mingit-files.json','permission-recheck-materialization.json','diagnostic-materialization.json','publisher-materialization.json']:
+              shutil.copyfile(src/name,out/name)
+          with zipfile.ZipFile(out/'qualified-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(src.iterdir()):
+                  if p.is_file() and p.suffix in ('.cs','.csproj','.json'):z.write(p,p.name)
+          files=[{'Path':p.name,'Bytes':p.stat().st_size,'Sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(out.iterdir()) if p.is_file()]
+          manifest={'Schema':'matawaka.workbench-permission-recheck-delivery/v0.1','SourceSha':os.environ['GITHUB_SHA'],'RunId':os.environ['GITHUB_RUN_ID'],'OperatorHostAccessed':False,'ProductionPushImplemented':False,'ProductionRecheckExecuted':False,'Files':files}
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(manifest,indent=2))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'RECHECK_DELIVERY_BINDING_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: workbench-v0601-permission-recheck-v1-win-x64
+          path: ${{ runner.temp }}/recheck-delivery/*
+          retention-days: 30
+          if-no-files-found: error
