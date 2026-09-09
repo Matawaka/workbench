@@ -28,7 +28,7 @@ internal static class NetworkTests
         private readonly string remote;
         private readonly string mode;
         private readonly Task loop;
-        internal int Requests,ReceiveRequests,PublicCredentialLeaks,AuthenticationRefusals;
+        internal int Requests,ReceiveRequests,ReceiveRpcRequests,PublicCredentialLeaks,AuthenticationRefusals,TlsRefusals;
         internal bool ReceivedUpdate,RedirectFollowed;
         internal string? ServerFailure;
         internal string Endpoint {get;}
@@ -45,7 +45,7 @@ internal static class NetworkTests
         }
         private async Task Run()
         {
-            while(!stop.IsCancellationRequested){try{using var client=await listener.AcceptTcpClientAsync(stop.Token);using var ssl=new SslStream(client.GetStream(),false);await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert,ClientCertificateRequired=false},stop.Token);await Request(ssl);}catch(Exception e) when(e is IOException or OperationCanceledException or System.Security.Authentication.AuthenticationException or SocketException){if(e is InvalidDataException)ServerFailure=e.Message;}catch(Exception e){ServerFailure=e.GetType().Name;return;}}
+            while(!stop.IsCancellationRequested){try{using var client=await listener.AcceptTcpClientAsync(stop.Token);using var ssl=new SslStream(client.GetStream(),false);await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert,ClientCertificateRequired=false},stop.Token);await Request(ssl);}catch(Exception e) when(e is IOException or OperationCanceledException or System.Security.Authentication.AuthenticationException or SocketException){if(e is InvalidDataException)ServerFailure=e.Message;if(e is System.Security.Authentication.AuthenticationException)TlsRefusals++;}catch(Exception e){ServerFailure=e.GetType().Name;return;}}
         }
         private async Task<string> Line(Stream s)
         {
@@ -61,11 +61,11 @@ internal static class NetworkTests
             var first=await Line(s);var parts=first.Split(' ');if(parts.Length!=3)throw new IOException();var headers=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);string l;
             while((l=await Line(s)).Length>0){var colon=l.IndexOf(':');if(colon<1)throw new IOException();headers[l[..colon]]=l[(colon+1)..].Trim();if(headers.Count>100)throw new IOException();}
             Requests++;var path=parts[1];var receive=path.Contains("git-receive-pack",StringComparison.Ordinal);var auth=headers.GetValueOrDefault("Authorization");
+            if(receive&&parts[0]=="POST")ReceiveRpcRequests++;
             if(!receive&&auth is not null)PublicCredentialLeaks++;
             if(path.Contains("/leak",StringComparison.Ordinal))RedirectFollowed=true;
             if(mode=="redirect"){await Reply(s,"302 Found","text/plain",Array.Empty<byte>(),"Location: "+Endpoint+"/leak\r\n");return;}
             if(mode=="rate-limit"){await Reply(s,"429 Too Many Requests","text/plain",Array.Empty<byte>(),"Retry-After: 0\r\n");return;}
-            // The parser stores the VALUE of Authorization, not its field name and colon.
             var expectedAuthValue=Credential.Header(Dummy)["Authorization: ".Length..];
             if(receive){ReceiveRequests++;if(auth!=expectedAuthValue){AuthenticationRefusals++;await Reply(s,"401 Unauthorized","text/plain",Array.Empty<byte>(),"WWW-Authenticate: Basic realm=fixture\r\n");return;}}
             if(mode=="post-readback-failure"&&ReceivedUpdate&&!receive){await Reply(s,"503 Service Unavailable","text/plain",Array.Empty<byte>());return;}
@@ -92,17 +92,25 @@ internal static class NetworkTests
             var p=new PublishPlan(f.Proof,Git,server.Endpoint,Path.Combine(temp,"stage"),Path.Combine(f.Root,"artifacts/publication-v0601"),new(pre,Safe.Hash(b),b.Length),Path.GetDirectoryName(Path.GetDirectoryName(Git))!);
             var before=V2.StoreDigest(f.Root);using var sourceLocks=new ReadLocks();sourceLocks.Tree(Safe.Under(f.Root,".git"));
             if(mode is "normal" or "lost-receive-response" or "post-readback-failure"){
-                bool rejected=false;try{await FixedPublisher.Execute(p,expected,f.Read,PublishPlan.Confirm,TimeSpan.Zero,Credential.Header(Dummy),"fixture","fixture");}catch(InvalidDataException ex){rejected=true;Console.WriteLine("FIXTURE_ENGINE_REFUSAL "+ex.Message+" requests="+server.Requests+" receive="+server.ReceiveRequests+" authRefusals="+server.AuthenticationRefusals+" serverFailure="+server.ServerFailure);if(mode=="normal"&&File.Exists(p.Outcome))Console.WriteLine(Safe.Utf8.GetString(Safe.Read(p.Outcome)));}
+                bool rejected=false;try{await FixedPublisher.Execute(p,expected,f.Read,PublishPlan.Confirm,TimeSpan.Zero,Credential.Header(Dummy),"fixture","fixture");}catch(InvalidDataException ex){
+                    rejected=true;Console.WriteLine("FIXTURE_ENGINE_REFUSAL "+ex.Message+" requests="+server.Requests+" receive="+server.ReceiveRequests+" authRefusals="+server.AuthenticationRefusals+" tlsRefusals="+server.TlsRefusals+" serverFailure="+server.ServerFailure);
+                    if(mode=="normal"){
+                        if(File.Exists(p.Outcome))Console.WriteLine(Safe.Utf8.GetString(Safe.Read(p.Outcome)));
+                        // Separate disposable diagnostic client, NEVER an operator retry or production path.
+                        var diagnostic=new IsolatedTransport(p with{StageRoot=Path.Combine(temp,"read-diagnostic")});diagnostic.Create();var detail=await diagnostic.Read();
+                        var text=Encoding.UTF8.GetString(detail.Error).Replace(Dummy,"<redacted>").Replace(Credential.Header(Dummy),"<redacted>");Console.WriteLine("FIXTURE_PUBLIC_READ_NATIVE_ERROR exit="+detail.ExitCode+" "+text[..Math.Min(text.Length,4096)]);
+                    }
+                }
                 Safe.Need(rejected==(mode!="normal"),"HTTPS_ORCHESTRATION_OUTCOME");
                 var main=Encoding.ASCII.GetString(await Backend(temp,new[]{"--git-dir="+remote,"rev-parse",PublishPlan.MainRef})).Trim();Safe.Need(main==f.Proof.Accepted.Head&&server.ReceivedUpdate,"HTTPS_REAL_RECEIVE_PACK_UPDATED");
-                Safe.Need(server.PublicCredentialLeaks==0&&server.ReceiveRequests>=2&&server.AuthenticationRefusals==0,"CREDENTIAL_ONLY_FOR_RECEIVE_PACK");
+                Safe.Need(server.PublicCredentialLeaks==0&&server.ReceiveRequests==2&&server.ReceiveRpcRequests==1&&server.AuthenticationRefusals==0,"CREDENTIAL_EXACT_ONE_RECEIVE_RPC_NO_RETRY");
                 if(rejected){var outcome=Safe.Parse(Safe.Read(p.Outcome));Safe.False(outcome,"RemoteMutationProvenAbsent","PublicationSuccessClaimed","RetryAuthorized");Safe.True(outcome,"PushMayHaveStarted");bool replay=false;try{await FixedPublisher.Execute(p,expected,f.Read,PublishPlan.Confirm,TimeSpan.Zero,Credential.Header(Dummy),"fixture","fixture");}catch(InvalidDataException){replay=true;}Safe.Need(replay,"HTTPS_UNCERTAIN_REPLAY_REFUSED");}
             }else{
                 var t=new IsolatedTransport(p);t.Create();var response=await t.Push(Credential.Header(Dummy));Safe.Need(response.ExitCode!=0,"HTTPS_HOSTILE_RESPONSE_REFUSED");
                 await Task.Delay(100);Safe.Need(!server.RedirectFollowed,"CREDENTIAL_REDIRECT_NOT_FOLLOWED");Safe.Need(server.Requests==(trust?1:0),"NO_HTTP_RETRY_OR_UNTRUSTED_TLS_DISCLOSURE");
             }
             Safe.Need(V2.StoreDigest(f.Root)==before,"HTTPS_SOURCE_GIT_STORE_UNCHANGED");
-            Results.Add(new{Id="https-"+mode+(trust?"":"-untrusted-ca"),Passed=true,Requests=server.Requests,ReceiveRequests=server.ReceiveRequests,PublicCredentialLeaks=server.PublicCredentialLeaks,AuthenticationRefusals=server.AuthenticationRefusals,RedirectFollowed=server.RedirectFollowed,SourceGitStoreUnchanged=true,ExistingSourceGitFilesReadLocked=true});Console.WriteLine("PASS HTTPS "+mode+" trust="+trust);
+            Results.Add(new{Id="https-"+mode+(trust?"":"-untrusted-ca"),Passed=true,Requests=server.Requests,ReceiveRequests=server.ReceiveRequests,ReceiveRpcRequests=server.ReceiveRpcRequests,PublicCredentialLeaks=server.PublicCredentialLeaks,AuthenticationRefusals=server.AuthenticationRefusals,RedirectFollowed=server.RedirectFollowed,SourceGitStoreUnchanged=true,ExistingSourceGitFilesReadLocked=true});Console.WriteLine("PASS HTTPS "+mode+" trust="+trust);
         }finally{Environment.SetEnvironmentVariable("FIXTURE_TLS_CA",null);try{Directory.Delete(temp,true);}catch{}}
     }
     internal static async Task Main()
