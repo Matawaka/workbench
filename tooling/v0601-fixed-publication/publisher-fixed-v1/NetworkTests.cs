@@ -40,12 +40,15 @@ internal static class NetworkTests
             req.CertificateExtensions.Add(new X509BasicConstraintsExtension(true,false,0,true));
             req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign|X509KeyUsageFlags.DigitalSignature|X509KeyUsageFlags.KeyEncipherment,true));
             var san=new SubjectAlternativeNameBuilder();san.AddDnsName("localhost");san.AddIpAddress(IPAddress.Loopback);req.CertificateExtensions.Add(san.Build());
-            cert=req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5),DateTimeOffset.UtcNow.AddHours(1));
+            using var ephemeral=req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5),DateTimeOffset.UtcNow.AddHours(1));
+            // Schannel server credentials on Windows cannot use some ephemeral private keys.
+            // Materialize only this generated fixture key for the certificate lifetime; no trust-store installation.
+            cert=X509CertificateLoader.LoadPkcs12(ephemeral.Export(X509ContentType.Pfx),null,X509KeyStorageFlags.Exportable);
             listener.Start();Endpoint="https://127.0.0.1:"+((IPEndPoint)listener.LocalEndpoint).Port+"/Matawaka/workbench.git";loop=Run();
         }
         private async Task Run()
         {
-            while(!stop.IsCancellationRequested){try{using var client=await listener.AcceptTcpClientAsync(stop.Token);using var ssl=new SslStream(client.GetStream(),false);await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert,ClientCertificateRequired=false},stop.Token);await Request(ssl);}catch(Exception e) when(e is IOException or OperationCanceledException or System.Security.Authentication.AuthenticationException or SocketException){if(e is InvalidDataException)ServerFailure=e.Message;if(e is System.Security.Authentication.AuthenticationException)TlsRefusals++;}catch(Exception e){ServerFailure=e.GetType().Name;return;}}
+            while(!stop.IsCancellationRequested){try{using var client=await listener.AcceptTcpClientAsync(stop.Token);using var ssl=new SslStream(client.GetStream(),false);await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert,ClientCertificateRequired=false},stop.Token);await Request(ssl);}catch(Exception e) when(e is IOException or OperationCanceledException or System.Security.Authentication.AuthenticationException or SocketException){if(e is InvalidDataException)ServerFailure=e.Message;if(e is System.Security.Authentication.AuthenticationException){TlsRefusals++;ServerFailure=e.Message+" / "+e.InnerException?.Message;}}catch(Exception e){ServerFailure=e.GetType().Name;return;}}
         }
         private async Task<string> Line(Stream s)
         {
@@ -96,7 +99,6 @@ internal static class NetworkTests
                     rejected=true;Console.WriteLine("FIXTURE_ENGINE_REFUSAL "+ex.Message+" requests="+server.Requests+" receive="+server.ReceiveRequests+" authRefusals="+server.AuthenticationRefusals+" tlsRefusals="+server.TlsRefusals+" serverFailure="+server.ServerFailure);
                     if(mode=="normal"){
                         if(File.Exists(p.Outcome))Console.WriteLine(Safe.Utf8.GetString(Safe.Read(p.Outcome)));
-                        // Separate disposable diagnostic client, NEVER an operator retry or production path.
                         var diagnostic=new IsolatedTransport(p with{StageRoot=Path.Combine(temp,"read-diagnostic")});diagnostic.Create();var detail=await diagnostic.Read();
                         var text=Encoding.UTF8.GetString(detail.Error).Replace(Dummy,"<redacted>").Replace(Credential.Header(Dummy),"<redacted>");Console.WriteLine("FIXTURE_PUBLIC_READ_NATIVE_ERROR exit="+detail.ExitCode+" "+text[..Math.Min(text.Length,4096)]);
                     }
@@ -117,6 +119,6 @@ internal static class NetworkTests
     {
         using var tools=new ReadLocks();var pins=ToolTree.Embedded();ToolTree.Verify(Path.GetDirectoryName(Path.GetDirectoryName(Git))!,pins,tools);Console.WriteLine("EXACT_MINGIT_DISTRIBUTION_READ_LOCKED "+pins.Length);
         await Case("normal");await Case("redirect");await Case("rate-limit");await Case("normal-untrusted",false);await Case("lost-receive-response");await Case("post-readback-failure");
-        File.WriteAllBytes("publisher-https-qualification.json",Files.Json(new{Schema="matawaka.workbench-fixed-publisher-https-qualification/v0.1",Passed=true,Checks=Results,RealNativeGitSmartHttps=true,ExactMinGitFilesReadLocked=pins.Length,OnlyLoopbackFixtures=true,ProductionRemoteContacted=false,RealCredentialsUsed=false,CertificateInstalledInTrustStore=false,ProductionPublicationPerformed=false}));Console.WriteLine("PUBLISHER_HTTPS_QUALIFICATION_PASS "+Results.Count);
+        File.WriteAllBytes("publisher-https-qualification.json",Files.Json(new{Schema="matawaka.workbench-fixed-publisher-https-qualification/v0.1",Passed=true,Checks=Results,RealNativeGitSmartHttps=true,ExactMinGitFilesReadLocked=pins.Length,OnlyLoopbackFixtures=true,ProductionRemoteContacted=false,RealCredentialsUsed=false,CertificateInstalledInTrustStore=false,FixturePrivateKeyMaterialization="Windows-compatible fixture-only certificate lifetime; no production TLS override",ProductionPublicationPerformed=false}));Console.WriteLine("PUBLISHER_HTTPS_QUALIFICATION_PASS "+Results.Count);
     }
 }
