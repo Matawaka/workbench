@@ -33,6 +33,13 @@ jobs:
         run: |
           python tooling/v0601-fixed-publication/publisher-fixed-v1/prepare.py "$env:RUNNER_TEMP/publisher-source" "$env:RUNNER_TEMP/publisher-MinGit.zip"
           if ($LASTEXITCODE -ne 0) { throw 'PUBLISHER_SOURCE_MATERIALIZATION_FAILED' }
+      - name: Real loopback HTTPS credentials TLS redirects and lost-response qualification
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:RUNNER_TEMP/publisher-mingit/cmd;" + $env:PATH
+          Set-Location "$env:RUNNER_TEMP/publisher-source"
+          dotnet run --project NetworkTests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'FIXED_PUBLISHER_HTTPS_QUALIFICATION_FAILED' }
       - name: Inherited source evidence and promisor regression qualification
         shell: pwsh
         run: |
@@ -47,13 +54,6 @@ jobs:
           Set-Location "$env:RUNNER_TEMP/publisher-source"
           dotnet run --project PublisherTests.csproj -c Release
           if ($LASTEXITCODE -ne 0) { throw 'FIXED_PUBLISHER_QUALIFICATION_FAILED' }
-      - name: Real loopback HTTPS credentials TLS redirects and lost-response qualification
-        shell: pwsh
-        run: |
-          $env:PATH = "$env:RUNNER_TEMP/publisher-mingit/cmd;" + $env:PATH
-          Set-Location "$env:RUNNER_TEMP/publisher-source"
-          dotnet run --project NetworkTests.csproj -c Release
-          if ($LASTEXITCODE -ne 0) { throw 'FIXED_PUBLISHER_HTTPS_QUALIFICATION_FAILED' }
       - name: Build zero-argument publisher after all checks
         shell: pwsh
         run: |
