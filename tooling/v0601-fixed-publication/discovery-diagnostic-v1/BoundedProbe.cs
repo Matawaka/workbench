@@ -16,8 +16,6 @@ internal sealed record ProbeObservation(string Category, int? ExitCode, bool Pro
     PipeObservation Stderr, ListedRefs? Refs, bool RawOutputPersisted = false,
     bool PublicationAuthorized = false, bool HistoricalCauseRecovered = false);
 
-// This runner has no knowledge of Git write commands. Its only production caller supplies
-// a fixed absolute remote-https image, two fixed endpoint arguments, and a fixed list request.
 internal static class BoundedProcess
 {
     private sealed class Pipe
@@ -96,7 +94,6 @@ internal static class BoundedProcess
                 }
                 if (failure != "NONE") {
                     cancellation.Cancel();
-                    // No unbounded wait in cleanup. A failure to terminate remains explicit.
                     var cleanup = Task.Run(async () => {
                         try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
                         catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
@@ -125,7 +122,7 @@ internal static class BoundedProcess
 
 internal static class Classification
 {
-    // Allowlisted categories only: never copy a server line or exception message to a receipt.
+    // Emit only allowlisted categories, never a server line or exception message.
     internal static string Error(byte[] bytes)
     {
         string s;
@@ -139,6 +136,8 @@ internal static class Classification
         Match("AUTHENTICATION_CHALLENGE_UNSATISFIED", "unable to get password from user", "could not read username", "could not read password");
         Match("ACCESS_FORBIDDEN", "returned error: 403", "write access to repository not granted");
         Match("REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE", "returned error: 404", "repository not found");
+        if (Regex.IsMatch(s, @"(?m)^fatal: repository '[^\r\n']{1,4096}' not found\r?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
+            categories.Add("REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE");
         Match("RATE_LIMITED", "returned error: 429");
         Match("REDIRECT_REFUSED", "returned error: 301", "returned error: 302", "returned error: 307", "returned error: 308", "unable to update url base from redirection");
         Match("TLS_FAILED", "ssl certificate problem", "tls connect error", "ssl connect error", "certificate verify failed", "error setting certificate file");
