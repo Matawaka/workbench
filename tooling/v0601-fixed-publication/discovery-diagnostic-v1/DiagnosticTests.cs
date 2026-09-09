@@ -138,6 +138,7 @@ internal static class DiagnosticTests
     {
         foreach (var (message, expected) in new[] {
             ("fatal: Authentication failed for exact", "AUTHENTICATION_REJECTED"),
+            ("fatal: unable to get password from user", "AUTHENTICATION_CHALLENGE_UNSATISFIED"),
             ("fatal: requested URL returned error: 403", "ACCESS_FORBIDDEN"),
             ("fatal: repository not found", "REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE"),
             ("fatal: requested URL returned error: 429", "RATE_LIMITED"),
@@ -162,25 +163,8 @@ internal static class DiagnosticTests
         Check(cfg["http.sslVerify"] == "true" && cfg["http.followRedirects"] == "false" && cfg["credential.helper"] == "" && cfg["http.maxRetries"] == "0", "guard-config");
         Pass("credential-env-only-no-helper-no-redirect-no-retry");
     }
-    private sealed class IncidentFixture : IDisposable
-    {
-        internal readonly V2Tests.F F = new();
-        internal readonly string TempRoot = Temp();
-        internal DiagnosticPlan Plan { get; }
-        internal IncidentFixture(V2Snapshot snap)
-        {
-            BoundFile Save(string file, object value) { var b = Files.Json(value); var rel = "artifacts/publication-v0601/" + file; Files.New(Safe.Under(F.Root, rel), b); return new(rel, Safe.Hash(b), b.Length); }
-            var pre = Save("fixture-preflight.json", new { Schema = "matawaka.workbench-v0601-publication-preflight/v0.2", Status = V2.Status, Snapshot = snap, PublicationAuthorityCreated = false, RetryAuthorityCreated = false, NetworkReadPerformed = false, RemoteWritePerformed = false });
-            var att = Save("fixture-attempt.json", new { Schema = "matawaka.workbench-fixed-publication-attempt/v0.1", State = "ATTEMPT_CONSUMED_NO_RETRY", PreflightSha256 = pre.Sha256, AcceptedHead = F.Proof.Accepted.Head, AcceptedTagObject = F.Proof.TagObject, RetryAuthorized = false });
-            var outcome = Save("fixture-outcome.json", new { Schema = "matawaka.workbench-fixed-publication-outcome/v0.1", Status = "PUBLICATION_OUTCOME_UNVERIFIED_NO_RETRY", SafeReason = "PUSH_OR_READBACK_NOT_VERIFIED", AttemptReceiptSha256 = att.Sha256, PreflightSha256 = pre.Sha256, RetryAuthorized = false, PublicationSuccessClaimed = false, RemoteMutationProvenAbsent = false, ExactAdvertisedOldMainGuardObserved = false, PushMayHaveStarted = true, LocalSnapshotReverified = true, PushExitCode = 128, PushInvocations = 1, RemoteReadInvocations = 2 });
-            var prior = Path.Combine(TempRoot, "prior-stage"); Directory.CreateDirectory(prior); File.WriteAllText(Path.Combine(prior, "session.json"), "{\"fixture\":true}");
-            Plan = new(F.Proof, GitRoot, Path.Combine(TempRoot, "new-stage"), prior, Path.Combine(F.Root, "artifacts/publication-v0601"), pre, att, outcome);
-        }
-        public void Dispose() { F.Dispose(); Remove(TempRoot); }
-    }
     private static async Task Orchestration()
     {
-        // Build the fixture preflight from this same fixture, never from a second repo.
         using var f = new V2Tests.F(); var temp = Temp();
         try {
             var snap = await f.Read();
@@ -219,7 +203,7 @@ internal static class DiagnosticTests
         await PipeTest("dual", "NONE"); await PipeTest("flood-out", "OUTPUT_LIMIT"); await PipeTest("flood-error", "OUTPUT_LIMIT");
         await PipeTest("sleep", "PROCESS_DEADLINE"); await PipeTest("inherit", "PROCESS_DEADLINE");
         await Https("normal", "RECEIVE_DISCOVERY_COMPLETED");
-        await Https("401", "AUTHENTICATION_REJECTED"); await Https("403", "ACCESS_FORBIDDEN");
+        await Https("401", "AUTHENTICATION_CHALLENGE_UNSATISFIED"); await Https("403", "ACCESS_FORBIDDEN");
         await Https("404", "REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE"); await Https("429", "RATE_LIMITED");
         await Https("redirect", "REDIRECT_REFUSED"); await Https("normal", "TLS_FAILED", false);
         await Https("malformed", "HELPER_PROTOCOL_FAILED"); await Https("slow", "PROCESS_DEADLINE");
