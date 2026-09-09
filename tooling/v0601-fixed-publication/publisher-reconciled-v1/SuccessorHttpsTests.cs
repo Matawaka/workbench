@@ -1,6 +1,7 @@
 using System.Text;
 using Matawaka.V0601PublicationPreflight;
 using Matawaka.V0601ReconciledPublisher;
+using Matawaka.V0601DiscoveryDiagnostic;
 
 namespace Matawaka.V0601FixedPublisher;
 
@@ -72,7 +73,12 @@ internal static partial class SuccessorHttps
                 Safe.Need(!File.Exists(p.Result), "FALSE_SUCCESS_RECEIPT");
             }
             if (mode == "ancestor-drift") Safe.False(record, "ExactAdvertisedOldMainGuardObserved");
-            if (mode == "atomic-unsupported") Safe.Eq(record.GetProperty("NativePush"), "Category", "ATOMIC_UNSUPPORTED");
+            if (mode == "atomic-unsupported") {
+                // Native Git emits the atomic refusal AND a remote-end-hung-up line.
+                // Keep the qualified classifier's ambiguity rule; do not infer a single cause or relax atomic.
+                Safe.Need(Classification.Error("fatal: the receiving end does not support --atomic push\nfatal: the remote end hung up unexpectedly\n"u8.ToArray()) == "AMBIGUOUS_NATIVE_ERROR", "COMBINED_ATOMIC_ERROR_MUST_REMAIN_AMBIGUOUS");
+                Safe.Eq(record.GetProperty("NativePush"), "Category", "AMBIGUOUS_NATIVE_ERROR");
+            }
             if (mode == "bad-credential") Safe.Need(server.AuthenticationRefusals == 1, "AUTHENTICATION_NOT_ONE_SHOT");
             var reportText = Encoding.UTF8.GetString(Safe.Read(recordPath));
             Safe.Need(!reportText.Contains(token) && !reportText.Contains(Convert.ToBase64String(Encoding.ASCII.GetBytes("x-access-token:" + token))), "SECRET_IN_SUCCESSOR_REPORT");
@@ -84,6 +90,7 @@ internal static partial class SuccessorHttps
                 Requests = server.Requests, ReceiveRequests = server.ReceiveRequests, UpdatePostRequests = server.ReceiveRpcRequests,
                 PublicCredentialLeaks = server.PublicCredentialLeaks, AuthenticationRefusals = server.AuthenticationRefusals,
                 ExactRemoteTargetObserved = updated, GuardVerified = happy, OriginalInputsAndStagesUnchanged = true,
+                NativePushCategory = record.TryGetProperty("NativePush", out var native) && native.ValueKind == System.Text.Json.JsonValueKind.Object ? native.GetProperty("Category").GetString() : null,
                 DisposableFixtureOnly = true });
             Console.WriteLine("PASS SUCCESSOR_HTTPS " + mode + " trust=" + trust);
         } finally {
