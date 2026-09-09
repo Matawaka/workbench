@@ -1,0 +1,82 @@
+name: Workbench v0601 promisor preflight v2
+on:
+  push:
+    branches: ['tooling/workbench-v0.60.1-fixed-publication-v1']
+    paths:
+      - 'tooling/v0601-fixed-publication/preflight-promisor-v2/**'
+      - '.github/workflows/workbench-v0601-promisor-preflight-v2.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-preflight:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Materialize successor from pinned unchanged original
+        shell: pwsh
+        run: |
+          python tooling/v0601-fixed-publication/preflight-promisor-v2/prepare.py "$env:RUNNER_TEMP/preflight-v2-source"
+          if ($LASTEXITCODE -ne 0) { throw 'SUCCESSOR_SOURCE_MATERIALIZATION_FAILED' }
+      - name: Verify exact side-by-side MinGit for disposable tests
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP/MinGit.zip"
+          Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.4/MinGit-2.55.0.4-64-bit.zip' -OutFile $zip -TimeoutSec 120
+          if ((Get-Item $zip).Length -ne 38792847 -or (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4e03f94c2ffbf70be337e005cee02661c732dbfc81031a078bda9299b9a7d644') { throw 'GIT_ARCHIVE_IDENTITY_MISMATCH' }
+          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP/mingit-v2"
+          if ((Get-FileHash "$env:RUNNER_TEMP/mingit-v2/cmd/git.exe" -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'c470d205517c7a53ceca321df16a6e4549fcd52b576ab4d09536d36f26fda5a9') { throw 'GIT_IMAGE_IDENTITY_MISMATCH' }
+      - name: Inherited and promisor-aware fixture qualification
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:RUNNER_TEMP/mingit-v2/cmd;" + $env:PATH
+          Set-Location "$env:RUNNER_TEMP/preflight-v2-source"
+          dotnet run --project V2Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'PROMISOR_PREFLIGHT_QUALIFICATION_FAILED' }
+      - name: Publish external single-file preflight only after PASS
+        shell: pwsh
+        run: |
+          dotnet publish "$env:RUNNER_TEMP/preflight-v2-source/PreflightV2.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o "$env:RUNNER_TEMP/preflight-v2-delivery"
+          if ($LASTEXITCODE -ne 0) { throw 'PREFLIGHT_BUILD_FAILED' }
+          $exe = "$env:RUNNER_TEMP/preflight-v2-delivery/Matawaka.Workbench.V0601PublicationPreflightV2.exe"
+          $probe = & $exe --arbitrary-argument 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 1 -or $probe -notmatch 'ARGUMENTS_NOT_ACCEPTED') { throw 'PRODUCTION_CLI_ARGUMENT_GUARD_FAILED' }
+      - name: Bind exact binary generated source and qualification reports
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,os,pathlib,zipfile
+          src=pathlib.Path(os.environ['RUNNER_TEMP'])/'preflight-v2-source'
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'preflight-v2-delivery'
+          reports=['preflight-qualification.json','evidence-qualification.json','promisor-v2-qualification.json','materialization.json']
+          for name in reports:
+              data=(src/name).read_bytes(); doc=json.loads(data)
+              if name!='materialization.json':
+                  assert doc['Passed'] is True
+                  assert all(c['Passed'] is True for c in doc['Checks'])
+              (out/name).write_bytes(data)
+          with zipfile.ZipFile(out/'qualified-source.zip','w',compression=zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(src.iterdir()):
+                  if p.is_file() and p.suffix in ('.cs','.csproj'): z.write(p,p.name)
+          files=[{'Path':p.name,'Bytes':p.stat().st_size,'Sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(out.iterdir()) if p.is_file()]
+          assert len([f for f in files if f['Path'].endswith('.exe')])==1
+          manifest={'Schema':'matawaka.workbench-promisor-preflight-v2-delivery/v0.1','SourceSha':os.environ['GITHUB_SHA'],'RunId':os.environ['GITHUB_RUN_ID'],'OriginalVerifierGitBlob':'29bf0f34eeb6b1f5ba0de957c8c55b0bb486c675','Files':files,'OperatorHostAccessed':False,'ProductionPublicationPerformed':False,'OriginalSourceOrReceiptsModified':False}
+          (out/'delivery-manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'DELIVERY_BINDING_FAILED' }
+          if (git status --porcelain) { throw 'QUALIFICATION_CHANGED_REPOSITORY_SOURCE' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: workbench-v0601-promisor-preflight-v2-win-x64
+          path: ${{ runner.temp }}/preflight-v2-delivery/*
+          if-no-files-found: error
+          retention-days: 30
