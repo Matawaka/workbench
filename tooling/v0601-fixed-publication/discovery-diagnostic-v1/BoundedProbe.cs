@@ -142,14 +142,14 @@ internal static class Classification
         })) categories.Add("REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE");
         Match("RATE_LIMITED", "returned error: 429");
         Match("REDIRECT_REFUSED", "returned error: 301", "returned error: 302", "returned error: 307", "returned error: 308", "unable to update url base from redirection");
-        Match("TLS_FAILED", "ssl certificate problem", "tls connect error", "ssl connect error", "certificate verify failed", "error setting certificate file");
+        Match("TLS_FAILED", "ssl certificate problem", "ssl certificate openssl verify result:", "tls connect error", "ssl connect error", "certificate verify failed", "error setting certificate file");
         Match("DNS_FAILED", "could not resolve host");
         Match("CONNECTION_FAILED", "failed to connect to", "connection refused");
         Match("NETWORK_TIMEOUT", "operation timed out", "connection timed out");
         Match("REMOTE_CONNECTION_CLOSED", "empty reply from server", "connection reset by peer");
         Match("ATOMIC_UNSUPPORTED", "does not support --atomic push", "does not support atomic push");
         Match("HOOK_START_FAILED", "cannot spawn", "cannot run", "cannot exec");
-        Match("HELPER_PROTOCOL_FAILED", "invalid server response", "invalid ref advertisement", "bad line length character", "protocol error:");
+        Match("HELPER_PROTOCOL_FAILED", "invalid server response", "invalid ref advertisement", "bad line length character", "protocol error:", "the remote end hung up unexpectedly");
         return categories.Count == 1 ? categories.Single() : categories.Count > 1 ? "AMBIGUOUS_NATIVE_ERROR" : "UNRECOGNIZED_NATIVE_ERROR";
     }
     internal static ListedRefs Parse(byte[] bytes)
