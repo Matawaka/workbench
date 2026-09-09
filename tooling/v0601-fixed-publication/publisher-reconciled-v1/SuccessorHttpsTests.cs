@@ -86,7 +86,13 @@ internal static partial class SuccessorHttps
                 ExactRemoteTargetObserved = updated, GuardVerified = happy, OriginalInputsAndStagesUnchanged = true,
                 DisposableFixtureOnly = true });
             Console.WriteLine("PASS SUCCESSOR_HTTPS " + mode + " trust=" + trust);
-        } finally { Environment.SetEnvironmentVariable("FIXTURE_TLS_CA", null); }
+        } finally {
+            Environment.SetEnvironmentVariable("FIXTURE_TLS_CA", null);
+            // Fixture teardown only, after preservation assertions and read-lock disposal.
+            // Native receive-pack creates read-only object files on Windows. No operator path is involved.
+            if (Directory.Exists(f.Temp)) foreach (var file in Directory.EnumerateFiles(f.Temp, "*", SearchOption.AllDirectories))
+                File.SetAttributes(file, FileAttributes.Normal);
+        }
     }
     private static byte[] IncidentBytes(SuccessorPlan p, BoundFile pin) => Matawaka.V0601DiscoveryDiagnostic.Incident.Bound(p.Prior.Prior, pin);
     private static async Task Main()
