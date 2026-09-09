@@ -136,6 +136,7 @@ internal static class Classification
             if (fragments.Any(s.Contains)) categories.Add(category);
         }
         Match("AUTHENTICATION_REJECTED", "authentication failed", "returned error: 401");
+        Match("AUTHENTICATION_CHALLENGE_UNSATISFIED", "unable to get password from user", "could not read username", "could not read password");
         Match("ACCESS_FORBIDDEN", "returned error: 403", "write access to repository not granted");
         Match("REPOSITORY_NOT_FOUND_OR_NOT_VISIBLE", "returned error: 404", "repository not found");
         Match("RATE_LIMITED", "returned error: 429");
