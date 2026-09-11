@@ -1,0 +1,63 @@
+{
+  "schema": "matawaka.qwen-code-only-qualification-summary/v0.1",
+  "status": "CODE_ONLY_QWEN_ADAPTER_AND_REHEARSAL_QUALIFIED_NOT_LIVE_READY",
+  "base_frontier": "58b9430fc544998a8e40ba00b6757cc630ba9081",
+  "sdk": "10.0.400",
+  "platform": "win32",
+  "source_archive_sha256": "650bd93ea670f7cb0a4602ef418b4f61f16fd2c17cf88176a73dd422751b6d0c",
+  "source_files": 9,
+  "source_sha256": {
+    "src/Matawaka.Workbench.App/SourceBoundModelInvocation.cs": "1c413dfa4586dde7bd7f989d0cea1f2451c7482ae95d6b5822c2926154986b5d",
+    "src/Matawaka.Workbench.App/BoundedLocalModelInvocationV055Service.cs": "bb69951dadec8d264d1b3b8a69bc967d53251e5ca1e6f2b16f494fe4ab62dc85",
+    ".github/qualification/source-bound-model/translation-fixture.json": "7561ffe4ec1857cfcb6ea491745c95a5f67a9193ce21e801510ea5a60430c7c6",
+    "src/Matawaka.Workbench.App/QwenIsolatedOneShotAdapter.cs": "6a7b5ade7ebca5f3f4bf9f8f424069054a28d3812c013141c602c8f262dc5c12",
+    "src/Matawaka.Workbench.App/QwenOneShotRehearsal.cs": "d5a912c9ad9e4578caf55b4c4e88f96d8105145c6606f199003b1eba6c2c3f0f",
+    "integrations/model-invocation/qwen-code-only/Probe.cs": "56e642ad1a236a9ac6f5fce1cb9aa8d956387bea3911c90a4fcf523cc9b8ccd7",
+    "integrations/model-invocation/qwen-code-only/qualify.py": "0b575548f5ac746cb4575f44e8f6d5dfbe5f19fb608491ff7fb7125929e328d2",
+    "integrations/model-invocation/qwen-code-only/README.md": "f59a887ebf34127501129c001315e129d380466183f97e930a8865f7cd5c8631",
+    "integrations/model-invocation/qwen-code-only/REQUEST.json": "3e37382997d45780e1473e11191fee615a2b4b34c525fee56fb2ff5db51c6d5f"
+  },
+  "repository": {
+    "passed": 101,
+    "failed": 0,
+    "dll_sha256": "914650b0d40e45f43bec944fe7c438345f0cbfc0c661b48d8e4580c04808b587"
+  },
+  "clean_unpacked": {
+    "passed": 101,
+    "failed": 0,
+    "dll_sha256": "1c47d1732c48e3a13931dc0382e3543b9e2d171cac3d4e17c598db3775dadf92"
+  },
+  "negative_mutations": {
+    "live-guard": {
+      "status": "CODE_ONLY_QWEN_PROBE_FAIL",
+      "passed": 100,
+      "failed": 1
+    },
+    "one-shot": {
+      "status": "CODE_ONLY_QWEN_PROBE_FAIL",
+      "passed": 94,
+      "failed": 7
+    },
+    "time": {
+      "status": "CODE_ONLY_QWEN_PROBE_FAIL",
+      "passed": 96,
+      "failed": 5
+    }
+  },
+  "historical_kontur_regression": {
+    "lifecycle": 33,
+    "translator": 20,
+    "bridge": 48,
+    "live_model": false
+  },
+  "live_model": false,
+  "real_lease": false,
+  "os_isolation_qualified": false,
+  "linux_qualified": false,
+  "full_wpf_application_build": false,
+  "ci_qualified": false,
+  "windows_settings_changed": false,
+  "historical_source_modified": false,
+  "publication_performed": false,
+  "merge_performed": false
+}
