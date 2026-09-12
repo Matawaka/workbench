@@ -47,6 +47,13 @@ jobs:
           foreach ($forbidden in @('NetworkIsolationSetAppContainerConfig','Dns.GetHost','HttpClient','huggingface','Qwen3','llama.cpp')) {
             if ($proof.Contains($forbidden)) { throw "forbidden proof surface: $forbidden" }
           }
+          $lua = Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/RunWithLuaToken.ps1 -Raw
+          foreach ($must in @('CreateRestrictedToken','LUA_TOKEN','CreateProcessAsUser','sourceElevated','luaElevated','credentialUsed = $false','globalPolicyMutated = $false')) {
+            if (-not $lua.Contains($must)) { throw "LUA parent marker missing: $must" }
+          }
+          foreach ($forbidden in @('LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user')) {
+            if ($lua.Contains($forbidden)) { throw "forbidden LUA parent surface: $forbidden" }
+          }
           git diff --check "$env:PREDECESSOR...HEAD"
           if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
           Write-Host "NETWORK_PROOF_V2_GUARD_PASS predecessor=$env:PREDECESSOR nativeBlob=$workingBlob main=$main"
@@ -98,9 +105,11 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $exe = Join-Path '${{ steps.repo_build.outputs.out }}' 'Workbench.AppContainerProbe.exe'
-          & $exe --network-trial '${{ steps.repo_trial.outputs.trial }}' '${{ steps.repo_trial.outputs.manifest }}' '${{ steps.repo_trial.outputs.evidence }}' '${{ github.sha }}' $env:AUTHORIZATION
-          $code = $LASTEXITCODE
+          $trialArgs = @('--network-trial','${{ steps.repo_trial.outputs.trial }}','${{ steps.repo_trial.outputs.manifest }}','${{ steps.repo_trial.outputs.evidence }}','${{ github.sha }}',$env:AUTHORIZATION)
+          $code = & .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithLuaToken.ps1 -Executable $exe -Arguments $trialArgs -WorkingDirectory '${{ github.workspace }}'
+          $code = [int]$code
           if (Test-Path '${{ steps.repo_trial.outputs.evidence }}') { Get-Content '${{ steps.repo_trial.outputs.evidence }}' -Raw | Write-Host }
           if ($code -ne 0) { throw "repository native proof failed closed: $code" }
 
@@ -169,9 +178,11 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $exe=Join-Path '${{ steps.clean_build.outputs.out }}' 'Workbench.AppContainerProbe.exe'
-          & $exe --network-trial '${{ steps.clean_trial.outputs.trial }}' '${{ steps.clean_trial.outputs.manifest }}' '${{ steps.clean_trial.outputs.evidence }}' '${{ github.sha }}' $env:AUTHORIZATION
-          $code=$LASTEXITCODE
+          $trialArgs = @('--network-trial','${{ steps.clean_trial.outputs.trial }}','${{ steps.clean_trial.outputs.manifest }}','${{ steps.clean_trial.outputs.evidence }}','${{ github.sha }}',$env:AUTHORIZATION)
+          $code = & .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithLuaToken.ps1 -Executable $exe -Arguments $trialArgs -WorkingDirectory '${{ github.workspace }}'
+          $code = [int]$code
           if (Test-Path '${{ steps.clean_trial.outputs.evidence }}') { Get-Content '${{ steps.clean_trial.outputs.evidence }}' -Raw | Write-Host }
           if ($code -ne 0) { throw "clean native proof failed closed: $code" }
 
