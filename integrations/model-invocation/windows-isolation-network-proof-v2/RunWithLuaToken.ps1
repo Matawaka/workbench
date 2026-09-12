@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 Add-Type -TypeDefinition @'
+#nullable enable
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
