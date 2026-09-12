@@ -85,17 +85,26 @@ jobs:
           [IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false))
           [IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
           $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+          $ownerName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
           $ownedPaths = @($trial) + ($names | ForEach-Object { Join-Path $trial $_ }) + @(
             (Join-Path $trial 'allow-read.txt'),
             (Join-Path $trial 'deny-read.txt'),
             (Join-Path $trial 'deny-write.txt')
           )
+          $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
           foreach ($ownedPath in $ownedPaths) {
-            $acl = Get-Acl -LiteralPath $ownedPath
-            $acl.SetOwner($owner)
-            Set-Acl -LiteralPath $ownedPath -AclObject $acl
-            $observedOwner = (Get-Acl -LiteralPath $ownedPath).GetOwner([Security.Principal.SecurityIdentifier])
-            if (-not $observedOwner.Equals($owner)) { throw "trial owner normalization failed: path=$ownedPath owner=$observedOwner expected=$owner" }
+            $beforeAcl = Get-Acl -LiteralPath $ownedPath
+            $beforeDacl = $beforeAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+            $beforeOwner = $beforeAcl.GetOwner([Security.Principal.SecurityIdentifier])
+            if (-not $beforeOwner.Equals($owner)) {
+              & $icacls $ownedPath /setowner $ownerName /Q | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "trial owner normalization failed: path=$ownedPath code=$LASTEXITCODE" }
+            }
+            $afterAcl = Get-Acl -LiteralPath $ownedPath
+            $afterOwner = $afterAcl.GetOwner([Security.Principal.SecurityIdentifier])
+            $afterDacl = $afterAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+            if (-not $afterOwner.Equals($owner)) { throw "trial owner mismatch after normalization: path=$ownedPath owner=$afterOwner expected=$owner" }
+            if ($afterDacl -ne $beforeDacl) { throw "trial DACL changed during owner normalization: path=$ownedPath" }
           }
           $manifest = Join-Path $parent 'BUNDLE.json'
           [ordered]@{ schema='matawaka.workbench-network-proof-v2-build/v0.1'; files=$files; nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB; modelStarted=$false } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM $manifest
@@ -170,17 +179,26 @@ jobs:
           [IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false))
           [IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
           $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+          $ownerName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
           $ownedPaths = @($trial) + ($names | ForEach-Object { Join-Path $trial $_ }) + @(
             (Join-Path $trial 'allow-read.txt'),
             (Join-Path $trial 'deny-read.txt'),
             (Join-Path $trial 'deny-write.txt')
           )
+          $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
           foreach ($ownedPath in $ownedPaths) {
-            $acl = Get-Acl -LiteralPath $ownedPath
-            $acl.SetOwner($owner)
-            Set-Acl -LiteralPath $ownedPath -AclObject $acl
-            $observedOwner = (Get-Acl -LiteralPath $ownedPath).GetOwner([Security.Principal.SecurityIdentifier])
-            if (-not $observedOwner.Equals($owner)) { throw "trial owner normalization failed: path=$ownedPath owner=$observedOwner expected=$owner" }
+            $beforeAcl = Get-Acl -LiteralPath $ownedPath
+            $beforeDacl = $beforeAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+            $beforeOwner = $beforeAcl.GetOwner([Security.Principal.SecurityIdentifier])
+            if (-not $beforeOwner.Equals($owner)) {
+              & $icacls $ownedPath /setowner $ownerName /Q | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "trial owner normalization failed: path=$ownedPath code=$LASTEXITCODE" }
+            }
+            $afterAcl = Get-Acl -LiteralPath $ownedPath
+            $afterOwner = $afterAcl.GetOwner([Security.Principal.SecurityIdentifier])
+            $afterDacl = $afterAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+            if (-not $afterOwner.Equals($owner)) { throw "trial owner mismatch after normalization: path=$ownedPath owner=$afterOwner expected=$owner" }
+            if ($afterDacl -ne $beforeDacl) { throw "trial DACL changed during owner normalization: path=$ownedPath" }
           }
           $manifest=Join-Path $parent 'BUNDLE.json'
           [ordered]@{schema='matawaka.workbench-network-proof-v2-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
