@@ -74,7 +74,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $parent = Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-v2-repository-' + [guid]::NewGuid().ToString('N'))
           $trial = Join-Path $parent 'trial'
-          New-Item -ItemType Directory -Path $trial -Force | Out-Null
+          New-Item -ItemType Directory -Path $trial | Out-Null
           $names = @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')
           $files = [ordered]@{}
           foreach ($name in $names) {
@@ -84,6 +84,19 @@ jobs:
           [IO.File]::WriteAllText((Join-Path $trial 'allow-read.txt'),'SYNTHETIC_ALLOWED',[Text.UTF8Encoding]::new($false))
           [IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false))
           [IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
+          $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+          $ownedPaths = @($trial) + ($names | ForEach-Object { Join-Path $trial $_ }) + @(
+            (Join-Path $trial 'allow-read.txt'),
+            (Join-Path $trial 'deny-read.txt'),
+            (Join-Path $trial 'deny-write.txt')
+          )
+          foreach ($ownedPath in $ownedPaths) {
+            $acl = Get-Acl -LiteralPath $ownedPath
+            $acl.SetOwner($owner)
+            Set-Acl -LiteralPath $ownedPath -AclObject $acl
+            $observedOwner = (Get-Acl -LiteralPath $ownedPath).GetOwner([Security.Principal.SecurityIdentifier])
+            if (-not $observedOwner.Equals($owner)) { throw "trial owner normalization failed: path=$ownedPath owner=$observedOwner expected=$owner" }
+          }
           $manifest = Join-Path $parent 'BUNDLE.json'
           [ordered]@{ schema='matawaka.workbench-network-proof-v2-build/v0.1'; files=$files; nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB; modelStarted=$false } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM $manifest
           "parent=$parent" >> $env:GITHUB_OUTPUT
@@ -146,15 +159,29 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $parent = Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-v2-clean-' + [guid]::NewGuid().ToString('N'))
-          $trial = Join-Path $parent 'trial'; New-Item -ItemType Directory -Path $trial -Force | Out-Null
+          $trial = Join-Path $parent 'trial'; New-Item -ItemType Directory -Path $trial | Out-Null
+          $names = @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')
           $files=[ordered]@{}
-          foreach ($name in @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')) {
+          foreach ($name in $names) {
             Copy-Item (Join-Path '${{ steps.clean_build.outputs.out }}' $name) (Join-Path $trial $name)
             $files[$name]=(Get-FileHash (Join-Path $trial $name) -Algorithm SHA256).Hash.ToLowerInvariant()
           }
           [IO.File]::WriteAllText((Join-Path $trial 'allow-read.txt'),'SYNTHETIC_ALLOWED',[Text.UTF8Encoding]::new($false))
           [IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false))
           [IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
+          $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+          $ownedPaths = @($trial) + ($names | ForEach-Object { Join-Path $trial $_ }) + @(
+            (Join-Path $trial 'allow-read.txt'),
+            (Join-Path $trial 'deny-read.txt'),
+            (Join-Path $trial 'deny-write.txt')
+          )
+          foreach ($ownedPath in $ownedPaths) {
+            $acl = Get-Acl -LiteralPath $ownedPath
+            $acl.SetOwner($owner)
+            Set-Acl -LiteralPath $ownedPath -AclObject $acl
+            $observedOwner = (Get-Acl -LiteralPath $ownedPath).GetOwner([Security.Principal.SecurityIdentifier])
+            if (-not $observedOwner.Equals($owner)) { throw "trial owner normalization failed: path=$ownedPath owner=$observedOwner expected=$owner" }
+          }
           $manifest=Join-Path $parent 'BUNDLE.json'
           [ordered]@{schema='matawaka.workbench-network-proof-v2-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
           "trial=$trial" >> $env:GITHUB_OUTPUT; "manifest=$manifest" >> $env:GITHUB_OUTPUT; "evidence=$(Join-Path $parent 'NETWORK-PROOF.json')" >> $env:GITHUB_OUTPUT
