@@ -119,7 +119,7 @@ internal static class NetworkProofV2
 
         var token = new TokenObservation(true, 0, true, true, false, true);
         var validProof = new ProofEvidence(ProofSchema, "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN", new string('a', 40), Predecessor,
-            ExactNativeBoundaryBlob, ContractDigest, "Matawaka.Workbench.AppContainerProbe.test", validChild.PackageSid,
+            ExactNativeBoundaryBlob, ContractDigest, "Matawaka.IsolationProbe.test", validChild.PackageSid,
             new string('b', 64), token, true, false, false, true, false, validChild, true, true, 0, true, true, true,
             true, false, false, false, false, false, false, false, null, null);
         ValidateProof(validProof); pass++;
