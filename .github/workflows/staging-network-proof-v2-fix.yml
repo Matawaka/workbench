@@ -31,31 +31,20 @@ jobs:
           if (($text.Split($oldBlob).Count - 1) -ne 2) { throw 'unexpected historical blob occurrence count' }
           $text = $text.Replace($oldBlob, $newBlob)
           $blobLine = '    private const string ExactNativeBoundaryBlob = "' + $newBlob + '";'
-          if (-not $text.Contains($blobLine)) { throw 'corrected blob line absent' }
-          $text = $text.Replace($blobLine, $blobLine + "`r`n    private const string ProfilePrefix = \"Matawaka.IsolationProbe.\";", 1)
-          if (-not $text.Contains('NativeBoundary.ProfilePrefix')) { throw 'profile-prefix access marker absent' }
+          if (($text.Split($blobLine).Count - 1) -ne 1) { throw 'corrected blob line must be unique' }
+          $text = $text.Replace($blobLine, $blobLine + "`r`n    private const string ProfilePrefix = \"Matawaka.IsolationProbe.\";")
+          if (($text.Split('NativeBoundary.ProfilePrefix').Count - 1) -ne 1) { throw 'profile-prefix access marker count invalid' }
           $text = $text.Replace('NativeBoundary.ProfilePrefix', 'ProfilePrefix')
-          if (-not $text.Contains('NativeBoundary.Win(')) { throw 'private Win access marker absent' }
+          if (($text.Split('NativeBoundary.Win(').Count - 1) -lt 1) { throw 'private Win access marker absent' }
           $text = $text.Replace('NativeBoundary.Win(', 'Win(')
           $tuple = '            (profileName, packageSid, var packageSidPtr) = BoundaryIdentity(boundary);'
-          if (-not $text.Contains($tuple)) { throw 'identity tuple marker absent' }
-          $replacement = @'
-            var identity = BoundaryIdentity(boundary);
-            profileName = identity.ProfileName;
-            packageSid = identity.PackageSid;
-            var packageSidPtr = identity.PackageSidPtr;
-'@
-          $text = $text.Replace($tuple, $replacement.TrimEnd("`r","`n"))
+          if (($text.Split($tuple).Count - 1) -ne 1) { throw 'identity tuple marker count invalid' }
+          $replacement = "            var identity = BoundaryIdentity(boundary);`r`n            profileName = identity.ProfileName;`r`n            packageSid = identity.PackageSid;`r`n            var packageSidPtr = identity.PackageSidPtr;"
+          $text = $text.Replace($tuple, $replacement)
           $helperMarker = '    private static bool IsHex(string value, int length)'
-          if (-not $text.Contains($helperMarker)) { throw 'helper insertion marker absent' }
-          $helper = @'
-    private static void Win(bool ok, string stage)
-    {
-        if (!ok) throw new BoundaryFailure(stage, Marshal.GetLastWin32Error());
-    }
-
-'@
-          $text = $text.Replace($helperMarker, $helper + $helperMarker, 1)
+          if (($text.Split($helperMarker).Count - 1) -ne 1) { throw 'helper insertion marker count invalid' }
+          $helper = "    private static void Win(bool ok, string stage)`r`n    {`r`n        if (!ok) throw new BoundaryFailure(stage, Marshal.GetLastWin32Error());`r`n    }`r`n`r`n"
+          $text = $text.Replace($helperMarker, $helper + $helperMarker)
           [IO.File]::WriteAllText((Resolve-Path $path), $text, [Text.UTF8Encoding]::new($false))
           if ((git hash-object -- $native).Trim() -ne '8a8f91a13c114e9c224cf449193800f0fedfdaf2') { throw '#104 NativeBoundary changed during fix' }
           $changed = @(git diff --name-only)
