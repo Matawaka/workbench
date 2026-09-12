@@ -1,0 +1,73 @@
+name: Stage exact network proof v2 corrections
+
+on:
+  push:
+    branches:
+      - staging/workbench-windows-network-proof-v2-fix
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/workbench-windows-network-isolation-proof-v2
+          fetch-depth: 0
+      - name: Apply exact proof-layer-only corrections
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expectedHead = '35260fa23028c3330d9f58ac559fe6eb1f4ce281'
+          if ((git rev-parse HEAD).Trim() -ne $expectedHead) { throw 'v2 feature head drifted' }
+          $native = 'integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs'
+          if ((git hash-object -- $native).Trim() -ne '8a8f91a13c114e9c224cf449193800f0fedfdaf2') { throw 'exact #104 NativeBoundary bytes drifted' }
+          $path = 'integrations/model-invocation/windows-isolation-network-proof-v2/Program.cs'
+          $text = Get-Content $path -Raw
+          $oldBlob = '72d1919abc60a513cb52aa9e0e6722d5d70661f3'
+          $newBlob = '8a8f91a13c114e9c224cf449193800f0fedfdaf2'
+          if (($text.Split($oldBlob).Count - 1) -ne 2) { throw 'unexpected historical blob occurrence count' }
+          $text = $text.Replace($oldBlob, $newBlob)
+          $blobLine = '    private const string ExactNativeBoundaryBlob = "' + $newBlob + '";'
+          if (-not $text.Contains($blobLine)) { throw 'corrected blob line absent' }
+          $text = $text.Replace($blobLine, $blobLine + "`r`n    private const string ProfilePrefix = \"Matawaka.IsolationProbe.\";", 1)
+          if (-not $text.Contains('NativeBoundary.ProfilePrefix')) { throw 'profile-prefix access marker absent' }
+          $text = $text.Replace('NativeBoundary.ProfilePrefix', 'ProfilePrefix')
+          if (-not $text.Contains('NativeBoundary.Win(')) { throw 'private Win access marker absent' }
+          $text = $text.Replace('NativeBoundary.Win(', 'Win(')
+          $tuple = '            (profileName, packageSid, var packageSidPtr) = BoundaryIdentity(boundary);'
+          if (-not $text.Contains($tuple)) { throw 'identity tuple marker absent' }
+          $replacement = @'
+            var identity = BoundaryIdentity(boundary);
+            profileName = identity.ProfileName;
+            packageSid = identity.PackageSid;
+            var packageSidPtr = identity.PackageSidPtr;
+'@
+          $text = $text.Replace($tuple, $replacement.TrimEnd("`r","`n"))
+          $helperMarker = '    private static bool IsHex(string value, int length)'
+          if (-not $text.Contains($helperMarker)) { throw 'helper insertion marker absent' }
+          $helper = @'
+    private static void Win(bool ok, string stage)
+    {
+        if (!ok) throw new BoundaryFailure(stage, Marshal.GetLastWin32Error());
+    }
+
+'@
+          $text = $text.Replace($helperMarker, $helper + $helperMarker, 1)
+          [IO.File]::WriteAllText((Resolve-Path $path), $text, [Text.UTF8Encoding]::new($false))
+          if ((git hash-object -- $native).Trim() -ne '8a8f91a13c114e9c224cf449193800f0fedfdaf2') { throw '#104 NativeBoundary changed during fix' }
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -ne $path) { throw "unexpected fix delta: $($changed -join ',')" }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          git config user.name 'Matawaka Network Proof Staging'
+          git config user.email '319695216+Matawaka@users.noreply.github.com'
+          git add -- $path
+          git commit -m 'Correct v2 exact NativeBoundary bindings'
+          $remote = (git ls-remote origin refs/heads/feat/workbench-windows-network-isolation-proof-v2).Split("`t")[0]
+          if ($remote -ne $expectedHead) { throw "feature drifted before push: $remote" }
+          git push origin HEAD:refs/heads/feat/workbench-windows-network-isolation-proof-v2
+          if ($LASTEXITCODE -ne 0) { throw 'non-force v2 push failed' }
+          Write-Host "NETWORK_PROOF_V2_FIX_PASS head=$((git rev-parse HEAD).Trim()) nativeBlob=8a8f91a13c114e9c224cf449193800f0fedfdaf2"
