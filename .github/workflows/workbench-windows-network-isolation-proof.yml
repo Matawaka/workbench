@@ -39,7 +39,7 @@ jobs:
           foreach ($forbidden in @('NetworkIsolationSetAppContainerConfig','HttpClient','Dns.GetHost','github.com','huggingface','Qwen3','llama.cpp')) {
             if ($source.Contains($forbidden)) { throw "forbidden network/authority surface in proof source: $forbidden" }
           }
-          git diff --check $env:PREDECESSOR...HEAD
+          git diff --check "$env:PREDECESSOR...HEAD"
           if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
           Write-Host "NETWORK_PROOF_ANCESTRY_PASS predecessor=$env:PREDECESSOR main=$main"
 
