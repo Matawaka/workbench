@@ -54,6 +54,19 @@ public static class MatawakaOwnerOnly
 }
 '@
 
+function Get-RuleShape($acl) {
+    @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object {
+        [ordered]@{
+            sid = $_.IdentityReference.Value
+            rights = [int64]$_.FileSystemRights
+            type = $_.AccessControlType.ToString()
+            inherited = $_.IsInherited
+            inheritance = [int]$_.InheritanceFlags
+            propagation = [int]$_.PropagationFlags
+        }
+    })
+}
+
 $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
 if ($null -eq $owner) { throw 'trial owner unavailable' }
 $ownerSid = $owner.Value
@@ -68,6 +81,8 @@ foreach ($ownedPath in $ownedPaths) {
     $beforeAcl = Get-Acl -LiteralPath $ownedPath
     $beforeDacl = $beforeAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
     $beforeOwner = $beforeAcl.GetOwner([Security.Principal.SecurityIdentifier])
+    $beforeRules = Get-RuleShape $beforeAcl
+    $beforeProtected = $beforeAcl.AreAccessRulesProtected
     if (-not $beforeOwner.Equals($owner)) {
         $rc = [MatawakaOwnerOnly]::SetOwner($ownedPath, $ownerSid)
         if ($rc -ne 0) { throw "owner-only SetNamedSecurityInfo failed: path=$ownedPath code=$rc" }
@@ -75,8 +90,24 @@ foreach ($ownedPath in $ownedPaths) {
     $afterAcl = Get-Acl -LiteralPath $ownedPath
     $afterOwner = $afterAcl.GetOwner([Security.Principal.SecurityIdentifier])
     $afterDacl = $afterAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+    $afterRules = Get-RuleShape $afterAcl
+    $afterProtected = $afterAcl.AreAccessRulesProtected
     if (-not $afterOwner.Equals($owner)) { throw "trial owner mismatch after owner-only normalization: path=$ownedPath owner=$afterOwner expected=$owner" }
-    if ($afterDacl -ne $beforeDacl) { throw "trial DACL changed during owner-only normalization: path=$ownedPath" }
+    if ($afterDacl -ne $beforeDacl) {
+        [ordered]@{
+            schema = 'matawaka.windows-owner-only-dacl-diagnostic/v0.1'
+            path = $ownedPath
+            beforeOwner = $beforeOwner.Value
+            afterOwner = $afterOwner.Value
+            beforeProtected = $beforeProtected
+            afterProtected = $afterProtected
+            beforeDacl = $beforeDacl
+            afterDacl = $afterDacl
+            beforeRules = $beforeRules
+            afterRules = $afterRules
+        } | ConvertTo-Json -Depth 8 -Compress | Write-Host
+        throw "trial DACL changed during owner-only normalization: path=$ownedPath"
+    }
 }
 
 Write-Host "TRIAL_OWNER_ONLY_NORMALIZATION_PASS targets=$($ownedPaths.Count) owner=$ownerSid dacl_unchanged=true"
