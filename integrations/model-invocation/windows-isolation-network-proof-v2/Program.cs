@@ -277,7 +277,7 @@ internal static class NetworkProofV2
             child = ParseChild(outBytes);
             NativeBoundary.Need(boundary.ExitCode == 0, "CHILD_EXIT_NONZERO");
             NativeBoundary.Need(!unexpected, "ISOLATED_CONNECTION_ACCEPTABLE_PATH_OBSERVED");
-            NativeBoundary.Need(boundary.Token is not null, "TOKEN_EVIDENCE_ABSENT"); NativeBoundary.ValidateToken(boundary.Token);
+            NativeBoundary.Need(boundary.Token is not null, "TOKEN_EVIDENCE_ABSENT"); NativeBoundary.ValidateToken(boundary.Token!);
             NativeBoundary.Need(boundary.JobLimitsVerified, "JOB_EVIDENCE_ABSENT");
             NativeBoundary.Need(child.PackageSid == packageSid, "CHILD_PROFILE_SID_MISMATCH");
             stage = "LOOPBACK_CONFIG_AFTER"; exemptAfter = IsLoopbackExempt(packageSidPtr); NativeBoundary.Need(exemptAfter == false, "LOOPBACK_EXEMPT_AFTER");
