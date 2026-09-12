@@ -1,0 +1,16 @@
+{
+  "schema": "workbench.full-build-synthetic-probe/v0.1",
+  "source_commit": "34e2af4e59ad5ba0ca209aa6334f0c7debb2bb24",
+  "source_zip_sha256": "01ceed55ea6324b57489e6bce0fe42ece7b926ae698bef9f6503489d2a90941a",
+  "status": "FULL_BUILD_AND_EXISTING_SYNTHETIC_PROBE_PASS",
+  "warnings": 0,
+  "errors": 0,
+  "synthetic_hostile_controls": 26,
+  "build_log_sha256": "bf709c4fa016fbd31a645ef32d46d7c0a9389ec5a28521cd7fa6e63cddbff976",
+  "synthetic_probe_log_sha256": "c307965820b5ae19f34933056257ce69bb8decbe40116dfe6882c819d24d5904",
+  "application_started": false,
+  "model_started": false,
+  "installed_application_changed": false,
+  "main_changed": false,
+  "raw_logs_included": false
+}

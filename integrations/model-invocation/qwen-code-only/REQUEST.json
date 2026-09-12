@@ -1,0 +1,19 @@
+{
+  "schema": "matawaka.qwen-code-only-development-scope/v0.1",
+  "source": "HUMAN_CONVERSATION_APPROVAL_RELAY_NOT_AUTHENTICATED_IDENTITY",
+  "scope": "SEPARATE_WORKBENCH_ADAPTER_ISOLATION_CHECKS_AND_ONE_SHOT_LEASE_CODE_ONLY",
+  "observed_workbench_main": "58b9430fc544998a8e40ba00b6757cc630ba9081",
+  "observed_kontur_main": "d155ba0a05325ba0fb57b7095ad91a67f4aaf456",
+  "runtime_candidate_reference": "f5f1ccb260ad8946e8736f0215614f03947be121",
+  "kontur_evidence_candidate_reference": "f30e7eb3e1f1246d890dd69bccab2325ca9af9e0",
+  "model_profile": "LLAMA_CPP_B10621_QWEN3_8B_Q4_K_M_V1",
+  "decision_actor_claim": null,
+  "human_decision_timestamp": null,
+  "model_execution_authorized": false,
+  "windows_settings_change_authorized": false,
+  "merge_authorized": false,
+  "real_lease_creation_authorized": false,
+  "display_authorized": false,
+  "network_capability_authorized": false,
+  "selection_or_scope_widened": false
+}

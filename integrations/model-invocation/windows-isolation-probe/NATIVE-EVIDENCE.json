@@ -1,0 +1,550 @@
+{
+  "schema": "workbench.native-isolation-evidence/v0.1",
+  "status": "PARTIAL_NATIVE_BOUNDARY_OBSERVED_NETWORK_PROOF_INCOMPLETE",
+  "predecessor": "34e2af4e59ad5ba0ca209aa6334f0c7debb2bb24",
+  "observed_workbench_main": "58b9430fc544998a8e40ba00b6757cc630ba9081",
+  "pure_reproduction_sha256": "af4fd8a307963396a2f37244bc7badce0a51af2d5a3d6f4b0d6775ffac5b7291",
+  "pure_reproduction": {
+    "schema": "workbench.isolation-reproduction/v0.1",
+    "status": "PURE_REPRODUCTION_PASS_NATIVE_NOT_INVOKED",
+    "source_sha256": {
+      "NativeBoundary.cs": "54ac482b03c94f22b94a461bc3f0e4af17bbe56887c604051e254076cea2bf1d",
+      "Probe.cs": "9f7443073d2db121125a211998c9bbf75981e8ef7c58a20f99461d6cb4ecfb21",
+      "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e",
+      "qualify.py": "98728bcc1627dff92edb232ff2989df1914ea11449705621b0c2e3c2931f0321"
+    },
+    "source_archive_sha256": "926dcfe8dcdbfe1c137f401916c1c024aca56bfd0420e969e33aef9e4a5a0282",
+    "repository": {
+      "schema": "workbench.native-test-build/v0.1",
+      "source_sha256": {
+        "NativeBoundary.cs": "54ac482b03c94f22b94a461bc3f0e4af17bbe56887c604051e254076cea2bf1d",
+        "Probe.cs": "9f7443073d2db121125a211998c9bbf75981e8ef7c58a20f99461d6cb4ecfb21",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "files": {
+        "Workbench.AppContainerProbe.exe": "030127ad240e6c6d157cb844aec56aa19ad4a9a327fad6f1ea11d450c471c8c4",
+        "Workbench.AppContainerProbe.dll": "317738eb9f0671c632d9a2f92a2a1e549978e871b175f0fe9d44c8843ae83a56",
+        "Workbench.AppContainerProbe.runtimeconfig.json": "3e965cd7cfd553c2ff4e842d8d8019aaae2da0a21d92ff85a87573dd8d1b95c6",
+        "Workbench.AppContainerProbe.deps.json": "8d33891f8c6362c11d4e772b537838ef3a27ff7aa669717f248e974dccd95da7"
+      },
+      "native_trial_invoked": false,
+      "model_started": false,
+      "pure_tests": {
+        "status": "NATIVE_PROBE_PURE_CONTROLS_PASS",
+        "passed": 79,
+        "nativeCalls": false
+      },
+      "requires_explicit_native_step": true
+    },
+    "clean_unpacked": {
+      "schema": "workbench.native-test-build/v0.1",
+      "source_sha256": {
+        "NativeBoundary.cs": "54ac482b03c94f22b94a461bc3f0e4af17bbe56887c604051e254076cea2bf1d",
+        "Probe.cs": "9f7443073d2db121125a211998c9bbf75981e8ef7c58a20f99461d6cb4ecfb21",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "files": {
+        "Workbench.AppContainerProbe.exe": "030127ad240e6c6d157cb844aec56aa19ad4a9a327fad6f1ea11d450c471c8c4",
+        "Workbench.AppContainerProbe.dll": "5b2084b56a0f94d9e3ba44b63d52b4b9787c3123a6dddf70bf097a8e7463758d",
+        "Workbench.AppContainerProbe.runtimeconfig.json": "3e965cd7cfd553c2ff4e842d8d8019aaae2da0a21d92ff85a87573dd8d1b95c6",
+        "Workbench.AppContainerProbe.deps.json": "8d33891f8c6362c11d4e772b537838ef3a27ff7aa669717f248e974dccd95da7"
+      },
+      "native_trial_invoked": false,
+      "model_started": false,
+      "pure_tests": {
+        "status": "NATIVE_PROBE_PURE_CONTROLS_PASS",
+        "passed": 79,
+        "nativeCalls": false
+      },
+      "requires_explicit_native_step": true
+    },
+    "mutants": {
+      "token-capability": {
+        "expected_red": true,
+        "unit_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "job-process-count": {
+        "expected_red": true,
+        "unit_log_sha256": "f65267c1d308c9b577b9ad3208ca8b40d11ceab3c9baaeffcd82bdc7f5efad6c"
+      },
+      "receipt-boolean": {
+        "expected_red": true,
+        "unit_log_sha256": "354ddead262102fbf50e9827084a97efcc19f9d8804a2ddf969d9222275e9c3a"
+      }
+    },
+    "native_invoked": false,
+    "model_started": false,
+    "production_qualification": false
+  },
+  "native_cases": [
+    {
+      "case": "development-03",
+      "result_sha256": "7ee47bc8b35a74b53ea72d40d4ef6af1561cacc06943e49419838d137ed6ddef",
+      "bundle_sha256": "2ba2cee9e960e157fdee9a443407e17b1884a522b73e150c8e8d48ab5dddbec3",
+      "source_sha256": {
+        "NativeBoundary.cs": "0dbaaa1d915864043f5a4d98c3adde601808b11d733672753f4d9a0dfaed390a",
+        "Probe.cs": "fca9639f091a31e5d03a302a68bfcaeb0917e0243cdf56318dbe75b1af495872",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "a68b543ff09a8443bd5df3f34aff396f2bbafd5bcf10cbf5646297cbb27e9c30",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "MANAGED_UnauthorizedAccessException",
+        "nativeCode": null,
+        "elapsedSeconds": 0.1071166,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": false,
+        "processExited": false,
+        "exitCode": null,
+        "cleanupSucceeded": true,
+        "token": null,
+        "loopbackControl": false,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": false,
+        "stdoutSha256": null,
+        "stderrSha256": null,
+        "child": null,
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "development-05",
+      "result_sha256": "5e7f85cf8936f31c1a35219c982321bd8f9f101aa7645c804e166f14c6cfe9f9",
+      "bundle_sha256": "cd3a6676362e90c53a8062342ddb08328a86bbb3f146a08f53e170162c576255",
+      "source_sha256": {
+        "NativeBoundary.cs": "8d66de30b734483ec7389b835888336fd39215dd526474a4e53cfa09a19188f5",
+        "Probe.cs": "c6168294befd0f651a918c06ac80778345bcd02c2f0f848fd1f5b9112b4fb812",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "94bb7205529bca1f5459ec15b5db5c36e90568f1c9371c0e83aa09bd36fc93a1",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "CREATE_APPCONTAINER_PROCESS_REFUSED",
+        "nativeCode": 203,
+        "elapsedSeconds": 0.1013838,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": false,
+        "processExited": false,
+        "exitCode": null,
+        "cleanupSucceeded": true,
+        "token": null,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": false,
+        "stdoutSha256": null,
+        "stderrSha256": null,
+        "child": null,
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "development-06",
+      "result_sha256": "e27a877349f042b32d5914e0fc80fc62d98a88d8f27971f38a5b5eba163af97e",
+      "bundle_sha256": "93414289fe5613749ceafb51bd1bcc4027e0424301d9f1beda35f3ca22897311",
+      "source_sha256": {
+        "NativeBoundary.cs": "3ef1aaeb631e7c4b21e45f38c8539162e533f8df35a7166c50cd1868a2e046f1",
+        "Probe.cs": "c6168294befd0f651a918c06ac80778345bcd02c2f0f848fd1f5b9112b4fb812",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "b18cb452da27bd2efc98ce5aff8c941b00d688f6725bcd421620da2d91289308",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "TOKEN_SIZE_QUERY",
+        "nativeCode": 0,
+        "elapsedSeconds": 0.1476902,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 90,
+        "cleanupSucceeded": true,
+        "token": null,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": false,
+        "stdoutSha256": null,
+        "stderrSha256": null,
+        "child": null,
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "development-07",
+      "result_sha256": "6e3dc102ecc6d08df144fb59b33a7ca6604b7c6c961f66ac8f07f360df4ed610",
+      "bundle_sha256": "18961544136ed06dd10d35ca5e3ce04c028f53c34e3c47cd90442b645962b49f",
+      "source_sha256": {
+        "NativeBoundary.cs": "0e9cab04abdb95577fea6a7d70b7ef7ec43a6062104326c8ecba6cf78aede3b4",
+        "Probe.cs": "c6168294befd0f651a918c06ac80778345bcd02c2f0f848fd1f5b9112b4fb812",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "82795b3ab580a7ae9af2ff3564e0ca95920757ba9fdf2d72798e5a4d23686d86",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "TOKEN_SIZE_QUERY_20",
+        "nativeCode": 24,
+        "elapsedSeconds": 0.0992458,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 90,
+        "cleanupSucceeded": true,
+        "token": null,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": false,
+        "stdoutSha256": null,
+        "stderrSha256": null,
+        "child": null,
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "development-08",
+      "result_sha256": "2361b3e09b87f0cd9d0308aa94b32935252b91e702490267e34a609bd6ac1568",
+      "bundle_sha256": "0a599caa08e5543b1f626c42031ec133d167c5bfd4542eea6860ea295759882a",
+      "source_sha256": {
+        "NativeBoundary.cs": "dacd38467c7fd1fcc31a5009fef3920342f3cf2bbc03c8ef62b22780e8adadc1",
+        "Probe.cs": "c6168294befd0f651a918c06ac80778345bcd02c2f0f848fd1f5b9112b4fb812",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "3097b4fb6fe9b775124b2a03cc5917923973356074ab1ed1b33da9d813697863",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "MANAGED_JsonReaderException",
+        "nativeCode": null,
+        "elapsedSeconds": 0.1032519,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 3221225794,
+        "cleanupSucceeded": true,
+        "token": {
+          "AppContainer": true,
+          "Capabilities": 0,
+          "PackageMatches": true,
+          "LowIntegrity": true,
+          "Elevated": false,
+          "InOwnedJob": true
+        },
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": false,
+        "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "child": null,
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "development-11",
+      "result_sha256": "1facc86bb32b63ef9dddeecc92a818cdfac7f3880e7cdc502d44d96b96d790d2",
+      "bundle_sha256": "4a352c06450ff0da1271e5b803b6aed55aa29686ed826fed03694e77033379ac",
+      "source_sha256": {
+        "NativeBoundary.cs": "8319287600532a300a42802bcd76c05756dea4d92f33950ea6a4198101b02403",
+        "Probe.cs": "1a8991c32820e5b6880b2f86c09dfb119bef04a16badc2e9eb7217866fefc92b",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "4d6e5307bee7612187fa1f8060b2fb54d6346a757664c4c3738c1ea090e689e1",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "CHILD_EXIT_NONZERO",
+        "nativeCode": 0,
+        "elapsedSeconds": 1.7354017,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 2,
+        "cleanupSucceeded": true,
+        "token": {
+          "AppContainer": true,
+          "Capabilities": 0,
+          "PackageMatches": true,
+          "LowIntegrity": true,
+          "Elevated": false,
+          "InOwnedJob": true
+        },
+        "jobLimitsVerified": true,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": false,
+        "stdoutSha256": "489c863a2fd4da8da92632a31c41aed0a1c2c0f61908855690b0f50c51d6cb4d",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "child": null,
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "development-13",
+      "result_sha256": "a8d243afeefa35978f791b23e02b9648ed62d944e93e2f3b67db27ade1dc2288",
+      "bundle_sha256": "1003bf67e06979294f1eeea04b7b7f1ddfcbc5ce88e002a8b6b999eb3c56c2fe",
+      "source_sha256": {
+        "NativeBoundary.cs": "8319287600532a300a42802bcd76c05756dea4d92f33950ea6a4198101b02403",
+        "Probe.cs": "19fd40cbae1ceadb212c83873d71a4fd5e4c8b70f3ba528e843cf5ce66a8d5fd",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "da6800807c610fea046b0a4bb33af17d2d2532c923ddf2a9de344e5b2eafea63",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "CHILD_EXIT_NONZERO",
+        "nativeCode": 0,
+        "elapsedSeconds": 1.2543376,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 2,
+        "cleanupSucceeded": true,
+        "token": {
+          "AppContainer": true,
+          "Capabilities": 0,
+          "PackageMatches": true,
+          "LowIntegrity": true,
+          "Elevated": false,
+          "InOwnedJob": true
+        },
+        "jobLimitsVerified": true,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": true,
+        "stdoutSha256": "e664a5f775dd8147fe735e956430ba74023d393dbddae7719ae72bdd73bfcbc3",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "child": {
+          "schema": "workbench.appcontainer-probe-child/v0.2",
+          "readAllowed": true,
+          "readDenied": true,
+          "writeDenied": true,
+          "childDenied": false,
+          "networkDenied": false,
+          "socketCode": null,
+          "childErrorCode": 367
+        },
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "development-14",
+      "result_sha256": "414af404b263c161881642e40d5d9e3abcecff26e17a9249b953b5bd3c429115",
+      "bundle_sha256": "8716901ec6d9332ae7d60dcc3bdbde577d7823f363d57fc3acf5603907321c09",
+      "source_sha256": {
+        "NativeBoundary.cs": "8319287600532a300a42802bcd76c05756dea4d92f33950ea6a4198101b02403",
+        "Probe.cs": "9f7443073d2db121125a211998c9bbf75981e8ef7c58a20f99461d6cb4ecfb21",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "a81ec714afd63543e70a3866aba5def06e1e45d81343dc99ad5ebb6dc2f8a340",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "CHILD_EXIT_NONZERO",
+        "nativeCode": 0,
+        "elapsedSeconds": 1.2236906,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 2,
+        "cleanupSucceeded": true,
+        "token": {
+          "AppContainer": true,
+          "Capabilities": 0,
+          "PackageMatches": true,
+          "LowIntegrity": true,
+          "Elevated": false,
+          "InOwnedJob": true
+        },
+        "jobLimitsVerified": true,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": true,
+        "stdoutSha256": "98180562511b2d7cd8fd29c69c51bb740e3db3fbeb25cdb7863320aa91810943",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "child": {
+          "schema": "workbench.appcontainer-probe-child/v0.3",
+          "readAllowed": true,
+          "readDenied": true,
+          "writeDenied": true,
+          "childDenied": true,
+          "networkDenied": false,
+          "socketCode": null,
+          "childErrorCode": 367,
+          "socketFailure": "TIMEOUT"
+        },
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "final-repository",
+      "result_sha256": "beb87917841848721f0598f3df1e64a1d27320d235ee13ff1a542825ccabcd9f",
+      "bundle_sha256": "c00a501efab956e67c310abd810082eb6f24379a7260ce9ace6a6077ca7b00d1",
+      "source_sha256": {
+        "NativeBoundary.cs": "54ac482b03c94f22b94a461bc3f0e4af17bbe56887c604051e254076cea2bf1d",
+        "Probe.cs": "9f7443073d2db121125a211998c9bbf75981e8ef7c58a20f99461d6cb4ecfb21",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "317738eb9f0671c632d9a2f92a2a1e549978e871b175f0fe9d44c8843ae83a56",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "CHILD_EXIT_NONZERO",
+        "nativeCode": 0,
+        "elapsedSeconds": 1.2281298,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 2,
+        "cleanupSucceeded": true,
+        "token": {
+          "AppContainer": true,
+          "Capabilities": 0,
+          "PackageMatches": true,
+          "LowIntegrity": true,
+          "Elevated": false,
+          "InOwnedJob": true
+        },
+        "jobLimitsVerified": true,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": true,
+        "stdoutSha256": "98180562511b2d7cd8fd29c69c51bb740e3db3fbeb25cdb7863320aa91810943",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "child": {
+          "schema": "workbench.appcontainer-probe-child/v0.3",
+          "readAllowed": true,
+          "readDenied": true,
+          "writeDenied": true,
+          "childDenied": true,
+          "networkDenied": false,
+          "socketCode": null,
+          "childErrorCode": 367,
+          "socketFailure": "TIMEOUT"
+        },
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    },
+    {
+      "case": "final-clean",
+      "result_sha256": "b4aa5eb99779d4b0eff43b022b415ea449b70d819600466eea900fe2b6e67794",
+      "bundle_sha256": "b31814c90e5ae76cafa480e0f8260ff1fbecd7532f8ac139b3819e8daf94c650",
+      "source_sha256": {
+        "NativeBoundary.cs": "54ac482b03c94f22b94a461bc3f0e4af17bbe56887c604051e254076cea2bf1d",
+        "Probe.cs": "9f7443073d2db121125a211998c9bbf75981e8ef7c58a20f99461d6cb4ecfb21",
+        "prepare.py": "569e14fcd90aaa998ffdd1ccb7db7ef937bb7e821a1afbd58b33fdcc19f8302e"
+      },
+      "candidate_dll_sha256": "5b2084b56a0f94d9e3ba44b63d52b4b9787c3123a6dddf70bf097a8e7463758d",
+      "observed": {
+        "schema": "workbench.appcontainer-probe-result/v0.1",
+        "status": "FAIL_CLOSED",
+        "stage": "CHILD_EXIT_NONZERO",
+        "nativeCode": 0,
+        "elapsedSeconds": 1.2239284,
+        "profileCreated": true,
+        "profileRemoved": true,
+        "processCreated": true,
+        "processExited": true,
+        "exitCode": 2,
+        "cleanupSucceeded": true,
+        "token": {
+          "AppContainer": true,
+          "Capabilities": 0,
+          "PackageMatches": true,
+          "LowIntegrity": true,
+          "Elevated": false,
+          "InOwnedJob": true
+        },
+        "jobLimitsVerified": true,
+        "loopbackControl": true,
+        "unexpectedConnection": false,
+        "sentinelsUnchanged": true,
+        "stdoutSha256": "98180562511b2d7cd8fd29c69c51bb740e3db3fbeb25cdb7863320aa91810943",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "child": {
+          "schema": "workbench.appcontainer-probe-child/v0.3",
+          "readAllowed": true,
+          "readDenied": true,
+          "writeDenied": true,
+          "childDenied": true,
+          "networkDenied": false,
+          "socketCode": null,
+          "childErrorCode": 367,
+          "socketFailure": "TIMEOUT"
+        },
+        "modelStarted": false,
+        "gameAccessed": false,
+        "globalWindowsPolicyChanged": false,
+        "productionIsolationProvider": false,
+        "realLease": false,
+        "display": false
+      }
+    }
+  ],
+  "native_attempts": 10,
+  "profiles_created": 10,
+  "profiles_removed": 10,
+  "test_processes_created": 8,
+  "test_processes_exited": 8,
+  "model_started": false,
+  "production_isolation_qualified": false,
+  "authority_created": false,
+  "historical_failures_rewritten": false,
+  "raw_logs_included": false,
+  "local_paths_included": false,
+  "identity_claim_created": false,
+  "independent_security_review": false
+}
