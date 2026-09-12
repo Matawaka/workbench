@@ -32,7 +32,8 @@ jobs:
           $text = $text.Replace($oldBlob, $newBlob)
           $blobLine = '    private const string ExactNativeBoundaryBlob = "' + $newBlob + '";'
           if (($text.Split($blobLine).Count - 1) -ne 1) { throw 'corrected blob line must be unique' }
-          $text = $text.Replace($blobLine, $blobLine + "`r`n    private const string ProfilePrefix = \"Matawaka.IsolationProbe.\";")
+          $profileLine = '    private const string ProfilePrefix = "Matawaka.IsolationProbe.";'
+          $text = $text.Replace($blobLine, $blobLine + "`r`n" + $profileLine)
           if (($text.Split('NativeBoundary.ProfilePrefix').Count - 1) -ne 1) { throw 'profile-prefix access marker count invalid' }
           $text = $text.Replace('NativeBoundary.ProfilePrefix', 'ProfilePrefix')
           if (($text.Split('NativeBoundary.Win(').Count - 1) -lt 1) { throw 'private Win access marker absent' }
