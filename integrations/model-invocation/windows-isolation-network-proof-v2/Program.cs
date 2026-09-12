@@ -14,10 +14,11 @@ internal static class NetworkProofV2
 {
     private const string Authorization = "ISSUE-105-CURRENT-EXPLICIT-DEVELOPMENT";
     private const string Predecessor = "c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a";
-    private const string ExactNativeBoundaryBlob = "72d1919abc60a513cb52aa9e0e6722d5d70661f3";
+    private const string ExactNativeBoundaryBlob = "8a8f91a13c114e9c224cf449193800f0fedfdaf2";
+    private const string ProfilePrefix = "Matawaka.IsolationProbe.";
     private const string ChildSchema = "matawaka.workbench-appcontainer-network-child/v0.2";
     private const string ProofSchema = "matawaka.workbench-windows-network-isolation-proof/v0.2";
-    private const string ContractJson = "{\"schema\":\"matawaka.workbench-windows-host-network-profile/v0.2\",\"nativeBoundaryBlob\":\"72d1919abc60a513cb52aa9e0e6722d5d70661f3\",\"appContainerCapabilities\":0,\"loopbackExemptionRequired\":false,\"childProcessRestricted\":true,\"jobActiveProcessLimit\":1,\"jobProcessMemoryBytes\":536870912,\"killOnJobClose\":true,\"dieOnUnhandledException\":true,\"networkTarget\":\"127.0.0.1\",\"requiredMissingCapability\":\"PRIVATE_NETWORK\",\"socketTimeoutMilliseconds\":1000,\"timeoutAloneIsProof\":false}";
+    private const string ContractJson = "{\"schema\":\"matawaka.workbench-windows-host-network-profile/v0.2\",\"nativeBoundaryBlob\":\"8a8f91a13c114e9c224cf449193800f0fedfdaf2\",\"appContainerCapabilities\":0,\"loopbackExemptionRequired\":false,\"childProcessRestricted\":true,\"jobActiveProcessLimit\":1,\"jobProcessMemoryBytes\":536870912,\"killOnJobClose\":true,\"dieOnUnhandledException\":true,\"networkTarget\":\"127.0.0.1\",\"requiredMissingCapability\":\"PRIVATE_NETWORK\",\"socketTimeoutMilliseconds\":1000,\"timeoutAloneIsProof\":false}";
     private static readonly string ContractDigest = Hash(Encoding.UTF8.GetBytes(ContractJson));
 
     private sealed record ChildEvidence(
@@ -184,7 +185,7 @@ internal static class NetworkProofV2
         NativeBoundary.Need(e.Schema == ProofSchema && e.Status == "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN", "PROOF_STATUS");
         NativeBoundary.Need(IsHex(e.SourceHead, 40) && e.Predecessor == Predecessor && e.NativeBoundaryBlob == ExactNativeBoundaryBlob, "PROOF_SOURCE_BINDING");
         NativeBoundary.Need(e.ContractDigestSha256 == ContractDigest, "PROOF_CONTRACT_BINDING");
-        NativeBoundary.Need(e.ProfileName.StartsWith(NativeBoundary.ProfilePrefix, StringComparison.Ordinal), "PROOF_PROFILE_NAME");
+        NativeBoundary.Need(e.ProfileName.StartsWith(ProfilePrefix, StringComparison.Ordinal), "PROOF_PROFILE_NAME");
         NativeBoundary.Need(e.PackageSid.StartsWith("S-1-15-2-", StringComparison.Ordinal), "PROOF_PACKAGE_SID");
         NativeBoundary.Need(IsHex(e.ChildExecutableSha256, 64), "PROOF_CHILD_SHA");
         NativeBoundary.ValidateToken(e.Token ?? throw new BoundaryFailure("PROOF_TOKEN_ABSENT"));
@@ -258,7 +259,10 @@ internal static class NetworkProofV2
         try
         {
             stage = "PREPARE"; boundary.Prepare(root, hashes);
-            (profileName, packageSid, var packageSidPtr) = BoundaryIdentity(boundary);
+            var identity = BoundaryIdentity(boundary);
+            profileName = identity.ProfileName;
+            packageSid = identity.PackageSid;
+            var packageSidPtr = identity.PackageSidPtr;
             childSha = Hash(File.ReadAllBytes(Path.Combine(root, "Workbench.AppContainerProbe.exe")));
             stage = "LOOPBACK_CONFIG_BEFORE"; exemptBefore = IsLoopbackExempt(packageSidPtr); NativeBoundary.Need(exemptBefore == false, "LOOPBACK_EXEMPT_BEFORE");
             stage = "LOOPBACK_CONTROL"; listener.Start(1); int port = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -312,7 +316,7 @@ internal static class NetworkProofV2
 
     private static string CurrentPackageSid(out int capabilityCount)
     {
-        NativeBoundary.Win(OpenProcessToken(GetCurrentProcess(), 8, out nint token), "CHILD_TOKEN_QUERY");
+        Win(OpenProcessToken(GetCurrentProcess(), 8, out nint token), "CHILD_TOKEN_QUERY");
         try
         {
             using var sid = QueryToken(token, 31); using var caps = QueryToken(token, 30);
@@ -325,7 +329,7 @@ internal static class NetworkProofV2
 
     private static bool IsLoopbackExempt(string sid)
     {
-        NativeBoundary.Win(ConvertStringSidToSid(sid, out nint ptr), "LOOPBACK_SID_PARSE");
+        Win(ConvertStringSidToSid(sid, out nint ptr), "LOOPBACK_SID_PARSE");
         try { return IsLoopbackExempt(ptr); } finally { LocalFree(ptr); }
     }
 
@@ -370,7 +374,7 @@ internal static class NetworkProofV2
         bool initial = GetTokenInformation(token, kind, 0, 0, out uint needed); int error = Marshal.GetLastWin32Error();
         if (initial || error != 122 || needed is 0 or > 16384) throw new BoundaryFailure("CHILD_TOKEN_SIZE_QUERY_" + kind, error);
         var buffer = new TokenBuffer((int)needed);
-        try { NativeBoundary.Win(GetTokenInformation(token, kind, buffer.Pointer, needed, out uint written), "CHILD_TOKEN_QUERY"); NativeBoundary.Need(written <= needed, "CHILD_TOKEN_SIZE_CHANGED"); return buffer; }
+        try { Win(GetTokenInformation(token, kind, buffer.Pointer, needed, out uint written), "CHILD_TOKEN_QUERY"); NativeBoundary.Need(written <= needed, "CHILD_TOKEN_SIZE_CHANGED"); return buffer; }
         catch { buffer.Dispose(); throw; }
     }
 
@@ -378,6 +382,11 @@ internal static class NetworkProofV2
     {
         internal nint Pointer { get; } = Marshal.AllocHGlobal(size);
         public void Dispose() => Marshal.FreeHGlobal(Pointer);
+    }
+
+    private static void Win(bool ok, string stage)
+    {
+        if (!ok) throw new BoundaryFailure(stage, Marshal.GetLastWin32Error());
     }
 
     private static bool IsHex(string value, int length) => value.Length == length && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
