@@ -75,39 +75,46 @@ $ownedPaths = @($Trial) + ($BundleNames | ForEach-Object { Join-Path $Trial $_ }
     (Join-Path $Trial 'deny-read.txt'),
     (Join-Path $Trial 'deny-write.txt')
 )
+$icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
 
 foreach ($ownedPath in $ownedPaths) {
-    if (-not (Test-Path -LiteralPath $ownedPath)) { throw "trial owner target absent: path=$ownedPath" }
+    if (-not (Test-Path -LiteralPath $ownedPath)) { throw "trial security target absent: path=$ownedPath" }
+
     $beforeAcl = Get-Acl -LiteralPath $ownedPath
-    $beforeDacl = $beforeAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
     $beforeOwner = $beforeAcl.GetOwner([Security.Principal.SecurityIdentifier])
-    $beforeRules = Get-RuleShape $beforeAcl
-    $beforeProtected = $beforeAcl.AreAccessRulesProtected
     if (-not $beforeOwner.Equals($owner)) {
         $rc = [MatawakaOwnerOnly]::SetOwner($ownedPath, $ownerSid)
         if ($rc -ne 0) { throw "owner-only SetNamedSecurityInfo failed: path=$ownedPath code=$rc" }
     }
+
+    # Windows hosted runners currently create RUNNER_TEMP children owned by BUILTIN\Administrators
+    # with one explicit Administrators ACE. NativeBoundary's pinned contract requires a fresh
+    # caller-owned object whose unrelated access rules are inherited only, so that its own
+    # SetAccessRuleProtection(true,false) starts from zero explicit rules before adding exactly
+    # owner + AppContainer. Reset only this GUID-scoped disposable object; never its parent.
+    & $icacls $ownedPath /reset /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "disposable trial DACL reset failed: path=$ownedPath code=$LASTEXITCODE" }
+
     $afterAcl = Get-Acl -LiteralPath $ownedPath
     $afterOwner = $afterAcl.GetOwner([Security.Principal.SecurityIdentifier])
-    $afterDacl = $afterAcl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
-    $afterRules = Get-RuleShape $afterAcl
-    $afterProtected = $afterAcl.AreAccessRulesProtected
-    if (-not $afterOwner.Equals($owner)) { throw "trial owner mismatch after owner-only normalization: path=$ownedPath owner=$afterOwner expected=$owner" }
-    if ($afterDacl -ne $beforeDacl) {
+    $rules = @($afterAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+    $explicit = @($rules | Where-Object { -not $_.IsInherited })
+    $deny = @($rules | Where-Object { $_.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow })
+
+    if (-not $afterOwner.Equals($owner) -or $afterAcl.AreAccessRulesProtected -or $explicit.Count -ne 0 -or $deny.Count -ne 0 -or $rules.Count -eq 0) {
         [ordered]@{
-            schema = 'matawaka.windows-owner-only-dacl-diagnostic/v0.1'
+            schema = 'matawaka.windows-disposable-trial-security-refusal/v0.1'
             path = $ownedPath
-            beforeOwner = $beforeOwner.Value
-            afterOwner = $afterOwner.Value
-            beforeProtected = $beforeProtected
-            afterProtected = $afterProtected
-            beforeDacl = $beforeDacl
-            afterDacl = $afterDacl
-            beforeRules = $beforeRules
-            afterRules = $afterRules
+            expectedOwner = $ownerSid
+            observedOwner = $afterOwner.Value
+            protected = $afterAcl.AreAccessRulesProtected
+            ruleCount = $rules.Count
+            explicitRuleCount = $explicit.Count
+            denyRuleCount = $deny.Count
+            rules = Get-RuleShape $afterAcl
         } | ConvertTo-Json -Depth 8 -Compress | Write-Host
-        throw "trial DACL changed during owner-only normalization: path=$ownedPath"
+        throw "disposable trial security normalization refused: path=$ownedPath"
     }
 }
 
-Write-Host "TRIAL_OWNER_ONLY_NORMALIZATION_PASS targets=$($ownedPaths.Count) owner=$ownerSid dacl_unchanged=true"
+Write-Host "TRIAL_DISPOSABLE_SECURITY_NORMALIZATION_PASS targets=$($ownedPaths.Count) owner=$ownerSid protected=false explicit_aces=0 deny_aces=0"
