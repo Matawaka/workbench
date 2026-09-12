@@ -1,0 +1,178 @@
+name: Workbench Windows Network Isolation Proof
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+  MAIN_SNAPSHOT: 58b9430fc544998a8e40ba00b6757cc630ba9081
+  AUTHORIZATION: ISSUE-105-CURRENT-EXPLICIT-DEVELOPMENT
+
+jobs:
+  windows-network-proof:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact successor ancestry and non-effects
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'successor does not descend from exact #104 head' }
+          $oldHead = (git ls-remote https://github.com/Matawaka/workbench.git refs/heads/feat/workbench-windows-isolation-probe).Split("`t")[0]
+          if ($oldHead -ne $env:PREDECESSOR) { throw "#104 historical head drifted: $oldHead" }
+          $main = (git ls-remote https://github.com/Matawaka/workbench.git refs/heads/main).Split("`t")[0]
+          if ($main -ne $env:MAIN_SNAPSHOT) { throw "main snapshot drifted before qualification: $main" }
+          $source = Get-Content integrations/model-invocation/windows-isolation-network-proof/Program.cs -Raw
+          foreach ($forbidden in @('NetworkIsolationSetAppContainerConfig','HttpClient','Dns.GetHost','github.com','huggingface','Qwen3','llama.cpp')) {
+            if ($source.Contains($forbidden)) { throw "forbidden network/authority surface in proof source: $forbidden" }
+          }
+          git diff --check $env:PREDECESSOR...HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          Write-Host "NETWORK_PROOF_ANCESTRY_PASS predecessor=$env:PREDECESSOR main=$main"
+
+      - name: Publish repository proof executable and run pure hostile controls
+        id: repo_build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'network-proof-repo'
+          dotnet publish .\integrations\model-invocation\windows-isolation-network-proof\NetworkProof.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'NetworkProof.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'repository proof executable missing' }
+          & $exe --unit
+          if ($LASTEXITCODE -ne 0) { throw "repository pure controls failed: $LASTEXITCODE" }
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "exe=$exe" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "NETWORK_PROOF_REPO_BUILD_PASS sha256=$sha"
+
+      - name: Run repository native proof once
+        id: repo_native
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'network-proof-repository.json'
+          & '${{ steps.repo_build.outputs.exe }}' --parent '${{ github.sha }}' $evidence $env:AUTHORIZATION
+          $code = $LASTEXITCODE
+          if (Test-Path $evidence) { Get-Content $evidence -Raw | Write-Host }
+          if ($code -ne 0) { throw "repository native proof failed closed: $code" }
+
+      - name: Create byte-checked clean source copy
+        id: clean_source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = 'integrations/model-invocation/windows-isolation-network-proof'
+          $clean = Join-Path $env:RUNNER_TEMP 'network-proof-clean-source'
+          New-Item -ItemType Directory -Force -Path $clean | Out-Null
+          foreach ($name in @('NetworkProof.csproj','Program.cs')) { Copy-Item (Join-Path $src $name) (Join-Path $clean $name) }
+          foreach ($name in @('NetworkProof.csproj','Program.cs')) {
+            $a = (Get-FileHash (Join-Path $src $name) -Algorithm SHA256).Hash
+            $b = (Get-FileHash (Join-Path $clean $name) -Algorithm SHA256).Hash
+            if ($a -ne $b) { throw "clean source byte drift: $name" }
+          }
+          Compress-Archive -LiteralPath (Join-Path $clean 'NetworkProof.csproj'),(Join-Path $clean 'Program.cs') -DestinationPath (Join-Path $env:RUNNER_TEMP 'network-proof-source.zip') -CompressionLevel Optimal
+          "root=$clean" >> $env:GITHUB_OUTPUT
+          Write-Host 'NETWORK_PROOF_CLEAN_SOURCE_PASS files=2'
+
+      - name: Publish clean proof executable and run pure hostile controls
+        id: clean_build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'network-proof-clean'
+          dotnet publish '${{ steps.clean_source.outputs.root }}\NetworkProof.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          $exe = Join-Path $out 'NetworkProof.exe'
+          & $exe --unit
+          if ($LASTEXITCODE -ne 0) { throw "clean pure controls failed: $LASTEXITCODE" }
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "exe=$exe" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "NETWORK_PROOF_CLEAN_BUILD_PASS sha256=$sha"
+
+      - name: Run clean-unpacked native proof once
+        id: clean_native
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'network-proof-clean.json'
+          & '${{ steps.clean_build.outputs.exe }}' --parent '${{ github.sha }}' $evidence $env:AUTHORIZATION
+          $code = $LASTEXITCODE
+          if (Test-Path $evidence) { Get-Content $evidence -Raw | Write-Host }
+          if ($code -ne 0) { throw "clean native proof failed closed: $code" }
+
+      - name: Verify exact OS-level evidence contract
+        id: verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $paths = @(
+            (Join-Path $env:RUNNER_TEMP 'network-proof-repository.json'),
+            (Join-Path $env:RUNNER_TEMP 'network-proof-clean.json')
+          )
+          $records = @()
+          foreach ($path in $paths) {
+            if (-not (Test-Path $path -PathType Leaf)) { throw "network proof evidence missing: $path" }
+            $r = Get-Content $path -Raw | ConvertFrom-Json
+            if ($r.Status -ne 'OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN' -or $r.OsNetworkIsolationProven -ne $true) { throw "OS isolation not proven: $($r.Status)" }
+            if ($r.SocketTimeoutPromotedToProof -ne $false) { throw 'timeout was promoted to proof' }
+            if ($r.LoopbackExemptBefore -ne $false -or $r.LoopbackExemptAfter -ne $false) { throw 'exact AppContainer appears in loopback exemption config' }
+            if ($r.Token.AppContainer -ne $true -or $r.Token.Capabilities -ne 0 -or $r.Token.PackageMatches -ne $true -or $r.Token.LowIntegrity -ne $true -or $r.Token.Elevated -ne $false -or $r.Token.InOwnedJob -ne $true) { throw 'token/AppContainer binding incomplete' }
+            if ($r.Child.DiagnoseHasRequiredCapability -ne $false -or $r.Child.DiagnoseInfoReturn -ne 0 -or $r.Child.DiagnoseInfoType -ne 1) { throw 'Windows Network Isolation diagnostic evidence incomplete' }
+            if ($r.Child.SocketOutcome -eq 'CONNECTED' -or $r.UnexpectedIsolatedConnectionObserved -ne $false -or $r.NormalLoopbackControlConnected -ne $true) { throw 'loopback behavior contradicts isolation' }
+            if ($r.ProcessExited -ne $true -or $r.ProcessExitCode -ne 0 -or $r.ProfileRemoved -ne $true -or $r.CleanupSucceeded -ne $true) { throw 'cleanup/process terminal evidence incomplete' }
+            if ($r.NetworkIsolationConfigMutated -ne $false -or $r.FirewallRuleMutated -ne $false -or $r.GlobalWindowsPolicyMutated -ne $false -or $r.ModelStarted -ne $false -or $r.GameAccessed -ne $false -or $r.ProductionProviderRegistered -ne $false) { throw 'non-effect boundary widened' }
+            $records += $r
+          }
+          if ($records[0].ContractDigestSha256 -ne $records[1].ContractDigestSha256) { throw 'host profile contract digest differs across reproductions' }
+          if ($records[0].SourceHead -ne '${{ github.sha }}' -or $records[1].SourceHead -ne '${{ github.sha }}') { throw 'source-head binding mismatch' }
+          $summary = [ordered]@{
+            schema = 'matawaka.workbench-windows-network-isolation-qualification/v0.1'
+            status = 'REPOSITORY_AND_CLEAN_OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN'
+            sourceHead = '${{ github.sha }}'
+            predecessor = $env:PREDECESSOR
+            contractDigestSha256 = $records[0].ContractDigestSha256
+            repositoryExecutableSha256 = '${{ steps.repo_build.outputs.sha }}'
+            cleanExecutableSha256 = '${{ steps.clean_build.outputs.sha }}'
+            repositorySocketOutcome = $records[0].Child.SocketOutcome
+            cleanSocketOutcome = $records[1].Child.SocketOutcome
+            timeoutPromotedToProof = $false
+            modelStarted = $false
+            productionProviderRegistered = $false
+          }
+          $summaryPath = Join-Path $env:RUNNER_TEMP 'network-proof-summary.json'
+          $summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM $summaryPath
+          Get-Content $summaryPath -Raw | Write-Host
+
+      - name: Final fail-closed gate
+        shell: pwsh
+        run: |
+          if ('${{ steps.repo_native.outcome }}' -ne 'success') { throw 'repository native proof did not PASS' }
+          if ('${{ steps.clean_native.outcome }}' -ne 'success') { throw 'clean native proof did not PASS' }
+          Write-Host 'WINDOWS_NETWORK_ISOLATION_FINAL_PASS timeout_is_not_proof=true'
+
+      - name: Upload bounded evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-network-isolation-proof-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/network-proof-repository.json
+            ${{ runner.temp }}/network-proof-clean.json
+            ${{ runner.temp }}/network-proof-summary.json
+            ${{ runner.temp }}/network-proof-source.zip
+          if-no-files-found: warn
+          retention-days: 30
