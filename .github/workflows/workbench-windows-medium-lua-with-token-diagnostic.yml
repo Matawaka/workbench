@@ -1,0 +1,79 @@
+name: Workbench Windows Medium LUA WithToken Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/ProbeMediumLuaWithToken.ps1
+      - .github/workflows/workbench-windows-medium-lua-with-token-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard bounded WithToken diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'diagnostic lineage mismatch' }
+          $s = Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/ProbeMediumLuaWithToken.ps1 -Raw
+          foreach ($must in @('CreateRestrictedToken','LUA_TOKEN','SetTokenInformation','S-1-16-8192','CreateProcessWithTokenW','proofClaimed = $false')) {
+            if (-not $s.Contains($must)) { throw "required WithToken marker absent: $must" }
+          }
+          foreach ($forbidden in @('LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')) {
+            if ($s.Contains($forbidden)) { throw "forbidden WithToken surface: $forbidden" }
+          }
+          git diff --check "$env:PREDECESSOR...HEAD"
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          Write-Host 'WITH_TOKEN_DIAGNOSTIC_GUARD_PASS'
+
+      - name: Run CreateProcessWithToken canary
+        id: probe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $receipt = Join-Path $env:RUNNER_TEMP 'MEDIUM-LUA-WITH-TOKEN.json'
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\ProbeMediumLuaWithToken.ps1 -Receipt $receipt
+          $code = $LASTEXITCODE
+          if (Test-Path $receipt -PathType Leaf) { Get-Content $receipt -Raw | Write-Host }
+          "receipt=$receipt" >> $env:GITHUB_OUTPUT
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          if ($code -ne 0) { throw "WithToken diagnostic failed closed: $code" }
+
+      - name: Verify bounded result
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path='${{ steps.probe.outputs.receipt }}'
+          if (-not (Test-Path $path -PathType Leaf)) { throw 'WithToken receipt absent' }
+          $r=Get-Content $path -Raw|ConvertFrom-Json
+          if ($r.schema -ne 'matawaka.windows-medium-lua-with-token-diagnostic/v0.1') { throw 'schema mismatch' }
+          if ($r.proofClaimed -ne $false -or $r.productionProviderRegistered -ne $false) { throw 'diagnostic claimed authority' }
+          if ($r.credentialUsed -ne $false -or $r.userChanged -ne $false -or $r.firewallRuleMutated -ne $false -or $r.networkIsolationConfigMutated -ne $false -or $r.globalPolicyMutated -ne $false) { throw 'diagnostic widened effects' }
+          if ($r.luaElevated -ne $false -or $r.luaHasRestrictions -ne $true -or $r.luaIntegrityAfterRid -ne 8192) { throw 'WithToken token evidence incomplete' }
+          if ($r.status -eq 'WITH_TOKEN_API_CALL_FAILED') { throw "CreateProcessWithTokenW unavailable/error=$($r.createWin32Error)" }
+          if ($r.processCreated -ne $true -or $r.canaryExitCodeUnsigned -ne 0 -or $r.status -ne 'WITH_TOKEN_CANARY_PASS') { throw "WithToken canary not viable: status=$($r.status) code=$($r.canaryExitCodeUnsigned)" }
+          Write-Host 'WITH_TOKEN_PARENT_CANDIDATE_VIABLE'
+
+      - name: Upload WithToken diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-medium-lua-with-token-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/MEDIUM-LUA-WITH-TOKEN.json
+          if-no-files-found: warn
+          retention-days: 30
