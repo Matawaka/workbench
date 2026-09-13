@@ -1,0 +1,20 @@
+{
+  "schema": "matawaka.private-peer-executor-contract/v0.1",
+  "subnet": "10.77.0.0/30",
+  "proofNodeAddress": "10.77.0.1",
+  "peerAddress": "10.77.0.2",
+  "managementPort": 41060,
+  "targetPort": 41061,
+  "commandSchema": "matawaka.private-peer-command/v0.1",
+  "receiptSchema": "matawaka.private-peer-receipt/v0.1",
+  "maxManagementBytes": 4096,
+  "maxControlBytes": 512,
+  "maxChildWindowSeconds": 20,
+  "parentControlRequired": true,
+  "childWindowAcceptedConnectionsForPass": 0,
+  "dnsUsed": false,
+  "internetTargetUsed": false,
+  "externalServiceUsed": false,
+  "networkConfigurationMutatedByQualification": false,
+  "proofClaimedByPeer": false
+}
