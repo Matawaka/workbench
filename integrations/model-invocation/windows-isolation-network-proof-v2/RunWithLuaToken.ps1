@@ -183,7 +183,11 @@ public static class MatawakaLuaLauncher
             command.Append(Quote(arg));
         }
 
-        var startup = new STARTUPINFO { cb = checked((uint)Marshal.SizeOf<STARTUPINFO>()) };
+        var startup = new STARTUPINFO
+        {
+            cb = checked((uint)Marshal.SizeOf<STARTUPINFO>()),
+            lpDesktop = string.Empty
+        };
         if (!CreateProcessAsUser(token, executable, command, IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW,
             IntPtr.Zero, workingDirectory, ref startup, out var pi))
             ThrowWin32("CREATE_PROCESS_AS_LUA");
@@ -295,12 +299,13 @@ if (-not (Test-Path -LiteralPath $workingFull -PathType Container)) { throw "LUA
 $result = [MatawakaLuaLauncher]::Run($exeFull, $Arguments, $workingFull)
 $signedExitCode = [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$result.ExitCode), 0)
 [ordered]@{
-    schema = 'matawaka.windows-lua-parent-launch/v0.4'
+    schema = 'matawaka.windows-lua-parent-launch/v0.5'
     sourceElevated = $result.SourceElevated
     luaElevated = $result.LuaElevated
     luaElevationType = $result.LuaElevationType
     luaHasRestrictions = $result.LuaHasRestrictions
     luaHasRestrictingSids = $result.LuaHasRestrictingSids
+    desktopSelection = 'EMPTY_STRING_SYSTEM_CONNECTION_RULES'
     systemCanaryExitCode = [uint32]$result.SystemCanaryExitCode
     childExitCodeUnsigned = [uint32]$result.ExitCode
     childExitCodeSigned = $signedExitCode
