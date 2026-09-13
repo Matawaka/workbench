@@ -192,7 +192,8 @@ internal static class PrivateNetworkProofV1
 
     private static void ValidateTarget(TargetEvidence target)
     {
-        NativeBoundary.Need(IPAddress.TryParse(target.Address, out var address) && address.AddressFamily == AddressFamily.InterNetwork, "TARGET_IPV4_LITERAL_REQUIRED");
+        if (!IPAddress.TryParse(target.Address, out var address) || address is null || address.AddressFamily != AddressFamily.InterNetwork)
+            throw new BoundaryFailure("TARGET_IPV4_LITERAL_REQUIRED");
         NativeBoundary.Need(!IPAddress.IsLoopback(address) && IsRfc1918(address), "TARGET_RFC1918_NON_LOOPBACK_REQUIRED");
         NativeBoundary.Need(!string.IsNullOrWhiteSpace(target.InterfaceId) && !string.IsNullOrWhiteSpace(target.InterfaceName) && !string.IsNullOrWhiteSpace(target.InterfaceType), "TARGET_INTERFACE_IDENTITY_REQUIRED");
         NativeBoundary.Need(target.SelectionRule == SelectionRule, "TARGET_SELECTION_RULE");
@@ -376,7 +377,7 @@ internal static class PrivateNetworkProofV1
             ProofBasis, true, false, target, targetPort, profileName, packageSid, childSha, boundary.Token, boundary.JobLimitsVerified,
             control, unexpected, child, boundary.ProcessCreated, boundary.ProcessExited, boundary.ExitCode, boundary.ProfileCreated,
             boundary.ProfileRemoved, boundary.CleanupSucceeded, osProof && status == "OS_PRIVATE_NETWORK_PATH_NOT_AUTHORIZED_PROVEN",
-            false, false, false, false, false, false, false, false, false, false, false, stage == "COMPLETE" ? null : stage, nativeCode);
+            false, false, false, false, false, false, false, false, false, false, stage == "COMPLETE" ? null : stage, nativeCode);
         if (result.Status == "OS_PRIVATE_NETWORK_PATH_NOT_AUTHORIZED_PROVEN") ValidateProof(result);
         using (var file = new FileStream(evidenceFull, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             JsonSerializer.Serialize(file, result, new JsonSerializerOptions { WriteIndented = true });
