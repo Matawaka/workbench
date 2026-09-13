@@ -46,6 +46,7 @@ If the physical Windows machine is not Windows Server 2025, use a Windows Server
 - `mac-peer.sh` — inspect/configure the dedicated macOS test interface, build the frozen peer source, emit provisioning receipts, and start the peer listener.
 - `Prepare-WindowsProofNode.ps1` — fail-closed Windows Server 2025 preflight, build the qualified coordinator, prepare the closed `trial` directory, and emit a provisioning receipt. It performs no peer network call.
 - `Run-WindowsPrivatePeerTrial.ps1` — explicit one-shot execution of the real two-node qualification. Run it only after the Mac listener is ready.
+- `START_HERE_RU.md` — shorter Russian operator guide.
 
 ## Software prerequisites
 
@@ -60,7 +61,7 @@ If the physical Windows machine is not Windows Server 2025, use a Windows Server
 - Windows Server 2025 x64, build family `10.0.26100`.
 - .NET 10 SDK.
 - A dedicated Ethernet interface configured as `10.77.0.1/30`, with no default route and no DNS servers on that interface.
-- Run the proof from a normal, non-elevated PowerShell session. Use an elevated session only for infrastructure provisioning such as assigning the static test IP, then close it before the proof.
+- The parent PowerShell elevation state is recorded in the provisioning receipt but is not itself used as proof. The child token still must independently prove AppContainer, zero capabilities, low integrity, non-elevated state and owned-Job membership.
 
 ## Order of operation
 
@@ -102,7 +103,7 @@ If Windows Server 2025 is a Hyper-V VM, attach only its test vNIC to the dedicat
 
 ### 4. Prepare the Windows proof bundle
 
-In a **normal non-elevated** PowerShell terminal:
+In PowerShell:
 
 ```powershell
 cd <workbench-repository>
@@ -113,7 +114,6 @@ Set-ExecutionPolicy -Scope Process Bypass
 The script refuses the canonical preparation unless all of the following hold:
 
 - Windows Server 2025 x64 / build family 26100;
-- current PowerShell is non-elevated;
 - local exact address `10.77.0.1/30` exists;
 - `10.77.0.2` is not local;
 - the test interface is not a default-route interface;
@@ -139,8 +139,11 @@ The prepare script prints the exact path of its generated `executor-state.json`.
 
 ```powershell
 .\integrations\model-invocation\windows-private-peer-proof-v1\executor\Run-WindowsPrivatePeerTrial.ps1 `
-  -StatePath "<path-to-executor-state.json>"
+  -StatePath "<path-to-executor-state.json>" `
+  -ExecuteQualifiedTrial
 ```
+
+The explicit switch is mandatory: preparing the bundle is not authority to execute the network qualification.
 
 This is the first canonical network interaction with the peer. The coordinator performs:
 
