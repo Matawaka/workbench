@@ -1,0 +1,221 @@
+name: Workbench Windows Private Network Isolation Proof v1
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-private-network-isolation-proof-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PREDECESSOR: 27595e46d44858250f59bf908852f30aa79c3495
+  MAIN_SNAPSHOT: 58b9430fc544998a8e40ba00b6757cc630ba9081
+  NATIVE_BOUNDARY_BLOB: 8a8f91a13c114e9c224cf449193800f0fedfdaf2
+  LAUNCHER_BLOB: 8f960bca553dbba6ae14887e1a78f88b72caddc9
+  OWNER_NORMALIZER_BLOB: 7ea24c32bce642d1ae7d935fa12e77050a4781d2
+  AUTHORIZATION: ISSUE-106-CURRENT-EXPLICIT-DEVELOPMENT
+
+jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact predecessor and immutable harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR){throw 'v1 does not descend from exact #105 GREEN head'}
+          $oldHead=(git ls-remote https://github.com/Matawaka/workbench.git refs/heads/feat/workbench-windows-network-isolation-proof-v2).Split("`t")[0]
+          if($oldHead -ne $env:PREDECESSOR){throw "#105 qualified branch drifted: $oldHead"}
+          $main=(git ls-remote https://github.com/Matawaka/workbench.git refs/heads/main).Split("`t")[0]
+          if($main -ne $env:MAIN_SNAPSHOT){throw "public main drifted: $main"}
+          $native='integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs'
+          $launcher='integrations/model-invocation/windows-isolation-network-proof-v2/RunWithSaferLuaToken.ps1'
+          $owner='integrations/model-invocation/windows-isolation-network-proof-v2/SetTrialOwnerOnly.ps1'
+          foreach($item in @(@($native,$env:NATIVE_BOUNDARY_BLOB),@($launcher,$env:LAUNCHER_BLOB),@($owner,$env:OWNER_NORMALIZER_BLOB))){
+            $historical=(git rev-parse "$env:PREDECESSOR`:$($item[0])").Trim();$working=(git hash-object -- $item[0]).Trim()
+            if($historical -ne $item[1] -or $working -ne $item[1]){throw "immutable harness blob mismatch path=$($item[0]) historical=$historical working=$working expected=$($item[1])"}
+          }
+          $proof=Get-Content integrations/model-invocation/windows-private-network-proof-v1/Program.cs -Raw
+          foreach($must in @('NetworkInterface.GetAllNetworkInterfaces','OPERATIONAL_RFC1918_IPV4_LOWEST_NUMERIC_THEN_INTERFACE_ID','PRIVATE_NETWORK_MISSING_CAPABILITY_DIAGNOSTIC','DiagnoseInfoType == 1','DiagnosticClassificationUsedAsProof','SocketBehaviorUsedAsProof','TargetSelectionUsedDns','ExternalNetworkAccessed')){if(-not $proof.Contains($must)){throw "private-network proof marker missing: $must"}}
+          foreach($forbidden in @('Dns.GetHost','HttpClient','NetworkIsolationSetAppContainerConfig','huggingface','Qwen3','llama.cpp','169.254.169.254')){if($proof.Contains($forbidden)){throw "forbidden proof surface: $forbidden"}}
+          $launchText=Get-Content $launcher -Raw
+          foreach($must in @('SAFER_LEVELID_NORMALUSER','CreateRestrictedToken','LUA_TOKEN','CreateProcessWithTokenW','credentialUsed = $false','saferPolicyMutated = $false','globalPolicyMutated = $false')){if(-not $launchText.Contains($must)){throw "launcher marker absent: $must"}}
+          foreach($forbidden in @('SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')){if($launchText.Contains($forbidden)){throw "forbidden launcher surface: $forbidden"}}
+          git diff --check "$env:PREDECESSOR...HEAD";if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host "PRIVATE_NETWORK_PROOF_V1_GUARD_PASS predecessor=$env:PREDECESSOR native=$env:NATIVE_BOUNDARY_BLOB launcher=$env:LAUNCHER_BLOB owner=$env:OWNER_NORMALIZER_BLOB"
+
+      - name: Publish repository proof and pure controls
+        id: repo_build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $project='.\integrations\model-invocation\windows-private-network-proof-v1\PrivateNetworkProofV1.csproj'
+          $out=Join-Path $env:RUNNER_TEMP 'private-network-proof-v1-repo-build'
+          dotnet publish $project -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          if($LASTEXITCODE -ne 0){throw "repository publish failed: $LASTEXITCODE"}
+          $names=@('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')
+          foreach($name in $names){if(-not(Test-Path (Join-Path $out $name) -PathType Leaf)){throw "bundle file missing: $name"}}
+          & (Join-Path $out 'Workbench.AppContainerProbe.exe') --unit
+          if($LASTEXITCODE -ne 0){throw "repository pure controls failed: $LASTEXITCODE"}
+          "out=$out" >> $env:GITHUB_OUTPUT
+          Write-Host 'PRIVATE_NETWORK_PROOF_V1_REPO_BUILD_PASS'
+
+      - name: Prepare repository disposable trial
+        id: repo_trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $parent=Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-private-v1-repository-'+[guid]::NewGuid().ToString('N'))
+          $trial=Join-Path $parent 'trial';New-Item -ItemType Directory -Path $trial|Out-Null
+          $names=@('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json');$files=[ordered]@{}
+          foreach($name in $names){Copy-Item (Join-Path '${{ steps.repo_build.outputs.out }}' $name) (Join-Path $trial $name);$files[$name]=(Get-FileHash (Join-Path $trial $name) -Algorithm SHA256).Hash.ToLowerInvariant()}
+          [IO.File]::WriteAllText((Join-Path $trial 'allow-read.txt'),'SYNTHETIC_ALLOWED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\SetTrialOwnerOnly.ps1 -Trial $trial -BundleNames $names
+          if($LASTEXITCODE -ne 0){throw "repository trial normalization failed: $LASTEXITCODE"}
+          $manifest=Join-Path $parent 'BUNDLE.json';[ordered]@{schema='matawaka.workbench-private-network-proof-v1-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;launcherBlob=$env:LAUNCHER_BLOB;ownerNormalizerBlob=$env:OWNER_NORMALIZER_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
+          "parent=$parent" >> $env:GITHUB_OUTPUT;"trial=$trial" >> $env:GITHUB_OUTPUT;"manifest=$manifest" >> $env:GITHUB_OUTPUT;"evidence=$(Join-Path $parent 'PRIVATE-NETWORK-PROOF.json')" >> $env:GITHUB_OUTPUT
+
+      - name: Run repository native private-network proof
+        id: repo_native
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path '${{ steps.repo_build.outputs.out }}' 'Workbench.AppContainerProbe.exe'
+          $args=@('--private-network-trial','${{ steps.repo_trial.outputs.trial }}','${{ steps.repo_trial.outputs.manifest }}','${{ steps.repo_trial.outputs.evidence }}','${{ github.sha }}',$env:AUTHORIZATION)
+          $code=& .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithSaferLuaToken.ps1 -Executable $exe -Arguments $args -WorkingDirectory '${{ github.workspace }}';$code=[int]$code
+          if(Test-Path '${{ steps.repo_trial.outputs.evidence }}' -PathType Leaf){Get-Content '${{ steps.repo_trial.outputs.evidence }}' -Raw|Write-Host}
+          if($code -ne 0){throw "repository native private-network proof failed closed: $code"}
+
+      - name: Create fully hash-bound clean harness
+        id: clean_source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'private-network-proof-v1-clean-source'
+          $proofDir=Join-Path $root 'integrations\model-invocation\windows-private-network-proof-v1'
+          $boundaryDir=Join-Path $root 'integrations\model-invocation\windows-isolation-probe'
+          $harnessDir=Join-Path $root 'integrations\model-invocation\windows-isolation-network-proof-v2'
+          New-Item -ItemType Directory -Force -Path $proofDir,$boundaryDir,$harnessDir|Out-Null
+          $pairs=@(
+            @('integrations/model-invocation/windows-private-network-proof-v1/Program.cs',(Join-Path $proofDir 'Program.cs')),
+            @('integrations/model-invocation/windows-private-network-proof-v1/PrivateNetworkProofV1.csproj',(Join-Path $proofDir 'PrivateNetworkProofV1.csproj')),
+            @('integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs',(Join-Path $boundaryDir 'NativeBoundary.cs')),
+            @('integrations/model-invocation/windows-isolation-network-proof-v2/RunWithSaferLuaToken.ps1',(Join-Path $harnessDir 'RunWithSaferLuaToken.ps1')),
+            @('integrations/model-invocation/windows-isolation-network-proof-v2/SetTrialOwnerOnly.ps1',(Join-Path $harnessDir 'SetTrialOwnerOnly.ps1'))
+          )
+          $files=[ordered]@{}
+          foreach($pair in $pairs){Copy-Item $pair[0] $pair[1];$a=(Get-FileHash $pair[0] -Algorithm SHA256).Hash.ToLowerInvariant();$b=(Get-FileHash $pair[1] -Algorithm SHA256).Hash.ToLowerInvariant();if($a -ne $b){throw "clean harness byte mismatch: $($pair[0])"};$files[$pair[0]]=$a}
+          foreach($item in @(@('integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs',$env:NATIVE_BOUNDARY_BLOB),@('integrations/model-invocation/windows-isolation-network-proof-v2/RunWithSaferLuaToken.ps1',$env:LAUNCHER_BLOB),@('integrations/model-invocation/windows-isolation-network-proof-v2/SetTrialOwnerOnly.ps1',$env:OWNER_NORMALIZER_BLOB))){if((git hash-object -- $item[0]).Trim() -ne $item[1]){throw "pinned harness blob changed: $($item[0])"}}
+          $harnessManifest=Join-Path $root 'HARNESS.json';[ordered]@{schema='matawaka.workbench-private-network-proof-v1-harness/v0.1';sourceHead='${{ github.sha }}';predecessor=$env:PREDECESSOR;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;launcherBlob=$env:LAUNCHER_BLOB;ownerNormalizerBlob=$env:OWNER_NORMALIZER_BLOB;files=$files}|ConvertTo-Json -Depth 6|Set-Content -Encoding utf8NoBOM $harnessManifest
+          Compress-Archive -Path (Join-Path $root 'integrations'),$harnessManifest -DestinationPath (Join-Path $env:RUNNER_TEMP 'private-network-proof-v1-clean-source.zip') -CompressionLevel Optimal
+          "root=$root" >> $env:GITHUB_OUTPUT;"project=$(Join-Path $proofDir 'PrivateNetworkProofV1.csproj')" >> $env:GITHUB_OUTPUT;"launcher=$(Join-Path $harnessDir 'RunWithSaferLuaToken.ps1')" >> $env:GITHUB_OUTPUT;"owner=$(Join-Path $harnessDir 'SetTrialOwnerOnly.ps1')" >> $env:GITHUB_OUTPUT;"harness_manifest=$harnessManifest" >> $env:GITHUB_OUTPUT
+          Write-Host 'PRIVATE_NETWORK_PROOF_V1_CLEAN_HARNESS_PASS files=5'
+
+      - name: Publish clean proof and pure controls
+        id: clean_build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'private-network-proof-v1-clean-build'
+          dotnet publish '${{ steps.clean_source.outputs.project }}' -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          if($LASTEXITCODE -ne 0){throw "clean publish failed: $LASTEXITCODE"}
+          foreach($name in @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')){if(-not(Test-Path (Join-Path $out $name) -PathType Leaf)){throw "clean bundle file missing: $name"}}
+          & (Join-Path $out 'Workbench.AppContainerProbe.exe') --unit
+          if($LASTEXITCODE -ne 0){throw "clean pure controls failed: $LASTEXITCODE"}
+          "out=$out" >> $env:GITHUB_OUTPUT
+          Write-Host 'PRIVATE_NETWORK_PROOF_V1_CLEAN_BUILD_PASS'
+
+      - name: Prepare clean disposable trial with clean owner normalizer
+        id: clean_trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $parent=Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-private-v1-clean-'+[guid]::NewGuid().ToString('N'))
+          $trial=Join-Path $parent 'trial';New-Item -ItemType Directory -Path $trial|Out-Null
+          $names=@('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json');$files=[ordered]@{}
+          foreach($name in $names){Copy-Item (Join-Path '${{ steps.clean_build.outputs.out }}' $name) (Join-Path $trial $name);$files[$name]=(Get-FileHash (Join-Path $trial $name) -Algorithm SHA256).Hash.ToLowerInvariant()}
+          [IO.File]::WriteAllText((Join-Path $trial 'allow-read.txt'),'SYNTHETIC_ALLOWED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
+          & '${{ steps.clean_source.outputs.owner }}' -Trial $trial -BundleNames $names
+          if($LASTEXITCODE -ne 0){throw "clean trial normalization failed: $LASTEXITCODE"}
+          $manifest=Join-Path $parent 'BUNDLE.json';[ordered]@{schema='matawaka.workbench-private-network-proof-v1-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;launcherBlob=$env:LAUNCHER_BLOB;ownerNormalizerBlob=$env:OWNER_NORMALIZER_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
+          "parent=$parent" >> $env:GITHUB_OUTPUT;"trial=$trial" >> $env:GITHUB_OUTPUT;"manifest=$manifest" >> $env:GITHUB_OUTPUT;"evidence=$(Join-Path $parent 'PRIVATE-NETWORK-PROOF.json')" >> $env:GITHUB_OUTPUT
+
+      - name: Run clean-source native private-network proof with clean launcher
+        id: clean_native
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path '${{ steps.clean_build.outputs.out }}' 'Workbench.AppContainerProbe.exe'
+          $args=@('--private-network-trial','${{ steps.clean_trial.outputs.trial }}','${{ steps.clean_trial.outputs.manifest }}','${{ steps.clean_trial.outputs.evidence }}','${{ github.sha }}',$env:AUTHORIZATION)
+          $code=& '${{ steps.clean_source.outputs.launcher }}' -Executable $exe -Arguments $args -WorkingDirectory '${{ github.workspace }}';$code=[int]$code
+          if(Test-Path '${{ steps.clean_trial.outputs.evidence }}' -PathType Leaf){Get-Content '${{ steps.clean_trial.outputs.evidence }}' -Raw|Write-Host}
+          if($code -ne 0){throw "clean native private-network proof failed closed: $code"}
+
+      - name: Verify strict private-network proof twice
+        id: verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$records=@()
+          foreach($path in @('${{ steps.repo_trial.outputs.evidence }}','${{ steps.clean_trial.outputs.evidence }}')){
+            if(-not(Test-Path $path -PathType Leaf)){throw "evidence missing: $path"};$r=Get-Content $path -Raw|ConvertFrom-Json
+            if($r.Schema -ne 'matawaka.workbench-windows-private-network-isolation-proof/v0.1' -or $r.Status -ne 'OS_PRIVATE_NETWORK_PATH_NOT_AUTHORIZED_PROVEN' -or $r.OsPrivateNetworkIsolationProven -ne $true){throw "private-network proof absent schema=$($r.Schema) status=$($r.Status) stage=$($r.FailureStage)"}
+            if($r.SourceHead -ne '${{ github.sha }}' -or $r.Predecessor -ne $env:PREDECESSOR -or $r.NativeBoundaryBlob -ne $env:NATIVE_BOUNDARY_BLOB){throw 'source/predecessor/boundary binding mismatch'}
+            if($r.PrivateNetworkProofBasis -ne 'PRIVATE_NETWORK_MISSING_CAPABILITY_DIAGNOSTIC' -or $r.DiagnosticClassificationUsedAsProof -ne $true -or $r.SocketBehaviorUsedAsProof -ne $false){throw 'proof basis/evidence roles mismatch'}
+            $ip=[Net.IPAddress]::Parse($r.Target.Address);$b=$ip.GetAddressBytes();$rfc1918=($b[0]-eq 10)-or($b[0]-eq 172-and$b[1]-ge16-and$b[1]-le31)-or($b[0]-eq192-and$b[1]-eq168)
+            if(-not $rfc1918 -or [Net.IPAddress]::IsLoopback($ip) -or $r.Target.SelectionRule -ne 'OPERATIONAL_RFC1918_IPV4_LOWEST_NUMERIC_THEN_INTERFACE_ID' -or $r.TargetPort -le 0){throw 'target not exact private non-loopback target'}
+            if($r.Token.AppContainer -ne $true -or $r.Token.Capabilities -ne 0 -or $r.Token.PackageMatches -ne $true -or $r.Token.LowIntegrity -ne $true -or $r.Token.Elevated -ne $false -or $r.Token.InOwnedJob -ne $true -or $r.JobLimitsVerified -ne $true){throw 'AppContainer/token/job evidence incomplete'}
+            if($r.Child.Schema -ne 'matawaka.workbench-appcontainer-private-network-child/v0.1' -or $r.Child.ContractDigestSha256 -ne $r.ContractDigestSha256 -or $r.Child.PackageSid -ne $r.PackageSid -or $r.Child.CapabilityCount -ne 0){throw 'child identity/contract/capability mismatch'}
+            foreach($name in @('Address','InterfaceId','InterfaceName','InterfaceType','SelectionRule')){if($r.Child.Target.$name -ne $r.Target.$name){throw "child target mismatch field=$name"}}
+            if($r.Child.DiagnoseHasRequiredCapability -ne $false -or $r.Child.DiagnoseInfoReturn -ne 0 -or $r.Child.DiagnoseInfoType -ne 1 -or $r.Child.DiagnosticClassificationUsedAsProof -ne $true){throw 'strict PRIVATE_NETWORK diagnostic proof absent'}
+            if($r.ParentTargetControlConnected -ne $true -or $r.UnexpectedIsolatedConnectionObserved -ne $false -or $r.Child.SocketOutcome -eq 'CONNECTED' -or $r.Child.SocketBehaviorUsedAsProof -ne $false -or $r.SocketTimeoutPromotedToProof -ne $false){throw 'socket/control evidence contradicted or promoted'}
+            if(@('TIMEOUT','SOCKET_ERROR','REFUSED') -notcontains $r.Child.SocketOutcome){throw "unexpected socket observation: $($r.Child.SocketOutcome)"}
+            if($r.ProcessCreated -ne $true -or $r.ProcessExited -ne $true -or $r.ProcessExitCode -ne 0 -or $r.ProfileCreated -ne $true -or $r.ProfileRemoved -ne $true -or $r.CleanupSucceeded -ne $true){throw 'terminal cleanup evidence incomplete'}
+            if($r.TargetSelectionUsedDns -ne $false -or $r.ExternalNetworkAccessed -ne $false -or $r.NetworkIsolationConfigMutated -ne $false -or $r.FirewallRuleMutated -ne $false -or $r.RouteOrInterfaceMutated -ne $false -or $r.GlobalWindowsPolicyMutated -ne $false -or $r.ModelStarted -ne $false -or $r.GameAccessed -ne $false -or $r.ProductionProviderRegistered -ne $false){throw 'effect boundary widened'}
+            $records+=$r
+          }
+          if($records.Count -ne 2){throw 'exactly two reproductions required'}
+          if($records[0].ContractDigestSha256 -ne $records[1].ContractDigestSha256){throw 'contract digest differs'}
+          if($records[0].Target.Address -ne $records[1].Target.Address){throw 'target address differs between reproductions'}
+          $h=Get-Content '${{ steps.clean_source.outputs.harness_manifest }}' -Raw|ConvertFrom-Json
+          if($h.SourceHead -ne '${{ github.sha }}' -or $h.Predecessor -ne $env:PREDECESSOR -or $h.NativeBoundaryBlob -ne $env:NATIVE_BOUNDARY_BLOB -or $h.LauncherBlob -ne $env:LAUNCHER_BLOB -or $h.OwnerNormalizerBlob -ne $env:OWNER_NORMALIZER_BLOB -or $h.Files.PSObject.Properties.Count -ne 5){throw 'clean harness binding incomplete'}
+          $repoManifest=Get-Content '${{ steps.repo_trial.outputs.manifest }}' -Raw|ConvertFrom-Json;$cleanManifest=Get-Content '${{ steps.clean_trial.outputs.manifest }}' -Raw|ConvertFrom-Json
+          $summary=[ordered]@{schema='matawaka.workbench-windows-private-network-isolation-v1-qualification/v0.1';status='REPOSITORY_AND_CLEAN_OS_PRIVATE_NETWORK_PATH_NOT_AUTHORIZED_PROVEN';sourceHead='${{ github.sha }}';predecessor=$env:PREDECESSOR;contractDigestSha256=$records[0].ContractDigestSha256;targetAddress=$records[0].Target.Address;targetInterfaceId=$records[0].Target.InterfaceId;repositorySocketOutcome=$records[0].Child.SocketOutcome;cleanSocketOutcome=$records[1].Child.SocketOutcome;repositoryDiagnoseInfoType=$records[0].Child.DiagnoseInfoType;cleanDiagnoseInfoType=$records[1].Child.DiagnoseInfoType;repositoryBundleHashes=$repoManifest.files;cleanBundleHashes=$cleanManifest.files;diagnosticClassificationUsedAsProof=$true;socketBehaviorUsedAsProof=$false;timeoutPromotedToProof=$false;dnsUsed=$false;externalNetworkAccessed=$false;productionProviderRegistered=$false}
+          $summaryPath=Join-Path $env:RUNNER_TEMP 'private-network-proof-v1-summary.json';$summary|ConvertTo-Json -Depth 8|Set-Content -Encoding utf8NoBOM $summaryPath;Get-Content $summaryPath -Raw|Write-Host
+          "summary=$summaryPath" >> $env:GITHUB_OUTPUT
+
+      - name: Final fail-closed gate
+        shell: pwsh
+        run: |
+          if('${{ steps.repo_native.conclusion }}' -ne 'success'){throw 'repository native private-network proof did not PASS'}
+          if('${{ steps.clean_native.conclusion }}' -ne 'success'){throw 'clean native private-network proof did not PASS'}
+          Write-Host 'WINDOWS_PRIVATE_NETWORK_ISOLATION_V1_FINAL_PASS diag_private_network_is_proof=true socket_behavior_is_not_proof=true dns_used=false external_network_accessed=false production_provider_registered=false'
+
+      - name: Upload bounded evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-private-network-isolation-proof-v1-${{ github.sha }}
+          path: |
+            ${{ steps.repo_trial.outputs.evidence }}
+            ${{ steps.clean_trial.outputs.evidence }}
+            ${{ steps.verify.outputs.summary }}
+            ${{ steps.clean_source.outputs.harness_manifest }}
+            ${{ runner.temp }}/private-network-proof-v1-clean-source.zip
+            ${{ steps.repo_trial.outputs.manifest }}
+            ${{ steps.clean_trial.outputs.manifest }}
+          if-no-files-found: warn
+          retention-days: 30
