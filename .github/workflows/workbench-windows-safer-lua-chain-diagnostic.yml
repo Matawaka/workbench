@@ -1,0 +1,65 @@
+name: Workbench Windows SAFER LUA Chain Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/ProbeSaferLuaChain.ps1
+      - .github/workflows/workbench-windows-safer-lua-chain-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Guard bounded SAFER-LUA diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'diagnostic lineage mismatch' }
+          $s=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/ProbeSaferLuaChain.ps1 -Raw
+          foreach($must in @('SaferComputeTokenFromLevel','SAFER_LEVELID_NORMALUSER','CreateRestrictedToken','LUA_TOKEN','CreateProcessAsUserW','proofClaimed=$false')){if(-not $s.Contains($must)){throw "required chain marker absent: $must"}}
+          foreach($forbidden in @('SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')){if($s.Contains($forbidden)){throw "forbidden chain surface: $forbidden"}}
+          git diff --check "$env:PREDECESSOR...HEAD";if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host 'SAFER_LUA_CHAIN_GUARD_PASS'
+      - name: Run chained parent canary
+        id: probe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $receipt=Join-Path $env:RUNNER_TEMP 'SAFER-LUA-CHAIN.json'
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\ProbeSaferLuaChain.ps1 -Receipt $receipt
+          $code=$LASTEXITCODE
+          if(Test-Path $receipt -PathType Leaf){Get-Content $receipt -Raw|Write-Host}
+          "receipt=$receipt" >> $env:GITHUB_OUTPUT
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          if($code -ne 0){throw "SAFER-LUA chain failed closed: $code"}
+      - name: Verify chained candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$path='${{ steps.probe.outputs.receipt }}';if(-not(Test-Path $path -PathType Leaf)){throw 'chain receipt absent'};$r=Get-Content $path -Raw|ConvertFrom-Json
+          if($r.schema -ne 'matawaka.windows-safer-lua-chain-diagnostic/v0.1'){throw 'chain schema mismatch'}
+          if($r.proofClaimed -ne $false -or $r.productionProviderRegistered -ne $false){throw 'diagnostic claimed authority'}
+          if($r.credentialUsed -ne $false -or $r.userChanged -ne $false -or $r.saferPolicyMutated -ne $false -or $r.firewallRuleMutated -ne $false -or $r.networkIsolationConfigMutated -ne $false -or $r.globalPolicyMutated -ne $false){throw 'diagnostic widened effects'}
+          if($r.chainedLuaElevated -ne $false -or $r.chainedLuaHasRestrictions -ne $true -or $r.processCreated -ne $true -or $r.exitCodeUnsigned -ne 0 -or $r.status -ne 'SAFER_LUA_CHAIN_LAUNCHABLE_NON_ELEVATED'){throw "chain not viable: elevated=$($r.chainedLuaElevated) il=$($r.chainedLuaIntegrityRid) created=$($r.processCreated) error=$($r.createError) exit=$($r.exitCodeUnsigned)"}
+          Write-Host ("SAFER_LUA_CHAIN_PARENT_VIABLE il={0} elevationType={1} restrictions={2}/{3}" -f $r.chainedLuaIntegrityRid,$r.chainedLuaElevationType,$r.chainedLuaHasRestrictions,$r.chainedLuaHasRestrictingSids)
+      - name: Upload chained diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-safer-lua-chain-${{ github.sha }}
+          path: ${{ runner.temp }}/SAFER-LUA-CHAIN.json
+          if-no-files-found: warn
+          retention-days: 30
