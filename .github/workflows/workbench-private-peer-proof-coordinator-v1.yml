@@ -1,0 +1,134 @@
+name: Workbench Private Peer Proof Coordinator v1
+
+on:
+  push:
+    branches:
+      - feat/workbench-private-peer-qualification-executor-v1
+    paths:
+      - integrations/model-invocation/windows-private-peer-proof-v1/**
+      - integrations/model-invocation/windows-private-peer-executor-v1/Program.cs
+      - integrations/model-invocation/windows-private-peer-executor-v1/PEER_CONTRACT.json
+      - integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs
+      - .github/workflows/workbench-private-peer-proof-coordinator-v1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QUALIFIED_PEER_HEAD: efff344bc1418e9b1da946a8493f854bf8ada9af
+  NATIVE_BOUNDARY_BLOB: 8a8f91a13c114e9c224cf449193800f0fedfdaf2
+  PEER_SOURCE_SHA256: b01ab34cd9923d34b72c4ca557ffb292cb9621a896be0fbbb020ddd88d8bc049
+  PEER_CONTRACT_SHA256: 793de6f7d0f68317d331b2e7e3eec20e02dcdd9acac5c665ceab633122aea1ca
+
+jobs:
+  qualify-pure-only:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact predecessor and frozen dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git merge-base HEAD $env:QUALIFIED_PEER_HEAD).Trim() -ne $env:QUALIFIED_PEER_HEAD){throw 'coordinator does not descend from exact qualified peer protocol head'}
+          $native='integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs'
+          if((git hash-object $native).Trim() -ne $env:NATIVE_BOUNDARY_BLOB){throw 'NativeBoundary blob drift'}
+          $peerSource=(Get-FileHash 'integrations/model-invocation/windows-private-peer-executor-v1/Program.cs' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($peerSource -ne $env:PEER_SOURCE_SHA256){throw 'qualified peer source drift'}
+          $peerContract=(Get-FileHash 'integrations/model-invocation/windows-private-peer-executor-v1/PEER_CONTRACT.json' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($peerContract -ne $env:PEER_CONTRACT_SHA256){throw 'qualified peer contract drift'}
+          git diff --check "$env:QUALIFIED_PEER_HEAD...HEAD"
+          if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host 'PRIVATE_PEER_PROOF_COORDINATOR_V1_DEPENDENCY_GUARD_PASS'
+
+      - name: Guard strict coordinator theorem and non-effects
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $path='integrations/model-invocation/windows-private-peer-proof-v1/Program.cs'
+          $source=Get-Content $path -Raw
+          foreach($must in @(
+            'ISSUE-107-CONTROLLED-EXECUTOR-TRIAL',
+            '10.77.0.1',
+            '10.77.0.2',
+            'ManagementPort = 41060',
+            'TargetPort = 41061',
+            'PRIVATE_NETWORK_MISSING_CAPABILITY_AND_PEER_ZERO_ACCEPT',
+            'child.DiagnoseInfoType==1',
+            'peerReceipt.ChildWindowAcceptedConnections==0',
+            'peerReceipt.TargetAcceptsTotal==1',
+            'SocketBehaviorUsedAsProof',
+            'SocketTimeoutPromotedToProof',
+            'OS_PRIVATE_NETWORK_PATH_NOT_AUTHORIZED_PROVEN',
+            'PROOF_AUTHORITY_WIDENING',
+            'PRIVATE_PEER_PROOF_COORDINATOR_V1_PURE_CONTROLS_PASS'
+          )){if(-not $source.Contains($must)){throw "strict theorem marker absent: $must"}}
+          foreach($forbidden in @(
+            'Dns.GetHost',
+            'HttpClient',
+            'NetworkIsolationSetAppContainerConfig',
+            'netsh',
+            'Set-NetIP',
+            'New-Net',
+            'Add-Net',
+            'route.exe',
+            '169.254.169.254',
+            'Qwen',
+            'qwen',
+            'llama',
+            'Ollama'
+          )){if($source.Contains($forbidden)){throw "forbidden coordinator surface: $forbidden"}}
+          $project=Get-Content 'integrations/model-invocation/windows-private-peer-proof-v1/PrivatePeerProofV1.csproj' -Raw
+          if(-not $project.Contains('<AssemblyName>Workbench.AppContainerProbe</AssemblyName>') -or -not $project.Contains('<TargetFramework>net10.0-windows</TargetFramework>') -or -not $project.Contains('../windows-isolation-probe/NativeBoundary.cs')){throw 'coordinator project binding mismatch'}
+          Write-Host 'PRIVATE_PEER_PROOF_COORDINATOR_V1_THEOREM_GUARD_PASS'
+
+      - name: Build coordinator and run pure hostile controls only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $project='.\integrations\model-invocation\windows-private-peer-proof-v1\PrivatePeerProofV1.csproj'
+          $out=Join-Path $env:RUNNER_TEMP 'private-peer-proof-coordinator-v1'
+          dotnet publish $project -c Release -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          if($LASTEXITCODE -ne 0){throw "coordinator publish failed: $LASTEXITCODE"}
+          $exe=Join-Path $out 'Workbench.AppContainerProbe.exe'
+          if(-not(Test-Path $exe -PathType Leaf)){throw "coordinator executable absent: $exe"}
+          $output=& $exe --unit
+          if($LASTEXITCODE -ne 0){throw "coordinator pure qualification failed: $LASTEXITCODE"}
+          $line=($output|Select-Object -Last 1)
+          Write-Host $line
+          $r=$line|ConvertFrom-Json
+          if($r.status -ne 'PRIVATE_PEER_PROOF_COORDINATOR_V1_PURE_CONTROLS_PASS' -or $r.passed -lt 50 -or $r.networkCalls -ne $false -or $r.proofClaimed -ne $false){throw 'coordinator pure-control receipt mismatch'}
+          Write-Host "PRIVATE_PEER_PROOF_COORDINATOR_V1_PURE_PASS passed=$($r.passed) networkTrialExecuted=false proofClaimed=false"
+
+      - name: Emit source identity and explicit non-trial receipt
+        shell: pwsh
+        run: |
+          $source=(Get-FileHash 'integrations/model-invocation/windows-private-peer-proof-v1/Program.cs' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $project=(Get-FileHash 'integrations/model-invocation/windows-private-peer-proof-v1/PrivatePeerProofV1.csproj' -Algorithm SHA256).Hash.ToLowerInvariant()
+          [ordered]@{
+            schema='matawaka.private-peer-proof-coordinator-source/v0.1'
+            head='${{ github.sha }}'
+            sourceSha256=$source
+            projectSha256=$project
+            nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB
+            qualifiedPeerSourceSha256=$env:PEER_SOURCE_SHA256
+            qualifiedPeerContractSha256=$env:PEER_CONTRACT_SHA256
+            proofNodeAddress='10.77.0.1'
+            peerAddress='10.77.0.2'
+            managementPort=41060
+            targetPort=41061
+            requiredDiagnoseInfoType=1
+            peerChildWindowAcceptsForPass=0
+            networkTrialExecuted=$false
+            proofClaimed=$false
+            productionProviderRegistered=$false
+          }|ConvertTo-Json -Compress|Write-Host
