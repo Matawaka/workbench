@@ -47,16 +47,16 @@ jobs:
           foreach ($forbidden in @('NetworkIsolationSetAppContainerConfig','Dns.GetHost','HttpClient','huggingface','Qwen3','llama.cpp')) {
             if ($proof.Contains($forbidden)) { throw "forbidden proof surface: $forbidden" }
           }
-          $lua = Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/RunWithLuaToken.ps1 -Raw
-          foreach ($must in @('CreateRestrictedToken','LUA_TOKEN','CreateProcessAsUser','sourceElevated','luaElevated','credentialUsed = $false','globalPolicyMutated = $false')) {
-            if (-not $lua.Contains($must)) { throw "LUA parent marker missing: $must" }
+          $launcher = Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/RunWithSaferLuaToken.ps1 -Raw
+          foreach ($must in @('SaferCreateLevel','SAFER_LEVELID_NORMALUSER','SaferComputeTokenFromLevel','CreateRestrictedToken','LUA_TOKEN','CreateProcessWithTokenW','sourceElevated','luaElevated','credentialUsed = $false','saferPolicyMutated = $false','globalPolicyMutated = $false')) {
+            if (-not $launcher.Contains($must)) { throw "SAFER LUA parent marker missing: $must" }
           }
-          foreach ($forbidden in @('LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user')) {
-            if ($lua.Contains($forbidden)) { throw "forbidden LUA parent surface: $forbidden" }
+          foreach ($forbidden in @('SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')) {
+            if ($launcher.Contains($forbidden)) { throw "forbidden SAFER LUA parent surface: $forbidden" }
           }
           git diff --check "$env:PREDECESSOR...HEAD"
           if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
-          Write-Host "NETWORK_PROOF_V2_GUARD_PASS predecessor=$env:PREDECESSOR nativeBlob=$workingBlob main=$main"
+          Write-Host "NETWORK_PROOF_V2_GUARD_PASS predecessor=$env:PREDECESSOR nativeBlob=$workingBlob main=$main launcher=SAFER_NORMALUSER_LUA"
 
       - name: Publish repository framework-dependent probe and pure controls
         id: repo_build
@@ -108,7 +108,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $exe = Join-Path '${{ steps.repo_build.outputs.out }}' 'Workbench.AppContainerProbe.exe'
           $trialArgs = @('--network-trial','${{ steps.repo_trial.outputs.trial }}','${{ steps.repo_trial.outputs.manifest }}','${{ steps.repo_trial.outputs.evidence }}','${{ github.sha }}',$env:AUTHORIZATION)
-          $code = & .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithLuaToken.ps1 -Executable $exe -Arguments $trialArgs -WorkingDirectory '${{ github.workspace }}'
+          $code = & .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithSaferLuaToken.ps1 -Executable $exe -Arguments $trialArgs -WorkingDirectory '${{ github.workspace }}'
           $code = [int]$code
           if (Test-Path '${{ steps.repo_trial.outputs.evidence }}') { Get-Content '${{ steps.repo_trial.outputs.evidence }}' -Raw | Write-Host }
           if ($code -ne 0) { throw "repository native proof failed closed: $code" }
@@ -181,7 +181,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $exe=Join-Path '${{ steps.clean_build.outputs.out }}' 'Workbench.AppContainerProbe.exe'
           $trialArgs = @('--network-trial','${{ steps.clean_trial.outputs.trial }}','${{ steps.clean_trial.outputs.manifest }}','${{ steps.clean_trial.outputs.evidence }}','${{ github.sha }}',$env:AUTHORIZATION)
-          $code = & .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithLuaToken.ps1 -Executable $exe -Arguments $trialArgs -WorkingDirectory '${{ github.workspace }}'
+          $code = & .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithSaferLuaToken.ps1 -Executable $exe -Arguments $trialArgs -WorkingDirectory '${{ github.workspace }}'
           $code = [int]$code
           if (Test-Path '${{ steps.clean_trial.outputs.evidence }}') { Get-Content '${{ steps.clean_trial.outputs.evidence }}' -Raw | Write-Host }
           if ($code -ne 0) { throw "clean native proof failed closed: $code" }
