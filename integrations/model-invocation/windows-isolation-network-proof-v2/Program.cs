@@ -16,9 +16,10 @@ internal static class NetworkProofV2
     private const string Predecessor = "c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a";
     private const string ExactNativeBoundaryBlob = "8a8f91a13c114e9c224cf449193800f0fedfdaf2";
     private const string ProfilePrefix = "Matawaka.IsolationProbe.";
-    private const string ChildSchema = "matawaka.workbench-appcontainer-network-child/v0.3";
-    private const string ProofSchema = "matawaka.workbench-windows-network-isolation-proof/v0.3";
-    private const string ContractJson = "{\"schema\":\"matawaka.workbench-windows-host-network-profile/v0.3\",\"nativeBoundaryBlob\":\"8a8f91a13c114e9c224cf449193800f0fedfdaf2\",\"appContainerCapabilities\":0,\"loopbackExemptionRequired\":false,\"loopbackExemptionObservations\":[\"beforeNativeStart\",\"afterChildExit\"],\"childProcessRestricted\":true,\"jobActiveProcessLimit\":1,\"jobProcessMemoryBytes\":536870912,\"killOnJobClose\":true,\"dieOnUnhandledException\":true,\"networkTarget\":\"127.0.0.1\",\"requiredMissingCapability\":\"PRIVATE_NETWORK\",\"socketTimeoutMilliseconds\":1000,\"timeoutAloneIsProof\":false}";
+    private const string ChildSchema = "matawaka.workbench-appcontainer-network-child/v0.4";
+    private const string ProofSchema = "matawaka.workbench-windows-loopback-isolation-proof/v0.4";
+    private const string LoopbackProofBasis = "WINDOWS_APPCONTAINER_DEFAULT_BLOCK_NO_EXEMPTION";
+    private const string ContractJson = "{\"schema\":\"matawaka.workbench-windows-host-loopback-profile/v0.4\",\"nativeBoundaryBlob\":\"8a8f91a13c114e9c224cf449193800f0fedfdaf2\",\"appContainerCapabilities\":0,\"loopbackExemptionRequired\":false,\"loopbackExemptionObservations\":[\"beforeNativeStart\",\"afterChildExit\"],\"loopbackProofBasis\":\"WINDOWS_APPCONTAINER_DEFAULT_BLOCK_NO_EXEMPTION\",\"diagnosticClassificationUsedAsProof\":false,\"socketBehaviorUsedAsProof\":false,\"reviewedDiagnoseInfoType\":0,\"childProcessRestricted\":true,\"jobActiveProcessLimit\":1,\"jobProcessMemoryBytes\":536870912,\"killOnJobClose\":true,\"dieOnUnhandledException\":true,\"networkTarget\":\"127.0.0.1\",\"socketTimeoutMilliseconds\":1000,\"timeoutAloneIsProof\":false}";
     private static readonly string ContractDigest = Hash(Encoding.UTF8.GetBytes(ContractJson));
 
     private sealed record ChildEvidence(
@@ -29,8 +30,10 @@ internal static class NetworkProofV2
         bool DiagnoseHasRequiredCapability,
         uint DiagnoseInfoReturn,
         int DiagnoseInfoType,
+        bool DiagnosticClassificationUsedAsProof,
         string SocketOutcome,
         int? SocketCode,
+        bool SocketBehaviorUsedAsProof,
         bool ReadAllowed,
         bool ReadDenied,
         bool WriteDenied,
@@ -44,6 +47,9 @@ internal static class NetworkProofV2
         string Predecessor,
         string NativeBoundaryBlob,
         string ContractDigestSha256,
+        string LoopbackProofBasis,
+        bool DiagnosticClassificationUsedAsProof,
+        bool SocketBehaviorUsedAsProof,
         string ProfileName,
         string PackageSid,
         string ChildExecutableSha256,
@@ -60,7 +66,7 @@ internal static class NetworkProofV2
         bool ProfileCreated,
         bool ProfileRemoved,
         bool CleanupSucceeded,
-        bool OsNetworkIsolationProven,
+        bool OsLoopbackIsolationProven,
         bool SocketTimeoutPromotedToProof,
         bool NetworkIsolationConfigMutated,
         bool FirewallRuleMutated,
@@ -86,17 +92,33 @@ internal static class NetworkProofV2
     private static int Unit()
     {
         var pass = 0;
-        var validChild = new ChildEvidence(ChildSchema, ContractDigest, "S-1-15-2-1", 0, false, 0, 1,
-            "TIMEOUT", null, true, true, true, true, 5);
+        var validChild = new ChildEvidence(
+            Schema: ChildSchema,
+            ContractDigestSha256: ContractDigest,
+            PackageSid: "S-1-15-2-1",
+            CapabilityCount: 0,
+            DiagnoseHasRequiredCapability: false,
+            DiagnoseInfoReturn: 0,
+            DiagnoseInfoType: 0,
+            DiagnosticClassificationUsedAsProof: false,
+            SocketOutcome: "TIMEOUT",
+            SocketCode: null,
+            SocketBehaviorUsedAsProof: false,
+            ReadAllowed: true,
+            ReadDenied: true,
+            WriteDenied: true,
+            ChildDenied: true,
+            ChildErrorCode: 5);
         ValidateChild(validChild); pass++;
         foreach (var bad in new[]
         {
             validChild with { CapabilityCount = 1 },
             validChild with { DiagnoseHasRequiredCapability = true },
             validChild with { DiagnoseInfoReturn = 5 },
-            validChild with { DiagnoseInfoType = 0 },
-            validChild with { DiagnoseInfoType = 2 },
+            validChild with { DiagnoseInfoType = 1 },
+            validChild with { DiagnosticClassificationUsedAsProof = true },
             validChild with { SocketOutcome = "CONNECTED" },
+            validChild with { SocketBehaviorUsedAsProof = true },
             validChild with { ReadAllowed = false },
             validChild with { ReadDenied = false },
             validChild with { WriteDenied = false },
@@ -116,26 +138,61 @@ internal static class NetworkProofV2
         MustRefuse(() => ParseChild(new byte[8193])); pass++;
 
         var token = new TokenObservation(true, 0, true, true, false, true);
-        var validProof = new ProofEvidence(ProofSchema, "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN", new string('a', 40), Predecessor,
-            ExactNativeBoundaryBlob, ContractDigest, "Matawaka.IsolationProbe.test", validChild.PackageSid,
-            new string('b', 64), token, true, false, false, true, false, validChild, true, true, 0, true, true, true,
-            true, false, false, false, false, false, false, false, null, null);
+        var validProof = new ProofEvidence(
+            Schema: ProofSchema,
+            Status: "OS_LOOPBACK_PATH_NOT_AUTHORIZED_PROVEN",
+            SourceHead: new string('a', 40),
+            Predecessor: Predecessor,
+            NativeBoundaryBlob: ExactNativeBoundaryBlob,
+            ContractDigestSha256: ContractDigest,
+            LoopbackProofBasis: LoopbackProofBasis,
+            DiagnosticClassificationUsedAsProof: false,
+            SocketBehaviorUsedAsProof: false,
+            ProfileName: "Matawaka.IsolationProbe.test",
+            PackageSid: validChild.PackageSid,
+            ChildExecutableSha256: new string('b', 64),
+            Token: token,
+            JobLimitsVerified: true,
+            LoopbackExemptBefore: false,
+            LoopbackExemptAfter: false,
+            NormalLoopbackControlConnected: true,
+            UnexpectedIsolatedConnectionObserved: false,
+            Child: validChild,
+            ProcessCreated: true,
+            ProcessExited: true,
+            ProcessExitCode: 0,
+            ProfileCreated: true,
+            ProfileRemoved: true,
+            CleanupSucceeded: true,
+            OsLoopbackIsolationProven: true,
+            SocketTimeoutPromotedToProof: false,
+            NetworkIsolationConfigMutated: false,
+            FirewallRuleMutated: false,
+            GlobalWindowsPolicyMutated: false,
+            ModelStarted: false,
+            GameAccessed: false,
+            ProductionProviderRegistered: false,
+            FailureStage: null,
+            FailureNativeCode: null);
         ValidateProof(validProof); pass++;
         foreach (var bad in new[]
         {
-            validProof with { LoopbackExemptBefore = true, OsNetworkIsolationProven = false },
-            validProof with { LoopbackExemptAfter = true, OsNetworkIsolationProven = false },
-            validProof with { LoopbackExemptAfter = null, OsNetworkIsolationProven = false },
-            validProof with { Token = token with { Capabilities = 1 }, OsNetworkIsolationProven = false },
-            validProof with { PackageSid = "S-1-15-2-9", OsNetworkIsolationProven = false },
-            validProof with { Child = validChild with { PackageSid = "S-1-15-2-9" }, OsNetworkIsolationProven = false },
-            validProof with { UnexpectedIsolatedConnectionObserved = true, OsNetworkIsolationProven = false },
-            validProof with { SocketTimeoutPromotedToProof = true, OsNetworkIsolationProven = false },
-            validProof with { ProfileRemoved = false, CleanupSucceeded = false, OsNetworkIsolationProven = false },
-            validProof with { ProductionProviderRegistered = true, OsNetworkIsolationProven = false }
+            validProof with { LoopbackProofBasis = "UNREVIEWED_BASIS", OsLoopbackIsolationProven = false },
+            validProof with { DiagnosticClassificationUsedAsProof = true, OsLoopbackIsolationProven = false },
+            validProof with { SocketBehaviorUsedAsProof = true, OsLoopbackIsolationProven = false },
+            validProof with { LoopbackExemptBefore = true, OsLoopbackIsolationProven = false },
+            validProof with { LoopbackExemptAfter = true, OsLoopbackIsolationProven = false },
+            validProof with { LoopbackExemptAfter = null, OsLoopbackIsolationProven = false },
+            validProof with { Token = token with { Capabilities = 1 }, OsLoopbackIsolationProven = false },
+            validProof with { PackageSid = "S-1-15-2-9", OsLoopbackIsolationProven = false },
+            validProof with { Child = validChild with { PackageSid = "S-1-15-2-9" }, OsLoopbackIsolationProven = false },
+            validProof with { UnexpectedIsolatedConnectionObserved = true, OsLoopbackIsolationProven = false },
+            validProof with { SocketTimeoutPromotedToProof = true, OsLoopbackIsolationProven = false },
+            validProof with { ProfileRemoved = false, CleanupSucceeded = false, OsLoopbackIsolationProven = false },
+            validProof with { ProductionProviderRegistered = true, OsLoopbackIsolationProven = false }
         })
         { MustRefuse(() => ValidateProof(bad)); pass++; }
-        Console.WriteLine(JsonSerializer.Serialize(new { status = "WINDOWS_NETWORK_PROOF_V2_PURE_CONTROLS_PASS", passed = pass, nativeCalls = false }));
+        Console.WriteLine(JsonSerializer.Serialize(new { status = "WINDOWS_LOOPBACK_PROOF_V4_PURE_CONTROLS_PASS", passed = pass, nativeCalls = false }));
         return 0;
     }
 
@@ -155,10 +212,12 @@ internal static class NetworkProofV2
         NativeBoundary.Need(c.CapabilityCount == 0, "CHILD_CAPABILITY_COUNT");
         NativeBoundary.Need(!c.DiagnoseHasRequiredCapability, "WINDOWS_DIAG_CAPABILITY_PRESENT");
         NativeBoundary.Need(c.DiagnoseInfoReturn == 0, "WINDOWS_DIAG_INFO_FAILED");
-        // Strict initial classification for 127.0.0.1. Do not broaden merely to obtain GREEN.
-        NativeBoundary.Need(c.DiagnoseInfoType == 1, "WINDOWS_DIAG_NOT_PRIVATE_NETWORK_DENIAL");
+        // Reviewed exact localhost observation. NONE is a drift guard only and is never positive proof.
+        NativeBoundary.Need(c.DiagnoseInfoType == 0, "WINDOWS_DIAG_CLASSIFICATION_DRIFT");
+        NativeBoundary.Need(!c.DiagnosticClassificationUsedAsProof, "WINDOWS_DIAG_NONE_PROMOTED_TO_PROOF");
         NativeBoundary.Need(c.SocketOutcome is "TIMEOUT" or "SOCKET_ERROR" or "REFUSED", "SOCKET_OUTCOME_INVALID");
         NativeBoundary.Need(c.SocketOutcome != "CONNECTED", "ISOLATED_SOCKET_CONNECTED");
+        NativeBoundary.Need(!c.SocketBehaviorUsedAsProof, "SOCKET_BEHAVIOR_PROMOTED_TO_PROOF");
         NativeBoundary.Need(c.ReadAllowed && c.ReadDenied && c.WriteDenied && c.ChildDenied, "CHILD_NONNETWORK_BOUNDARY_REFUSED");
         NativeBoundary.Need(c.ChildErrorCode is 5 or 367, "CHILD_PROCESS_DENIAL_REQUIRED");
     }
@@ -169,8 +228,9 @@ internal static class NetworkProofV2
         using var doc = JsonDocument.Parse(bytes);
         NativeBoundary.Need(doc.RootElement.ValueKind == JsonValueKind.Object, "CHILD_RECEIPT_OBJECT");
         string[] expected = ["Schema", "ContractDigestSha256", "PackageSid", "CapabilityCount",
-            "DiagnoseHasRequiredCapability", "DiagnoseInfoReturn", "DiagnoseInfoType", "SocketOutcome", "SocketCode",
-            "ReadAllowed", "ReadDenied", "WriteDenied", "ChildDenied", "ChildErrorCode"];
+            "DiagnoseHasRequiredCapability", "DiagnoseInfoReturn", "DiagnoseInfoType", "DiagnosticClassificationUsedAsProof",
+            "SocketOutcome", "SocketCode", "SocketBehaviorUsedAsProof", "ReadAllowed", "ReadDenied", "WriteDenied",
+            "ChildDenied", "ChildErrorCode"];
         var names = doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray();
         NativeBoundary.Need(names.Length == expected.Length && names.Distinct(StringComparer.Ordinal).Count() == names.Length && names.ToHashSet(StringComparer.Ordinal).SetEquals(expected), "CHILD_RECEIPT_KEYS");
         var value = JsonSerializer.Deserialize<ChildEvidence>(doc.RootElement.GetRawText()) ?? throw new InvalidDataException("CHILD_RECEIPT_DESERIALIZE");
@@ -180,9 +240,11 @@ internal static class NetworkProofV2
 
     private static void ValidateProof(ProofEvidence e)
     {
-        NativeBoundary.Need(e.Schema == ProofSchema && e.Status == "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN", "PROOF_STATUS");
+        NativeBoundary.Need(e.Schema == ProofSchema && e.Status == "OS_LOOPBACK_PATH_NOT_AUTHORIZED_PROVEN", "PROOF_STATUS");
         NativeBoundary.Need(IsHex(e.SourceHead, 40) && e.Predecessor == Predecessor && e.NativeBoundaryBlob == ExactNativeBoundaryBlob, "PROOF_SOURCE_BINDING");
         NativeBoundary.Need(e.ContractDigestSha256 == ContractDigest, "PROOF_CONTRACT_BINDING");
+        NativeBoundary.Need(e.LoopbackProofBasis == LoopbackProofBasis, "PROOF_LOOPBACK_BASIS");
+        NativeBoundary.Need(!e.DiagnosticClassificationUsedAsProof && !e.SocketBehaviorUsedAsProof, "PROOF_EVIDENCE_ROLE_WIDENING");
         NativeBoundary.Need(e.ProfileName.StartsWith(ProfilePrefix, StringComparison.Ordinal), "PROOF_PROFILE_NAME");
         NativeBoundary.Need(e.PackageSid.StartsWith("S-1-15-2-", StringComparison.Ordinal), "PROOF_PACKAGE_SID");
         NativeBoundary.Need(IsHex(e.ChildExecutableSha256, 64), "PROOF_CHILD_SHA");
@@ -194,7 +256,7 @@ internal static class NetworkProofV2
         NativeBoundary.Need(child.PackageSid == e.PackageSid, "PROOF_CHILD_PACKAGE_BINDING");
         NativeBoundary.Need(e.ProcessCreated && e.ProcessExited && e.ProcessExitCode == 0, "PROOF_PROCESS_TERMINAL");
         NativeBoundary.Need(e.ProfileCreated && e.ProfileRemoved && e.CleanupSucceeded, "PROOF_CLEANUP");
-        NativeBoundary.Need(e.OsNetworkIsolationProven && !e.SocketTimeoutPromotedToProof, "PROOF_NETWORK_BOOLEAN_CONTRACT");
+        NativeBoundary.Need(e.OsLoopbackIsolationProven && !e.SocketTimeoutPromotedToProof, "PROOF_LOOPBACK_BOOLEAN_CONTRACT");
         NativeBoundary.Need(!e.NetworkIsolationConfigMutated && !e.FirewallRuleMutated && !e.GlobalWindowsPolicyMutated, "PROOF_GLOBAL_MUTATION");
         NativeBoundary.Need(!e.ModelStarted && !e.GameAccessed && !e.ProductionProviderRegistered, "PROOF_AUTHORITY_WIDENING");
     }
@@ -230,8 +292,23 @@ internal static class NetworkProofV2
         string packageSid = CurrentPackageSid(out int capabilityCount);
         uint hasRequired = NetworkIsolationDiagnoseConnectFailure("127.0.0.1");
         uint infoReturn = NetworkIsolationDiagnoseConnectFailureAndGetInfo("127.0.0.1", out int infoType);
-        var result = new ChildEvidence(ChildSchema, ContractDigest, packageSid, capabilityCount, hasRequired != 0,
-            infoReturn, infoType, socketOutcome, socketCode, readAllowed, readDenied, writeDenied, childDenied, childErrorCode);
+        var result = new ChildEvidence(
+            Schema: ChildSchema,
+            ContractDigestSha256: ContractDigest,
+            PackageSid: packageSid,
+            CapabilityCount: capabilityCount,
+            DiagnoseHasRequiredCapability: hasRequired != 0,
+            DiagnoseInfoReturn: infoReturn,
+            DiagnoseInfoType: infoType,
+            DiagnosticClassificationUsedAsProof: false,
+            SocketOutcome: socketOutcome,
+            SocketCode: socketCode,
+            SocketBehaviorUsedAsProof: false,
+            ReadAllowed: readAllowed,
+            ReadDenied: readDenied,
+            WriteDenied: writeDenied,
+            ChildDenied: childDenied,
+            ChildErrorCode: childErrorCode);
         Console.WriteLine(JsonSerializer.Serialize(result));
         try { ValidateChild(result); return 0; } catch { return 2; }
     }
@@ -243,7 +320,7 @@ internal static class NetworkProofV2
         string evidenceFull = Path.GetFullPath(evidencePath);
         NativeBoundary.Need(!File.Exists(evidenceFull), "CREATE_ONLY_EVIDENCE_REQUIRED");
         using (var marker = new FileStream(Path.Combine(Path.GetDirectoryName(evidenceFull)!, "NETWORK-PROOF-ATTEMPT.json"), FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            JsonSerializer.Serialize(marker, new { schema = "matawaka.workbench-network-proof-attempt/v0.1", sourceHead, authorization = "ISSUE_105", modelAuthorized = false, target = "127.0.0.1" });
+            JsonSerializer.Serialize(marker, new { schema = "matawaka.workbench-loopback-proof-attempt/v0.4", sourceHead, authorization = "ISSUE_105", modelAuthorized = false, target = "127.0.0.1", loopbackProofBasis = LoopbackProofBasis });
 
         using var manifestDoc = JsonDocument.Parse(File.ReadAllBytes(manifestPath));
         var hashes = manifestDoc.RootElement.GetProperty("files").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!);
@@ -252,7 +329,7 @@ internal static class NetworkProofV2
         string status = "FAIL_CLOSED", stage = "START", profileName = "", packageSid = "", childSha = "";
         int? nativeCode = null; ChildEvidence? child = null;
         bool control = false, unexpected = false; bool? exemptBefore = null, exemptAfter = null;
-        bool osProof = false;
+        bool loopbackProof = false;
         try
         {
             stage = "PREPARE"; boundary.Prepare(root, hashes);
@@ -278,25 +355,63 @@ internal static class NetworkProofV2
             NativeBoundary.Need(boundary.JobLimitsVerified, "JOB_EVIDENCE_ABSENT");
             NativeBoundary.Need(child.PackageSid == packageSid, "CHILD_PROFILE_SID_MISMATCH");
             stage = "LOOPBACK_CONFIG_AFTER"; exemptAfter = IsLoopbackExempt(packageSidPtr); NativeBoundary.Need(exemptAfter == false, "LOOPBACK_EXEMPT_AFTER");
-            osProof = exemptBefore == false && exemptAfter == false && child.CapabilityCount == 0 && !child.DiagnoseHasRequiredCapability && child.DiagnoseInfoReturn == 0 && child.DiagnoseInfoType == 1 && child.SocketOutcome != "CONNECTED" && !unexpected;
-            NativeBoundary.Need(osProof, "OS_NETWORK_ISOLATION_EVIDENCE_INCOMPLETE");
-            status = "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN"; stage = "COMPLETE";
+
+            bool positivePolicyEvidence = exemptBefore == false && exemptAfter == false &&
+                boundary.Token!.AppContainer && boundary.Token.Capabilities == 0 && boundary.Token.PackageMatches &&
+                boundary.Token.LowIntegrity && !boundary.Token.Elevated && boundary.Token.InOwnedJob && boundary.JobLimitsVerified;
+            bool reviewedDiagnosticGuard = !child.DiagnoseHasRequiredCapability && child.DiagnoseInfoReturn == 0 &&
+                child.DiagnoseInfoType == 0 && !child.DiagnosticClassificationUsedAsProof;
+            bool corroboratingObservation = control && !unexpected && child.SocketOutcome != "CONNECTED" && !child.SocketBehaviorUsedAsProof;
+            loopbackProof = positivePolicyEvidence && reviewedDiagnosticGuard && corroboratingObservation;
+            NativeBoundary.Need(loopbackProof, "OS_LOOPBACK_ISOLATION_EVIDENCE_INCOMPLETE");
+            status = "OS_LOOPBACK_PATH_NOT_AUTHORIZED_PROVEN"; stage = "COMPLETE";
         }
         catch (BoundaryFailure e) { status = "FAIL_CLOSED"; stage = e.Message; nativeCode = e.NativeCode; }
         catch (Exception e) { status = "FAIL_CLOSED"; stage = "MANAGED_" + e.GetType().Name; }
         finally { listener.Stop(); boundary.Dispose(); }
 
-        if (!boundary.CleanupSucceeded) { status = "FAIL_CLOSED"; stage = "CLEANUP_INCOMPLETE"; osProof = false; }
-        var result = new ProofEvidence(ProofSchema, status, sourceHead, Predecessor, ExactNativeBoundaryBlob, ContractDigest,
-            profileName, packageSid, childSha, boundary.Token, boundary.JobLimitsVerified, exemptBefore, exemptAfter, control,
-            unexpected, child, boundary.ProcessCreated, boundary.ProcessExited, boundary.ExitCode, boundary.ProfileCreated,
-            boundary.ProfileRemoved, boundary.CleanupSucceeded, osProof && status == "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN",
-            false, false, false, false, false, false, false, stage == "COMPLETE" ? null : stage, nativeCode);
-        if (result.Status == "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN") ValidateProof(result);
+        if (!boundary.CleanupSucceeded) { status = "FAIL_CLOSED"; stage = "CLEANUP_INCOMPLETE"; loopbackProof = false; }
+        var result = new ProofEvidence(
+            Schema: ProofSchema,
+            Status: status,
+            SourceHead: sourceHead,
+            Predecessor: Predecessor,
+            NativeBoundaryBlob: ExactNativeBoundaryBlob,
+            ContractDigestSha256: ContractDigest,
+            LoopbackProofBasis: LoopbackProofBasis,
+            DiagnosticClassificationUsedAsProof: false,
+            SocketBehaviorUsedAsProof: false,
+            ProfileName: profileName,
+            PackageSid: packageSid,
+            ChildExecutableSha256: childSha,
+            Token: boundary.Token,
+            JobLimitsVerified: boundary.JobLimitsVerified,
+            LoopbackExemptBefore: exemptBefore,
+            LoopbackExemptAfter: exemptAfter,
+            NormalLoopbackControlConnected: control,
+            UnexpectedIsolatedConnectionObserved: unexpected,
+            Child: child,
+            ProcessCreated: boundary.ProcessCreated,
+            ProcessExited: boundary.ProcessExited,
+            ProcessExitCode: boundary.ExitCode,
+            ProfileCreated: boundary.ProfileCreated,
+            ProfileRemoved: boundary.ProfileRemoved,
+            CleanupSucceeded: boundary.CleanupSucceeded,
+            OsLoopbackIsolationProven: loopbackProof && status == "OS_LOOPBACK_PATH_NOT_AUTHORIZED_PROVEN",
+            SocketTimeoutPromotedToProof: false,
+            NetworkIsolationConfigMutated: false,
+            FirewallRuleMutated: false,
+            GlobalWindowsPolicyMutated: false,
+            ModelStarted: false,
+            GameAccessed: false,
+            ProductionProviderRegistered: false,
+            FailureStage: stage == "COMPLETE" ? null : stage,
+            FailureNativeCode: nativeCode);
+        if (result.Status == "OS_LOOPBACK_PATH_NOT_AUTHORIZED_PROVEN") ValidateProof(result);
         using (var file = new FileStream(evidenceFull, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             JsonSerializer.Serialize(file, result, new JsonSerializerOptions { WriteIndented = true });
         Console.WriteLine(JsonSerializer.Serialize(result));
-        return result.Status == "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN" ? 0 : 3;
+        return result.Status == "OS_LOOPBACK_PATH_NOT_AUTHORIZED_PROVEN" ? 0 : 3;
     }
 
     private static (string ProfileName, string PackageSid, nint PackageSidPtr) BoundaryIdentity(NativeBoundary boundary)
