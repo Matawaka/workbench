@@ -145,7 +145,7 @@ public static class MatawakaLuaLauncher
 
             bool luaElevated = IsElevated(lua);
             bool luaHasRestrictingSids = IsTokenRestricted(lua);
-            bool luaHasRestrictions = QueryDword(lua, TokenHasRestrictions) != 0;
+            bool luaHasRestrictions = QueryBoolean(lua, TokenHasRestrictions);
             int luaElevationType = QueryDword(lua, TokenElevationType);
             if (luaElevated)
                 throw new InvalidOperationException("LUA_TOKEN_STILL_ELEVATED");
@@ -205,6 +205,24 @@ public static class MatawakaLuaLauncher
     }
 
     private static bool IsElevated(IntPtr token) => QueryDword(token, TokenElevation) != 0;
+
+    private static bool QueryBoolean(IntPtr token, int informationClass)
+    {
+        IntPtr buffer = Marshal.AllocHGlobal(sizeof(int));
+        try
+        {
+            Marshal.WriteInt32(buffer, 0);
+            if (!GetTokenInformation(token, informationClass, buffer, sizeof(int), out uint returned))
+                ThrowWin32($"QUERY_TOKEN_INFORMATION_{informationClass}");
+            if (returned != 1 && returned != sizeof(int))
+                throw new InvalidOperationException($"TOKEN_BOOLEAN_SIZE_{informationClass}:{returned}");
+            return Marshal.ReadByte(buffer) != 0;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
 
     private static int QueryDword(IntPtr token, int informationClass)
     {
@@ -277,7 +295,7 @@ if (-not (Test-Path -LiteralPath $workingFull -PathType Container)) { throw "LUA
 $result = [MatawakaLuaLauncher]::Run($exeFull, $Arguments, $workingFull)
 $signedExitCode = [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$result.ExitCode), 0)
 [ordered]@{
-    schema = 'matawaka.windows-lua-parent-launch/v0.3'
+    schema = 'matawaka.windows-lua-parent-launch/v0.4'
     sourceElevated = $result.SourceElevated
     luaElevated = $result.LuaElevated
     luaElevationType = $result.LuaElevationType
