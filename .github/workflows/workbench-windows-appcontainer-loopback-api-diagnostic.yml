@@ -1,0 +1,116 @@
+name: Workbench Windows AppContainer Loopback API Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/LoopbackApiChildDiagnostic.cs
+      - integrations/model-invocation/windows-isolation-network-proof-v2/LoopbackApiChildDiagnostic.csproj
+      - .github/workflows/workbench-windows-appcontainer-loopback-api-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+  NATIVE_BOUNDARY_BLOB: 8a8f91a13c114e9c224cf449193800f0fedfdaf2
+  AUTHORIZATION: ISSUE-105-CURRENT-EXPLICIT-DEVELOPMENT
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact bounded diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR){throw 'diagnostic lineage mismatch'}
+          $native='integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs'
+          if((git rev-parse "$env:PREDECESSOR`:$native").Trim() -ne $env:NATIVE_BOUNDARY_BLOB -or (git hash-object -- $native).Trim() -ne $env:NATIVE_BOUNDARY_BLOB){throw 'pinned NativeBoundary mismatch'}
+          $child=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/LoopbackApiChildDiagnostic.cs -Raw
+          foreach($must in @('NetworkIsolationGetAppContainerConfig','NetworkIsolationDiagnoseConnectFailure','NetworkIsolationDiagnoseConnectFailureAndGetInfo','proofClaimed = false')){if(-not $child.Contains($must)){throw "child diagnostic marker absent: $must"}}
+          foreach($forbidden in @('NetworkIsolationSetAppContainerConfig','Dns.GetHost','HttpClient','SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','netsh advfirewall')){if($child.Contains($forbidden)){throw "forbidden diagnostic surface: $forbidden"}}
+          $observer=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/StderrDiagnostic.cs -Raw
+          if(-not $observer.Contains('ProofClaimed')){throw 'bounded observer missing'}
+          $launcher=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/RunWithSaferLuaToken.ps1 -Raw
+          foreach($must in @('SAFER_LEVELID_NORMALUSER','CreateRestrictedToken','LUA_TOKEN','CreateProcessWithTokenW')){if(-not $launcher.Contains($must)){throw "launcher marker absent: $must"}}
+          git diff --check "$env:PREDECESSOR...HEAD";if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host 'LOOPBACK_API_DIAGNOSTIC_GUARD_PASS'
+
+      - name: Build diagnostic child and observer
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $childOut=Join-Path $env:RUNNER_TEMP 'loopback-api-child'
+          $childObj=(Join-Path $env:RUNNER_TEMP 'loopback-api-child-obj')+'\'
+          dotnet publish .\integrations\model-invocation\windows-isolation-network-proof-v2\LoopbackApiChildDiagnostic.csproj -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -p:BaseIntermediateOutputPath=$childObj -o $childOut --nologo
+          if($LASTEXITCODE -ne 0){throw "diagnostic child build failed: $LASTEXITCODE"}
+          $observerOut=Join-Path $env:RUNNER_TEMP 'loopback-api-observer'
+          $observerObj=(Join-Path $env:RUNNER_TEMP 'loopback-api-observer-obj')+'\'
+          dotnet publish .\integrations\model-invocation\windows-isolation-network-proof-v2\StderrDiagnostic.csproj -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -p:BaseIntermediateOutputPath=$observerObj -o $observerOut --nologo
+          if($LASTEXITCODE -ne 0){throw "observer build failed: $LASTEXITCODE"}
+          foreach($name in @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')){if(-not(Test-Path (Join-Path $childOut $name) -PathType Leaf)){throw "diagnostic bundle missing: $name"}}
+          "child_out=$childOut" >> $env:GITHUB_OUTPUT;"observer_out=$observerOut" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare diagnostic AppContainer trial
+        id: trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $parent=Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-loopbackapi-'+[guid]::NewGuid().ToString('N'))
+          $trial=Join-Path $parent 'trial';New-Item -ItemType Directory -Path $trial|Out-Null
+          $names=@('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json');$files=[ordered]@{}
+          foreach($name in $names){Copy-Item (Join-Path '${{ steps.build.outputs.child_out }}' $name) (Join-Path $trial $name);$files[$name]=(Get-FileHash (Join-Path $trial $name) -Algorithm SHA256).Hash.ToLowerInvariant()}
+          [IO.File]::WriteAllText((Join-Path $trial 'allow-read.txt'),'SYNTHETIC_ALLOWED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\SetTrialOwnerOnly.ps1 -Trial $trial -BundleNames $names
+          if($LASTEXITCODE -ne 0){throw "trial normalization failed: $LASTEXITCODE"}
+          $manifest=Join-Path $parent 'BUNDLE.json';[ordered]@{schema='matawaka.workbench-network-proof-v2-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
+          "trial=$trial" >> $env:GITHUB_OUTPUT;"manifest=$manifest" >> $env:GITHUB_OUTPUT;"receipt=$(Join-Path $parent 'LOOPBACK-API.json')" >> $env:GITHUB_OUTPUT
+
+      - name: Run exact API diagnostic inside AppContainer
+        id: observe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path '${{ steps.build.outputs.observer_out }}' 'Workbench.AppContainerStderrDiagnostic.exe'
+          $args=@('--child-stderr-diagnostic','${{ steps.trial.outputs.trial }}','${{ steps.trial.outputs.manifest }}','${{ steps.trial.outputs.receipt }}','${{ github.sha }}',$env:AUTHORIZATION)
+          $code=& .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithSaferLuaToken.ps1 -Executable $exe -Arguments $args -WorkingDirectory '${{ github.workspace }}';$code=[int]$code
+          if(Test-Path '${{ steps.trial.outputs.receipt }}' -PathType Leaf){Get-Content '${{ steps.trial.outputs.receipt }}' -Raw|Write-Host}
+          if($code -ne 0){throw "loopback API observer failed closed: $code"}
+
+      - name: Verify and expose exact API results
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$path='${{ steps.trial.outputs.receipt }}';if(-not(Test-Path $path -PathType Leaf)){throw 'diagnostic receipt absent'};$r=Get-Content $path -Raw|ConvertFrom-Json
+          if($r.Schema -ne 'matawaka.workbench-appcontainer-child-stderr-diagnostic/v0.1' -or $r.SourceHead -ne '${{ github.sha }}' -or $r.NativeBoundaryBlob -ne $env:NATIVE_BOUNDARY_BLOB){throw 'observer binding mismatch'}
+          if($r.Token.AppContainer -ne $true -or $r.Token.Capabilities -ne 0 -or $r.Token.PackageMatches -ne $true -or $r.Token.LowIntegrity -ne $true -or $r.Token.Elevated -ne $false -or $r.Token.InOwnedJob -ne $true -or $r.JobLimitsVerified -ne $true){throw 'AppContainer token evidence incomplete'}
+          if($r.ProcessCreated -ne $true -or $r.ProcessExited -ne $true -or $r.ProcessExitCode -ne 0 -or $r.ProfileCreated -ne $true -or $r.ProfileRemoved -ne $true -or $r.CleanupSucceeded -ne $true){throw "diagnostic process/cleanup incomplete exit=$($r.ProcessExitCode)"}
+          if($r.ProofClaimed -ne $false -or $r.NetworkIsolationConfigMutated -ne $false -or $r.FirewallRuleMutated -ne $false -or $r.GlobalWindowsPolicyMutated -ne $false -or $r.ProductionProviderRegistered -ne $false){throw 'diagnostic widened effect/claim'}
+          if($r.StdoutBytes -le 0){throw "diagnostic stdout absent stderr=$($r.StderrUtf8)"}
+          $child=$r.StdoutUtf8|ConvertFrom-Json
+          if($child.schema -ne 'matawaka.workbench-appcontainer-loopback-api-diagnostic/v0.1' -or $child.target -ne '127.0.0.1' -or $child.proofClaimed -ne $false){throw 'child diagnostic payload mismatch'}
+          if($child.networkIsolationConfigMutated -ne $false -or $child.firewallRuleMutated -ne $false -or $child.globalWindowsPolicyMutated -ne $false){throw 'child diagnostic mutated policy'}
+          Write-Host ("APPCONTAINER_LOOPBACK_API_RESULT getConfigReturn={0} getConfigCount={1} diagnoseHasRequiredCapability={2} diagnoseInfoReturn={3} diagnoseInfoType={4} stderrBytes={5}" -f $child.getConfigReturn,$child.getConfigCount,$child.diagnoseHasRequiredCapability,$child.diagnoseInfoReturn,$child.diagnoseInfoType,$r.StderrBytes)
+
+      - name: Upload bounded diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-appcontainer-loopback-api-${{ github.sha }}
+          path: ${{ steps.trial.outputs.receipt }}
+          if-no-files-found: warn
+          retention-days: 30
