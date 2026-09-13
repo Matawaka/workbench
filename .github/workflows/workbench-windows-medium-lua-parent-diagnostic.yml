@@ -1,0 +1,78 @@
+name: Workbench Windows Medium LUA Parent Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/ProbeMediumLuaToken.ps1
+      - .github/workflows/workbench-windows-medium-lua-parent-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard bounded medium-token diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'diagnostic lineage mismatch' }
+          $s = Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/ProbeMediumLuaToken.ps1 -Raw
+          foreach ($must in @('CreateRestrictedToken','LUA_TOKEN','SetTokenInformation','S-1-16-8192','CreateProcessAsUser','proofClaimed = $false')) {
+            if (-not $s.Contains($must)) { throw "required medium-token marker absent: $must" }
+          }
+          foreach ($forbidden in @('LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')) {
+            if ($s.Contains($forbidden)) { throw "forbidden medium-token surface: $forbidden" }
+          }
+          git diff --check "$env:PREDECESSOR...HEAD"
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          Write-Host 'MEDIUM_LUA_DIAGNOSTIC_GUARD_PASS'
+
+      - name: Run medium-integrity LUA canary
+        id: medium
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $receipt = Join-Path $env:RUNNER_TEMP 'MEDIUM-LUA-DIAGNOSTIC.json'
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\ProbeMediumLuaToken.ps1 -Receipt $receipt
+          $code = $LASTEXITCODE
+          if (Test-Path $receipt -PathType Leaf) { Get-Content $receipt -Raw | Write-Host }
+          "receipt=$receipt" >> $env:GITHUB_OUTPUT
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          if ($code -ne 0) { throw "medium LUA diagnostic failed closed: $code" }
+
+      - name: Verify bounded result
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path='${{ steps.medium.outputs.receipt }}'
+          if (-not (Test-Path $path -PathType Leaf)) { throw 'medium LUA receipt absent' }
+          $r=Get-Content $path -Raw|ConvertFrom-Json
+          if ($r.schema -ne 'matawaka.windows-medium-lua-parent-diagnostic/v0.1') { throw 'schema mismatch' }
+          if ($r.proofClaimed -ne $false -or $r.productionProviderRegistered -ne $false) { throw 'diagnostic claimed authority' }
+          if ($r.credentialUsed -ne $false -or $r.userChanged -ne $false -or $r.firewallRuleMutated -ne $false -or $r.networkIsolationConfigMutated -ne $false -or $r.globalPolicyMutated -ne $false) { throw 'diagnostic widened effects' }
+          if ($r.luaElevated -ne $false -or $r.luaHasRestrictions -ne $true -or $r.luaIntegrityAfterRid -ne 8192 -or $r.mediumIntegrityApplied -ne $true) { throw 'medium LUA token evidence incomplete' }
+          if ($r.canaryExitCodeUnsigned -ne 0 -or $r.status -ne 'MEDIUM_LUA_CANARY_PASS') { throw "medium LUA canary not viable: status=$($r.status) code=$($r.canaryExitCodeUnsigned)" }
+          Write-Host 'MEDIUM_LUA_PARENT_CANDIDATE_VIABLE'
+
+      - name: Upload medium-token diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-medium-lua-parent-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/MEDIUM-LUA-DIAGNOSTIC.json
+          if-no-files-found: warn
+          retention-days: 30
