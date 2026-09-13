@@ -1,0 +1,58 @@
+name: Workbench Windows SAFER LUA WithToken Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/ProbeSaferLuaWithToken.ps1
+      - .github/workflows/workbench-windows-safer-lua-with-token-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Guard bounded chain WithToken diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'diagnostic lineage mismatch' }
+          $s=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/ProbeSaferLuaWithToken.ps1 -Raw
+          foreach($must in @('SaferComputeTokenFromLevel','SAFER_LEVELID_NORMALUSER','CreateRestrictedToken','LUA_TOKEN','CreateProcessWithTokenW','proofClaimed=$false')){if(-not $s.Contains($must)){throw "required marker absent: $must"}}
+          foreach($forbidden in @('SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')){if($s.Contains($forbidden)){throw "forbidden surface: $forbidden"}}
+          git diff --check "$env:PREDECESSOR...HEAD";if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+      - name: Run chain WithToken canary
+        id: probe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$receipt=Join-Path $env:RUNNER_TEMP 'SAFER-LUA-WITH-TOKEN.json'
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\ProbeSaferLuaWithToken.ps1 -Receipt $receipt
+          $code=$LASTEXITCODE;if(Test-Path $receipt){Get-Content $receipt -Raw|Write-Host};"receipt=$receipt" >> $env:GITHUB_OUTPUT;"exit_code=$code" >> $env:GITHUB_OUTPUT;if($code -ne 0){throw "chain WithToken failed closed: $code"}
+      - name: Verify chain WithToken candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$p='${{ steps.probe.outputs.receipt }}';if(-not(Test-Path $p)){throw 'receipt absent'};$r=Get-Content $p -Raw|ConvertFrom-Json
+          if($r.schema -ne 'matawaka.windows-safer-lua-with-token-diagnostic/v0.1'){throw 'schema mismatch'}
+          if($r.proofClaimed -ne $false -or $r.productionProviderRegistered -ne $false -or $r.credentialUsed -ne $false -or $r.userChanged -ne $false -or $r.saferPolicyMutated -ne $false -or $r.firewallRuleMutated -ne $false -or $r.networkIsolationConfigMutated -ne $false -or $r.globalPolicyMutated -ne $false){throw 'effect/authority widening'}
+          if($r.luaElevated -ne $false -or $r.luaHasRestrictions -ne $true -or $r.processCreated -ne $true -or $r.exitCodeUnsigned -ne 0 -or $r.status -ne 'SAFER_LUA_WITH_TOKEN_LAUNCHABLE'){throw "candidate not viable: error=$($r.createError) exit=$($r.exitCodeUnsigned) elevated=$($r.luaElevated)"}
+          Write-Host 'SAFER_LUA_WITH_TOKEN_PARENT_VIABLE'
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-safer-lua-with-token-${{ github.sha }}
+          path: ${{ runner.temp }}/SAFER-LUA-WITH-TOKEN.json
+          if-no-files-found: warn
+          retention-days: 30
