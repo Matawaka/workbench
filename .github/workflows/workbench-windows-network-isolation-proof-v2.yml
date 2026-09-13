@@ -87,7 +87,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $parent = Join-Path $env:RUNNER_TEMP ('windows-loopback-qualification-v4-repository-' + [guid]::NewGuid().ToString('N'))
+          $parent = Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-v4-repository-' + [guid]::NewGuid().ToString('N'))
           $trial = Join-Path $parent 'trial'
           New-Item -ItemType Directory -Path $trial | Out-Null
           $names = @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')
@@ -164,7 +164,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $parent = Join-Path $env:RUNNER_TEMP ('windows-loopback-qualification-v4-clean-' + [guid]::NewGuid().ToString('N'))
+          $parent = Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-v4-clean-' + [guid]::NewGuid().ToString('N'))
           $trial = Join-Path $parent 'trial'; New-Item -ItemType Directory -Path $trial | Out-Null
           $names = @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')
           $files=[ordered]@{}
