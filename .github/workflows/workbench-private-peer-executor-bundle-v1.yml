@@ -1,0 +1,123 @@
+name: Workbench Private Peer Executor Bundle v1
+
+on:
+  push:
+    branches:
+      - feat/workbench-private-peer-qualification-executor-v1
+    paths:
+      - integrations/model-invocation/windows-private-peer-proof-v1/executor/**
+      - .github/workflows/workbench-private-peer-executor-bundle-v1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QUALIFIED_COORDINATOR_HEAD: 8bb6ccad8a69d1c937ea9a6e65899aeff89dc1fd
+  COORDINATOR_SOURCE_SHA256: 8f59e72f2d5fa556acc39e5054abac5fcd6cf0a200e61bebb4d1b968df939288
+  COORDINATOR_PROJECT_SHA256: 1e4b7b4a0ee3ed8803ad4e55273ce8e43e7ef71e0227756a68a9fb4f4ccc8b21
+  QUALIFIED_PEER_HEAD: efff344bc1418e9b1da946a8493f854bf8ada9af
+  PEER_SOURCE_SHA256: b01ab34cd9923d34b72c4ca557ffb292cb9621a896be0fbbb020ddd88d8bc049
+  PEER_PROJECT_SHA256: 75889ad8634f9c8b127e28c65619d1b876e8ca05aff42e9c10e12805af8daa82
+  PEER_CONTRACT_SHA256: 793de6f7d0f68317d331b2e7e3eec20e02dcdd9acac5c665ceab633122aea1ca
+  NATIVE_BOUNDARY_BLOB: 8a8f91a13c114e9c224cf449193800f0fedfdaf2
+
+jobs:
+  linux-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard frozen source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$QUALIFIED_COORDINATOR_HEAD")" = "$QUALIFIED_COORDINATOR_HEAD"
+          test "$(git merge-base HEAD "$QUALIFIED_PEER_HEAD")" = "$QUALIFIED_PEER_HEAD"
+          test "$(sha256sum integrations/model-invocation/windows-private-peer-proof-v1/Program.cs | awk '{print $1}')" = "$COORDINATOR_SOURCE_SHA256"
+          test "$(sha256sum integrations/model-invocation/windows-private-peer-proof-v1/PrivatePeerProofV1.csproj | awk '{print $1}')" = "$COORDINATOR_PROJECT_SHA256"
+          test "$(sha256sum integrations/model-invocation/windows-private-peer-executor-v1/Program.cs | awk '{print $1}')" = "$PEER_SOURCE_SHA256"
+          test "$(sha256sum integrations/model-invocation/windows-private-peer-executor-v1/PrivatePeerListener.csproj | awk '{print $1}')" = "$PEER_PROJECT_SHA256"
+          test "$(sha256sum integrations/model-invocation/windows-private-peer-executor-v1/PEER_CONTRACT.json | awk '{print $1}')" = "$PEER_CONTRACT_SHA256"
+          test "$(git hash-object integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs)" = "$NATIVE_BOUNDARY_BLOB"
+          git diff --check "$QUALIFIED_COORDINATOR_HEAD...HEAD"
+          echo PRIVATE_PEER_EXECUTOR_FROZEN_IDENTITIES_PASS
+
+      - name: Parse Mac provisioning script without executing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n integrations/model-invocation/windows-private-peer-proof-v1/executor/mac-peer.sh
+          src="$(cat integrations/model-invocation/windows-private-peer-proof-v1/executor/mac-peer.sh)"
+          for must in '10.77.0.1' '10.77.0.2' '255.255.255.252' '41060' '41061' 'PRIVATE_PEER_PROTOCOL_V1_PURE_CONTROLS_PASS' 'proofClaimed": false'; do
+            grep -Fq "$must" <<<"$src"
+          done
+          grep -Fq 'refusing to reconfigure the default-route interface' <<<"$src"
+          echo PRIVATE_PEER_EXECUTOR_MAC_SCRIPT_PARSE_PASS
+
+  windows-static-and-coordinator:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Parse PowerShell executor scripts without executing network trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $paths=@(
+            'integrations/model-invocation/windows-private-peer-proof-v1/executor/Prepare-WindowsProofNode.ps1',
+            'integrations/model-invocation/windows-private-peer-proof-v1/executor/Run-WindowsPrivatePeerTrial.ps1'
+          )
+          foreach($path in $paths){
+            $tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors)
+            if($errors.Count -ne 0){$errors|ForEach-Object{Write-Error $_.Message};throw "PowerShell parse failed: $path"}
+          }
+          $runner=Get-Content $paths[1] -Raw
+          if($runner -match 'Test-NetConnection|Invoke-WebRequest|Invoke-RestMethod|curl.exe|telnet|nc.exe'){throw 'pre-trial network probe surface found in runner'}
+          foreach($must in @('-ExecuteQualifiedTrial','ISSUE-107-CONTROLLED-EXECUTOR-TRIAL','DiagnoseInfoType -ne 1','ChildWindowAcceptedConnections -ne 0','ProductionProviderRegistered -ne $false')){if(-not $runner.Contains($must)){throw "runner guard marker absent: $must"}}
+          Write-Host 'PRIVATE_PEER_EXECUTOR_POWERSHELL_PARSE_PASS'
+
+      - name: Re-run qualified coordinator pure controls after bundle-only changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((Get-FileHash 'integrations/model-invocation/windows-private-peer-proof-v1/Program.cs' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:COORDINATOR_SOURCE_SHA256){throw 'coordinator source drift'}
+          if((Get-FileHash 'integrations/model-invocation/windows-private-peer-proof-v1/PrivatePeerProofV1.csproj' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:COORDINATOR_PROJECT_SHA256){throw 'coordinator project drift'}
+          $out=Join-Path $env:RUNNER_TEMP 'private-peer-executor-coordinator-v1'
+          dotnet publish '.\integrations\model-invocation\windows-private-peer-proof-v1\PrivatePeerProofV1.csproj' -c Release -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          if($LASTEXITCODE -ne 0){throw "publish failed: $LASTEXITCODE"}
+          $line=(& (Join-Path $out 'Workbench.AppContainerProbe.exe') --unit | Select-Object -Last 1)
+          Write-Host $line
+          $r=$line|ConvertFrom-Json
+          if($r.status -ne 'PRIVATE_PEER_PROOF_COORDINATOR_V1_PURE_CONTROLS_PASS' -or $r.passed -ne 52 -or $r.networkCalls -ne $false -or $r.proofClaimed -ne $false){throw 'coordinator pure receipt mismatch'}
+          Write-Host 'PRIVATE_PEER_EXECUTOR_COORDINATOR_PURE_RECHECK_PASS'
+
+      - name: Emit bundle non-trial receipt
+        shell: pwsh
+        run: |
+          [ordered]@{
+            schema='matawaka.private-peer-executor-bundle/v0.1'
+            head='${{ github.sha }}'
+            coordinatorSourceSha256=$env:COORDINATOR_SOURCE_SHA256
+            peerSourceSha256=$env:PEER_SOURCE_SHA256
+            peerContractSha256=$env:PEER_CONTRACT_SHA256
+            nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB
+            proofNodeAddress='10.77.0.1'
+            peerAddress='10.77.0.2'
+            networkTrialExecuted=$false
+            proofClaimed=$false
+            productionProviderRegistered=$false
+          }|ConvertTo-Json -Compress|Write-Host
