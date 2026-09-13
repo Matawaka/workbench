@@ -1,0 +1,71 @@
+name: Workbench Private Peer Protocol v1
+
+on:
+  push:
+    branches:
+      - feat/workbench-private-peer-qualification-executor-v1
+    paths:
+      - integrations/model-invocation/windows-private-peer-executor-v1/**
+      - .github/workflows/workbench-private-peer-protocol-v1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PREDECESSOR: 074a6fde73c6ed3872271f86c0aa201c68b16224
+
+jobs:
+  qualify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact peer contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR){throw 'peer protocol does not descend from exact #106 diagnostic head'}
+          $source=Get-Content integrations/model-invocation/windows-private-peer-executor-v1/Program.cs -Raw
+          foreach($must in @('10.77.0.2','10.77.0.1','ManagementPort = 41060','TargetPort = 41061','BEGIN','CONTROL','ARM','FINALIZE','CryptographicOperations.FixedTimeEquals','ChildWindowAcceptedConnections','ProofClaimed')){if(-not $source.Contains($must)){throw "peer protocol marker absent: $must"}}
+          foreach($forbidden in @('Dns.GetHost','HttpClient','Process.Start','NetworkIsolationSetAppContainerConfig','netsh','Set-NetIP','New-Net','Add-Net','route.exe','169.254.169.254')){if($source.Contains($forbidden)){throw "forbidden peer protocol surface: $forbidden"}}
+          $contract=Get-Content integrations/model-invocation/windows-private-peer-executor-v1/PEER_CONTRACT.json -Raw|ConvertFrom-Json
+          if($contract.schema -ne 'matawaka.private-peer-executor-contract/v0.1' -or $contract.subnet -ne '10.77.0.0/30' -or $contract.proofNodeAddress -ne '10.77.0.1' -or $contract.peerAddress -ne '10.77.0.2' -or $contract.managementPort -ne 41060 -or $contract.targetPort -ne 41061){throw 'peer topology contract mismatch'}
+          if($contract.childWindowAcceptedConnectionsForPass -ne 0 -or $contract.dnsUsed -ne $false -or $contract.internetTargetUsed -ne $false -or $contract.externalServiceUsed -ne $false -or $contract.networkConfigurationMutatedByQualification -ne $false -or $contract.proofClaimedByPeer -ne $false){throw 'peer non-effects contract mismatch'}
+          git diff --check "$env:PREDECESSOR...HEAD";if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host "PRIVATE_PEER_PROTOCOL_V1_GUARD_PASS os=${{ matrix.os }}"
+
+      - name: Build and run pure hostile qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $project='.\integrations\model-invocation\windows-private-peer-executor-v1\PrivatePeerListener.csproj'
+          $out=Join-Path $env:RUNNER_TEMP 'private-peer-protocol-v1'
+          dotnet publish $project -c Release -p:DebugType=None -p:DebugSymbols=false -o $out --nologo
+          if($LASTEXITCODE -ne 0){throw "peer publish failed: $LASTEXITCODE"}
+          $exe=if($IsWindows){Join-Path $out 'Workbench.PrivatePeerListener.exe'}else{Join-Path $out 'Workbench.PrivatePeerListener'}
+          if(-not(Test-Path $exe -PathType Leaf)){throw "peer executable absent: $exe"}
+          $output=& $exe --unit
+          if($LASTEXITCODE -ne 0){throw "peer pure qualification failed: $LASTEXITCODE"}
+          $line=($output|Select-Object -Last 1);Write-Host $line;$r=$line|ConvertFrom-Json
+          if($r.status -ne 'PRIVATE_PEER_PROTOCOL_V1_PURE_CONTROLS_PASS' -or $r.passed -lt 20 -or $r.networkCalls -ne $false){throw 'peer pure-control receipt mismatch'}
+          Write-Host "PRIVATE_PEER_PROTOCOL_V1_PURE_PASS os=${{ matrix.os }} passed=$($r.passed)"
+
+      - name: Emit source identity
+        shell: pwsh
+        run: |
+          $source=(Get-FileHash integrations/model-invocation/windows-private-peer-executor-v1/Program.cs -Algorithm SHA256).Hash.ToLowerInvariant()
+          $contract=(Get-FileHash integrations/model-invocation/windows-private-peer-executor-v1/PEER_CONTRACT.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          [ordered]@{schema='matawaka.private-peer-protocol-v1-source/v0.1';head='${{ github.sha }}';os='${{ matrix.os }}';sourceSha256=$source;contractSha256=$contract;networkTrialExecuted=$false;proofClaimed=$false}|ConvertTo-Json -Compress|Write-Host
