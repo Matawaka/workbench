@@ -1,0 +1,83 @@
+name: Workbench Windows Parent Token Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/ProbeLinkedToken.ps1
+      - .github/workflows/workbench-windows-parent-token-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard bounded diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'diagnostic does not descend from #104 exact head' }
+          $script = Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/ProbeLinkedToken.ps1 -Raw
+          foreach ($must in @('TokenElevationType','TokenLinkedToken','CreateProcessAsUser','proofClaimed = $false','productionProviderRegistered = $false')) {
+            if (-not $script.Contains($must)) { throw "diagnostic marker absent: $must" }
+          }
+          foreach ($forbidden in @('LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')) {
+            if ($script.Contains($forbidden)) { throw "forbidden diagnostic surface: $forbidden" }
+          }
+          git diff --check "$env:PREDECESSOR...HEAD"
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+          Write-Host 'PARENT_TOKEN_DIAGNOSTIC_GUARD_PASS'
+
+      - name: Observe exact parent token and linked token
+        id: diagnostic
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $receipt = Join-Path $env:RUNNER_TEMP 'PARENT-TOKEN-DIAGNOSTIC.json'
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\ProbeLinkedToken.ps1 -Receipt $receipt
+          $code = $LASTEXITCODE
+          if (Test-Path $receipt -PathType Leaf) { Get-Content $receipt -Raw | Write-Host }
+          "receipt=$receipt" >> $env:GITHUB_OUTPUT
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          if ($code -ne 0) { throw "parent token diagnostic failed closed: $code" }
+
+      - name: Verify diagnostic semantics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = '${{ steps.diagnostic.outputs.receipt }}'
+          if (-not (Test-Path $path -PathType Leaf)) { throw 'parent token diagnostic receipt absent' }
+          $r = Get-Content $path -Raw | ConvertFrom-Json
+          if ($r.schema -ne 'matawaka.windows-parent-token-diagnostic/v0.1') { throw 'diagnostic schema mismatch' }
+          if ($r.proofClaimed -ne $false -or $r.productionProviderRegistered -ne $false) { throw 'diagnostic claimed authority' }
+          if ($r.credentialUsed -ne $false -or $r.userChanged -ne $false -or $r.firewallRuleMutated -ne $false -or $r.networkIsolationConfigMutated -ne $false -or $r.globalPolicyMutated -ne $false) { throw 'diagnostic widened effects' }
+          if ($r.sourceElevationType -eq 1) {
+            if ($r.linkedTokenPresent -ne $false -or $null -ne $r.linkedCanaryExitCode) { throw 'default elevation type contradicted by linked-token observation' }
+            if ($r.status -ne 'DIAGNOSTIC_NO_LINKED_TOKEN_SOURCE_DEFAULT') { throw 'default-token status mismatch' }
+          } else {
+            if ($r.linkedTokenPresent -ne $true) { throw 'linked token expected but absent' }
+            if ($r.linkedCanaryExitCode -ne 0) { throw "linked token canary did not initialize: $($r.linkedCanaryExitCode)" }
+          }
+          Write-Host ("PARENT_TOKEN_DIAGNOSTIC_VERIFIED status={0} userRid={1} sourceElevationType={2} linked={3}" -f $r.status,$r.userRid,$r.sourceElevationType,$r.linkedTokenPresent)
+
+      - name: Upload diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-parent-token-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/PARENT-TOKEN-DIAGNOSTIC.json
+          if-no-files-found: warn
+          retention-days: 30
