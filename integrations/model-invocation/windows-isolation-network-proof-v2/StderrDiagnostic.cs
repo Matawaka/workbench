@@ -36,12 +36,14 @@ internal static class StderrDiagnostic
 
     private static int Main(string[] args)
     {
-        if (args.Length != 5 || args[0] != "--child-stderr-diagnostic" || args[4] != Authorization || !IsHex(args[3], 40))
+        if (args.Length != 6 || args[0] != "--child-stderr-diagnostic" || args[5] != Authorization || !IsHex(args[4], 40))
             return 64;
 
         string root = NativeBoundary.ValidateRoot(args[1]);
         string manifestPath = Path.GetFullPath(args[2]);
-        string sourceHead = args[3];
+        string receiptPath = Path.GetFullPath(args[3]);
+        string sourceHead = args[4];
+        if (File.Exists(receiptPath)) throw new BoundaryFailure("DIAGNOSTIC_CREATE_ONLY_RECEIPT_REQUIRED");
         using var manifest = JsonDocument.Parse(File.ReadAllBytes(manifestPath));
         var hashes = manifest.RootElement.GetProperty("files").EnumerateObject()
             .ToDictionary(p => p.Name, p => p.Value.GetString()!);
@@ -104,6 +106,8 @@ internal static class StderrDiagnostic
             failure,
             native);
 
+        using (var file = new FileStream(receiptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            JsonSerializer.Serialize(file, receipt, new JsonSerializerOptions { WriteIndented = true });
         Console.WriteLine(JsonSerializer.Serialize(receipt));
         return boundary.Token is not null && boundary.JobLimitsVerified && boundary.ProcessCreated && boundary.ProcessExited &&
                boundary.ProfileCreated && boundary.ProfileRemoved && boundary.CleanupSucceeded ? 0 : 3;
