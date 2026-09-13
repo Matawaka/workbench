@@ -16,9 +16,9 @@ internal static class NetworkProofV2
     private const string Predecessor = "c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a";
     private const string ExactNativeBoundaryBlob = "8a8f91a13c114e9c224cf449193800f0fedfdaf2";
     private const string ProfilePrefix = "Matawaka.IsolationProbe.";
-    private const string ChildSchema = "matawaka.workbench-appcontainer-network-child/v0.2";
-    private const string ProofSchema = "matawaka.workbench-windows-network-isolation-proof/v0.2";
-    private const string ContractJson = "{\"schema\":\"matawaka.workbench-windows-host-network-profile/v0.2\",\"nativeBoundaryBlob\":\"8a8f91a13c114e9c224cf449193800f0fedfdaf2\",\"appContainerCapabilities\":0,\"loopbackExemptionRequired\":false,\"childProcessRestricted\":true,\"jobActiveProcessLimit\":1,\"jobProcessMemoryBytes\":536870912,\"killOnJobClose\":true,\"dieOnUnhandledException\":true,\"networkTarget\":\"127.0.0.1\",\"requiredMissingCapability\":\"PRIVATE_NETWORK\",\"socketTimeoutMilliseconds\":1000,\"timeoutAloneIsProof\":false}";
+    private const string ChildSchema = "matawaka.workbench-appcontainer-network-child/v0.3";
+    private const string ProofSchema = "matawaka.workbench-windows-network-isolation-proof/v0.3";
+    private const string ContractJson = "{\"schema\":\"matawaka.workbench-windows-host-network-profile/v0.3\",\"nativeBoundaryBlob\":\"8a8f91a13c114e9c224cf449193800f0fedfdaf2\",\"appContainerCapabilities\":0,\"loopbackExemptionRequired\":false,\"loopbackExemptionObservations\":[\"beforeNativeStart\",\"afterChildExit\"],\"childProcessRestricted\":true,\"jobActiveProcessLimit\":1,\"jobProcessMemoryBytes\":536870912,\"killOnJobClose\":true,\"dieOnUnhandledException\":true,\"networkTarget\":\"127.0.0.1\",\"requiredMissingCapability\":\"PRIVATE_NETWORK\",\"socketTimeoutMilliseconds\":1000,\"timeoutAloneIsProof\":false}";
     private static readonly string ContractDigest = Hash(Encoding.UTF8.GetBytes(ContractJson));
 
     private sealed record ChildEvidence(
@@ -26,7 +26,6 @@ internal static class NetworkProofV2
         string ContractDigestSha256,
         string PackageSid,
         int CapabilityCount,
-        bool LoopbackExemptDuring,
         bool DiagnoseHasRequiredCapability,
         uint DiagnoseInfoReturn,
         int DiagnoseInfoType,
@@ -87,13 +86,12 @@ internal static class NetworkProofV2
     private static int Unit()
     {
         var pass = 0;
-        var validChild = new ChildEvidence(ChildSchema, ContractDigest, "S-1-15-2-1", 0, false, false, 0, 1,
+        var validChild = new ChildEvidence(ChildSchema, ContractDigest, "S-1-15-2-1", 0, false, 0, 1,
             "TIMEOUT", null, true, true, true, true, 5);
         ValidateChild(validChild); pass++;
         foreach (var bad in new[]
         {
             validChild with { CapabilityCount = 1 },
-            validChild with { LoopbackExemptDuring = true },
             validChild with { DiagnoseHasRequiredCapability = true },
             validChild with { DiagnoseInfoReturn = 5 },
             validChild with { DiagnoseInfoType = 0 },
@@ -126,6 +124,7 @@ internal static class NetworkProofV2
         foreach (var bad in new[]
         {
             validProof with { LoopbackExemptBefore = true, OsNetworkIsolationProven = false },
+            validProof with { LoopbackExemptAfter = true, OsNetworkIsolationProven = false },
             validProof with { LoopbackExemptAfter = null, OsNetworkIsolationProven = false },
             validProof with { Token = token with { Capabilities = 1 }, OsNetworkIsolationProven = false },
             validProof with { PackageSid = "S-1-15-2-9", OsNetworkIsolationProven = false },
@@ -154,7 +153,6 @@ internal static class NetworkProofV2
         NativeBoundary.Need(c.ContractDigestSha256 == ContractDigest, "CHILD_CONTRACT_BINDING");
         NativeBoundary.Need(c.PackageSid.StartsWith("S-1-15-2-", StringComparison.Ordinal), "CHILD_PACKAGE_SID");
         NativeBoundary.Need(c.CapabilityCount == 0, "CHILD_CAPABILITY_COUNT");
-        NativeBoundary.Need(!c.LoopbackExemptDuring, "CHILD_LOOPBACK_EXEMPT");
         NativeBoundary.Need(!c.DiagnoseHasRequiredCapability, "WINDOWS_DIAG_CAPABILITY_PRESENT");
         NativeBoundary.Need(c.DiagnoseInfoReturn == 0, "WINDOWS_DIAG_INFO_FAILED");
         // Strict initial classification for 127.0.0.1. Do not broaden merely to obtain GREEN.
@@ -170,7 +168,7 @@ internal static class NetworkProofV2
         NativeBoundary.Need(bytes.Length is > 0 and <= 8192, "CHILD_RECEIPT_SIZE");
         using var doc = JsonDocument.Parse(bytes);
         NativeBoundary.Need(doc.RootElement.ValueKind == JsonValueKind.Object, "CHILD_RECEIPT_OBJECT");
-        string[] expected = ["Schema", "ContractDigestSha256", "PackageSid", "CapabilityCount", "LoopbackExemptDuring",
+        string[] expected = ["Schema", "ContractDigestSha256", "PackageSid", "CapabilityCount",
             "DiagnoseHasRequiredCapability", "DiagnoseInfoReturn", "DiagnoseInfoType", "SocketOutcome", "SocketCode",
             "ReadAllowed", "ReadDenied", "WriteDenied", "ChildDenied", "ChildErrorCode"];
         var names = doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray();
@@ -230,10 +228,9 @@ internal static class NetworkProofV2
         catch (System.ComponentModel.Win32Exception e) { childErrorCode = e.NativeErrorCode; childDenied = e.NativeErrorCode is 5 or 367; }
 
         string packageSid = CurrentPackageSid(out int capabilityCount);
-        bool exempt = IsLoopbackExempt(packageSid);
         uint hasRequired = NetworkIsolationDiagnoseConnectFailure("127.0.0.1");
         uint infoReturn = NetworkIsolationDiagnoseConnectFailureAndGetInfo("127.0.0.1", out int infoType);
-        var result = new ChildEvidence(ChildSchema, ContractDigest, packageSid, capabilityCount, exempt, hasRequired != 0,
+        var result = new ChildEvidence(ChildSchema, ContractDigest, packageSid, capabilityCount, hasRequired != 0,
             infoReturn, infoType, socketOutcome, socketCode, readAllowed, readDenied, writeDenied, childDenied, childErrorCode);
         Console.WriteLine(JsonSerializer.Serialize(result));
         try { ValidateChild(result); return 0; } catch { return 2; }
@@ -281,7 +278,7 @@ internal static class NetworkProofV2
             NativeBoundary.Need(boundary.JobLimitsVerified, "JOB_EVIDENCE_ABSENT");
             NativeBoundary.Need(child.PackageSid == packageSid, "CHILD_PROFILE_SID_MISMATCH");
             stage = "LOOPBACK_CONFIG_AFTER"; exemptAfter = IsLoopbackExempt(packageSidPtr); NativeBoundary.Need(exemptAfter == false, "LOOPBACK_EXEMPT_AFTER");
-            osProof = child.CapabilityCount == 0 && !child.LoopbackExemptDuring && !child.DiagnoseHasRequiredCapability && child.DiagnoseInfoReturn == 0 && child.DiagnoseInfoType == 1 && child.SocketOutcome != "CONNECTED" && !unexpected;
+            osProof = exemptBefore == false && exemptAfter == false && child.CapabilityCount == 0 && !child.DiagnoseHasRequiredCapability && child.DiagnoseInfoReturn == 0 && child.DiagnoseInfoType == 1 && child.SocketOutcome != "CONNECTED" && !unexpected;
             NativeBoundary.Need(osProof, "OS_NETWORK_ISOLATION_EVIDENCE_INCOMPLETE");
             status = "OS_NETWORK_PATH_NOT_AUTHORIZED_PROVEN"; stage = "COMPLETE";
         }
@@ -325,12 +322,6 @@ internal static class NetworkProofV2
             return new SecurityIdentifier(sidPtr).Value;
         }
         finally { CloseHandle(token); }
-    }
-
-    private static bool IsLoopbackExempt(string sid)
-    {
-        Win(ConvertStringSidToSid(sid, out nint ptr), "LOOPBACK_SID_PARSE");
-        try { return IsLoopbackExempt(ptr); } finally { LocalFree(ptr); }
     }
 
     private static bool IsLoopbackExempt(nint sid)
@@ -400,9 +391,7 @@ internal static class NetworkProofV2
     [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool HeapFree(nint heap, uint flags, nint memory);
     [DllImport("kernel32.dll")] private static extern nint GetCurrentProcess();
     [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CloseHandle(nint handle);
-    [DllImport("kernel32.dll")] private static extern nint LocalFree(nint memory);
     [DllImport("advapi32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool OpenProcessToken(nint process, uint access, out nint token);
     [DllImport("advapi32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetTokenInformation(nint token, int kind, nint data, uint size, out uint returned);
-    [DllImport("advapi32.dll", EntryPoint = "ConvertStringSidToSidW", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ConvertStringSidToSid(string text, out nint sid);
     [DllImport("advapi32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool EqualSid(nint a, nint b);
 }
