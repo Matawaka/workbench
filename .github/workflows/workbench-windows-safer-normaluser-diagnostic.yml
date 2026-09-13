@@ -1,0 +1,82 @@
+name: Workbench Windows SAFER NormalUser Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/ProbeSaferNormalUser.ps1
+      - .github/workflows/workbench-windows-safer-normaluser-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard bounded SAFER diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'diagnostic lineage mismatch' }
+          $s=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/ProbeSaferNormalUser.ps1 -Raw
+          foreach($must in @('SaferCreateLevel','SaferComputeTokenFromLevel','SAFER_LEVELID_NORMALUSER','CreateProcessAsUserW','CreateProcessWithTokenW','proofClaimed=$false')) {
+            if(-not $s.Contains($must)){throw "required SAFER marker absent: $must"}
+          }
+          foreach($forbidden in @('SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','Set-ItemProperty','reg.exe','net user','NetworkIsolationSetAppContainerConfig','netsh advfirewall')) {
+            if($s.Contains($forbidden)){throw "forbidden SAFER surface: $forbidden"}
+          }
+          git diff --check "$env:PREDECESSOR...HEAD"
+          if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host 'SAFER_NORMALUSER_DIAGNOSTIC_GUARD_PASS'
+
+      - name: Run SAFER NormalUser canaries
+        id: probe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $receipt=Join-Path $env:RUNNER_TEMP 'SAFER-NORMALUSER-DIAGNOSTIC.json'
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\ProbeSaferNormalUser.ps1 -Receipt $receipt
+          $code=$LASTEXITCODE
+          if(Test-Path $receipt -PathType Leaf){Get-Content $receipt -Raw|Write-Host}
+          "receipt=$receipt" >> $env:GITHUB_OUTPUT
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          if($code -ne 0){throw "SAFER diagnostic failed closed: $code"}
+
+      - name: Verify bounded result
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $path='${{ steps.probe.outputs.receipt }}'
+          if(-not(Test-Path $path -PathType Leaf)){throw 'SAFER receipt absent'}
+          $r=Get-Content $path -Raw|ConvertFrom-Json
+          if($r.schema -ne 'matawaka.windows-safer-normaluser-diagnostic/v0.1'){throw 'SAFER schema mismatch'}
+          if($r.proofClaimed -ne $false -or $r.productionProviderRegistered -ne $false){throw 'diagnostic claimed authority'}
+          if($r.credentialUsed -ne $false -or $r.userChanged -ne $false -or $r.saferPolicyMutated -ne $false -or $r.firewallRuleMutated -ne $false -or $r.networkIsolationConfigMutated -ne $false -or $r.globalPolicyMutated -ne $false){throw 'diagnostic widened effects'}
+          if($r.saferTokenCreated -ne $true){throw 'SAFER token absent'}
+          $asUserPass=$r.asUserCreated -eq $true -and $r.asUserExitCode -eq 0
+          $withTokenPass=$r.withTokenCreated -eq $true -and $r.withTokenExitCode -eq 0
+          if(-not($asUserPass -or $withTokenPass) -or $r.status -ne 'SAFER_NORMALUSER_LAUNCHABLE'){
+            throw "SAFER token not launchable: elevated=$($r.saferElevated) il=$($r.saferIntegrityRid) asUserCreated=$($r.asUserCreated) asUserError=$($r.asUserCreateError) asUserExit=$($r.asUserExitCode) withTokenCreated=$($r.withTokenCreated) withTokenError=$($r.withTokenCreateError) withTokenExit=$($r.withTokenExitCode)"
+          }
+          Write-Host ("SAFER_NORMALUSER_PARENT_CANDIDATE_VIABLE elevated={0} il={1} restrictions={2}/{3}" -f $r.saferElevated,$r.saferIntegrityRid,$r.saferHasRestrictions,$r.saferHasRestrictingSids)
+
+      - name: Upload SAFER diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-safer-normaluser-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/SAFER-NORMALUSER-DIAGNOSTIC.json
+          if-no-files-found: warn
+          retention-days: 30
