@@ -1,0 +1,115 @@
+name: Workbench Windows AppContainer Child Stderr Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-network-isolation-proof-v2
+    paths:
+      - integrations/model-invocation/windows-isolation-network-proof-v2/StderrDiagnostic.cs
+      - integrations/model-invocation/windows-isolation-network-proof-v2/StderrDiagnostic.csproj
+      - .github/workflows/workbench-windows-appcontainer-child-stderr-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PREDECESSOR: c4c0d2287ae944fd65d046e2ce6451d6e9d92d4a
+  NATIVE_BOUNDARY_BLOB: 8a8f91a13c114e9c224cf449193800f0fedfdaf2
+  AUTHORIZATION: ISSUE-105-CURRENT-EXPLICIT-DEVELOPMENT
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard bounded observer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR) { throw 'diagnostic lineage mismatch' }
+          $native='integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs'
+          if((git rev-parse "$env:PREDECESSOR`:$native").Trim() -ne $env:NATIVE_BOUNDARY_BLOB -or (git hash-object -- $native).Trim() -ne $env:NATIVE_BOUNDARY_BLOB){throw 'pinned NativeBoundary mismatch'}
+          $observer=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/StderrDiagnostic.cs -Raw
+          foreach($must in @('DIAGNOSTIC_STREAM_LIMIT','ProofClaimed','NetworkIsolationConfigMutated','ProductionProviderRegistered')){if(-not $observer.Contains($must)){throw "observer marker absent: $must"}}
+          foreach($forbidden in @('NetworkIsolationSetAppContainerConfig','Dns.GetHost','HttpClient','SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','netsh advfirewall')){if($observer.Contains($forbidden)){throw "observer forbidden surface: $forbidden"}}
+          $launcher=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/RunWithSaferLuaToken.ps1 -Raw
+          foreach($must in @('SAFER_LEVELID_NORMALUSER','CreateRestrictedToken','LUA_TOKEN','CreateProcessWithTokenW','saferPolicyMutated = $false')){if(-not $launcher.Contains($must)){throw "launcher marker absent: $must"}}
+          git diff --check "$env:PREDECESSOR...HEAD";if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host 'CHILD_STDERR_OBSERVER_GUARD_PASS'
+
+      - name: Build child and observer
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $childOut=Join-Path $env:RUNNER_TEMP 'stderr-diagnostic-child'
+          dotnet publish .\integrations\model-invocation\windows-isolation-network-proof-v2\NetworkProofV2.csproj -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -o $childOut --nologo
+          if($LASTEXITCODE -ne 0){throw "child build failed: $LASTEXITCODE"}
+          & (Join-Path $childOut 'Workbench.AppContainerProbe.exe') --unit
+          if($LASTEXITCODE -ne 0){throw "child pure controls failed: $LASTEXITCODE"}
+          $observerOut=Join-Path $env:RUNNER_TEMP 'stderr-diagnostic-parent'
+          $observerObj=(Join-Path $env:RUNNER_TEMP 'stderr-diagnostic-obj')+'\'
+          dotnet publish .\integrations\model-invocation\windows-isolation-network-proof-v2\StderrDiagnostic.csproj -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -p:BaseIntermediateOutputPath=$observerObj -o $observerOut --nologo
+          if($LASTEXITCODE -ne 0){throw "observer build failed: $LASTEXITCODE"}
+          if(-not(Test-Path (Join-Path $observerOut 'Workbench.AppContainerStderrDiagnostic.exe') -PathType Leaf)){throw 'observer executable absent'}
+          "child_out=$childOut" >> $env:GITHUB_OUTPUT;"observer_out=$observerOut" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare exact disposable trial
+        id: trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $parent=Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-stderr-'+[guid]::NewGuid().ToString('N'))
+          $trial=Join-Path $parent 'trial';New-Item -ItemType Directory -Path $trial|Out-Null
+          $names=@('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json');$files=[ordered]@{}
+          foreach($name in $names){Copy-Item (Join-Path '${{ steps.build.outputs.child_out }}' $name) (Join-Path $trial $name);$files[$name]=(Get-FileHash (Join-Path $trial $name) -Algorithm SHA256).Hash.ToLowerInvariant()}
+          [IO.File]::WriteAllText((Join-Path $trial 'allow-read.txt'),'SYNTHETIC_ALLOWED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\SetTrialOwnerOnly.ps1 -Trial $trial -BundleNames $names
+          if($LASTEXITCODE -ne 0){throw "trial normalization failed: $LASTEXITCODE"}
+          $manifest=Join-Path $parent 'BUNDLE.json';[ordered]@{schema='matawaka.workbench-network-proof-v2-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
+          "trial=$trial" >> $env:GITHUB_OUTPUT;"manifest=$manifest" >> $env:GITHUB_OUTPUT;"receipt=$(Join-Path $parent 'CHILD-STDERR.json')" >> $env:GITHUB_OUTPUT
+
+      - name: Observe child stderr through proven SAFER-LUA parent
+        id: observe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path '${{ steps.build.outputs.observer_out }}' 'Workbench.AppContainerStderrDiagnostic.exe'
+          $args=@('--child-stderr-diagnostic','${{ steps.trial.outputs.trial }}','${{ steps.trial.outputs.manifest }}','${{ steps.trial.outputs.receipt }}','${{ github.sha }}',$env:AUTHORIZATION)
+          $code=& .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithSaferLuaToken.ps1 -Executable $exe -Arguments $args -WorkingDirectory '${{ github.workspace }}';$code=[int]$code
+          if(Test-Path '${{ steps.trial.outputs.receipt }}' -PathType Leaf){Get-Content '${{ steps.trial.outputs.receipt }}' -Raw|Write-Host}
+          if($code -ne 0){throw "stderr observer failed closed: $code"}
+
+      - name: Verify observer receipt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$path='${{ steps.trial.outputs.receipt }}';if(-not(Test-Path $path -PathType Leaf)){throw 'observer receipt absent'};$r=Get-Content $path -Raw|ConvertFrom-Json
+          if($r.Schema -ne 'matawaka.workbench-appcontainer-child-stderr-diagnostic/v0.1' -or $r.SourceHead -ne '${{ github.sha }}' -or $r.NativeBoundaryBlob -ne $env:NATIVE_BOUNDARY_BLOB){throw 'observer binding mismatch'}
+          if($r.Token.AppContainer -ne $true -or $r.Token.Capabilities -ne 0 -or $r.Token.PackageMatches -ne $true -or $r.Token.LowIntegrity -ne $true -or $r.Token.Elevated -ne $false -or $r.Token.InOwnedJob -ne $true -or $r.JobLimitsVerified -ne $true){throw 'observer AppContainer token evidence incomplete'}
+          if($r.ProcessCreated -ne $true -or $r.ProcessExited -ne $true -or $r.ProfileCreated -ne $true -or $r.ProfileRemoved -ne $true -or $r.CleanupSucceeded -ne $true){throw 'observer cleanup evidence incomplete'}
+          if($r.NetworkIsolationConfigMutated -ne $false -or $r.FirewallRuleMutated -ne $false -or $r.GlobalWindowsPolicyMutated -ne $false -or $r.ProductionProviderRegistered -ne $false -or $r.ProofClaimed -ne $false){throw 'observer widened effect/claim'}
+          if($r.StderrBytes -le 0){throw "expected child stderr absent stdoutBytes=$($r.StdoutBytes) exit=$($r.ProcessExitCode)"}
+          Write-Host '--- EXACT BOUNDED APPCONTAINER CHILD STDERR ---'
+          Write-Host $r.StderrUtf8
+          Write-Host '--- END CHILD STDERR ---'
+          Write-Host ("CHILD_STDERR_CAPTURED bytes={0} stdoutBytes={1} exit={2}" -f $r.StderrBytes,$r.StdoutBytes,$r.ProcessExitCode)
+
+      - name: Upload bounded stderr receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-appcontainer-child-stderr-${{ github.sha }}
+          path: ${{ steps.trial.outputs.receipt }}
+          if-no-files-found: warn
+          retention-days: 30
