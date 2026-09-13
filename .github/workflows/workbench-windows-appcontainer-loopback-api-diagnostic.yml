@@ -40,7 +40,7 @@ jobs:
           $native='integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs'
           if((git rev-parse "$env:PREDECESSOR`:$native").Trim() -ne $env:NATIVE_BOUNDARY_BLOB -or (git hash-object -- $native).Trim() -ne $env:NATIVE_BOUNDARY_BLOB){throw 'pinned NativeBoundary mismatch'}
           $child=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/LoopbackApiChildDiagnostic.cs -Raw
-          foreach($must in @('NetworkIsolationGetAppContainerConfig','NetworkIsolationDiagnoseConnectFailure','NetworkIsolationDiagnoseConnectFailureAndGetInfo','proofClaimed = false')){if(-not $child.Contains($must)){throw "child diagnostic marker absent: $must"}}
+          foreach($must in @('ConnectAsync','NetworkIsolationGetAppContainerConfig','NetworkIsolationDiagnoseConnectFailure','NetworkIsolationDiagnoseConnectFailureAndGetInfo','timeoutPromotedToProof = false','proofClaimed = false')){if(-not $child.Contains($must)){throw "child diagnostic marker absent: $must"}}
           foreach($forbidden in @('NetworkIsolationSetAppContainerConfig','Dns.GetHost','HttpClient','SaferSetPolicyInformation','SaferSetLevelInformation','LogonUser','CreateProcessWithLogon','New-LocalUser','Add-LocalGroupMember','netsh advfirewall')){if($child.Contains($forbidden)){throw "forbidden diagnostic surface: $forbidden"}}
           $observer=Get-Content integrations/model-invocation/windows-isolation-network-proof-v2/StderrDiagnostic.cs -Raw
           if(-not $observer.Contains('ProofClaimed')){throw 'bounded observer missing'}
@@ -80,7 +80,7 @@ jobs:
           $manifest=Join-Path $parent 'BUNDLE.json';[ordered]@{schema='matawaka.workbench-network-proof-v2-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
           "trial=$trial" >> $env:GITHUB_OUTPUT;"manifest=$manifest" >> $env:GITHUB_OUTPUT;"receipt=$(Join-Path $parent 'LOOPBACK-API.json')" >> $env:GITHUB_OUTPUT
 
-      - name: Run exact API diagnostic inside AppContainer
+      - name: Run socket-triggered API diagnostic inside AppContainer
         id: observe
         continue-on-error: true
         shell: pwsh
@@ -92,7 +92,7 @@ jobs:
           if(Test-Path '${{ steps.trial.outputs.receipt }}' -PathType Leaf){Get-Content '${{ steps.trial.outputs.receipt }}' -Raw|Write-Host}
           if($code -ne 0){throw "loopback API observer failed closed: $code"}
 
-      - name: Verify and expose exact API results
+      - name: Verify and expose exact socket-triggered API results
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop';$path='${{ steps.trial.outputs.receipt }}';if(-not(Test-Path $path -PathType Leaf)){throw 'diagnostic receipt absent'};$r=Get-Content $path -Raw|ConvertFrom-Json
@@ -102,9 +102,10 @@ jobs:
           if($r.ProofClaimed -ne $false -or $r.NetworkIsolationConfigMutated -ne $false -or $r.FirewallRuleMutated -ne $false -or $r.GlobalWindowsPolicyMutated -ne $false -or $r.ProductionProviderRegistered -ne $false){throw 'diagnostic widened effect/claim'}
           if($r.StdoutBytes -le 0){throw "diagnostic stdout absent stderr=$($r.StderrUtf8)"}
           $child=$r.StdoutUtf8|ConvertFrom-Json
-          if($child.schema -ne 'matawaka.workbench-appcontainer-loopback-api-diagnostic/v0.1' -or $child.target -ne '127.0.0.1' -or $child.proofClaimed -ne $false){throw 'child diagnostic payload mismatch'}
+          if($child.schema -ne 'matawaka.workbench-appcontainer-loopback-api-diagnostic/v0.2' -or $child.target -ne '127.0.0.1' -or $child.proofClaimed -ne $false -or $child.timeoutPromotedToProof -ne $false){throw 'child diagnostic payload mismatch'}
           if($child.networkIsolationConfigMutated -ne $false -or $child.firewallRuleMutated -ne $false -or $child.globalWindowsPolicyMutated -ne $false){throw 'child diagnostic mutated policy'}
-          Write-Host ("APPCONTAINER_LOOPBACK_API_RESULT getConfigReturn={0} getConfigCount={1} diagnoseHasRequiredCapability={2} diagnoseInfoReturn={3} diagnoseInfoType={4} stderrBytes={5}" -f $child.getConfigReturn,$child.getConfigCount,$child.diagnoseHasRequiredCapability,$child.diagnoseInfoReturn,$child.diagnoseInfoType,$r.StderrBytes)
+          if($child.socketOutcome -eq 'CONNECTED'){throw 'diagnostic unexpectedly connected isolated child'}
+          Write-Host ("APPCONTAINER_LOOPBACK_SOCKET_API_RESULT socketOutcome={0} socketCode={1} getConfigReturn={2} getConfigCount={3} diagnoseHasRequiredCapability={4} diagnoseInfoReturn={5} diagnoseInfoType={6} stderrBytes={7}" -f $child.socketOutcome,$child.socketCode,$child.getConfigReturn,$child.getConfigCount,$child.diagnoseHasRequiredCapability,$child.diagnoseInfoReturn,$child.diagnoseInfoType,$r.StderrBytes)
 
       - name: Upload bounded diagnostic receipt
         if: always()
