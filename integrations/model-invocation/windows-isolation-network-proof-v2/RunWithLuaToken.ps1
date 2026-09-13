@@ -10,6 +10,7 @@ Add-Type -TypeDefinition @'
 #nullable enable
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -18,6 +19,9 @@ public sealed class MatawakaLuaLaunchResult
     public bool SourceElevated { get; init; }
     public bool LuaElevated { get; init; }
     public bool LuaHasRestrictingSids { get; init; }
+    public bool LuaHasRestrictions { get; init; }
+    public int LuaElevationType { get; init; }
+    public uint SystemCanaryExitCode { get; init; }
     public uint ExitCode { get; init; }
 }
 
@@ -27,7 +31,9 @@ public static class MatawakaLuaLauncher
     private const uint TOKEN_DUPLICATE = 0x0002;
     private const uint TOKEN_QUERY = 0x0008;
     private const uint LUA_TOKEN = 0x00000004;
+    private const int TokenElevationType = 18;
     private const int TokenElevation = 20;
+    private const int TokenHasRestrictions = 21;
     private const uint CREATE_NO_WINDOW = 0x08000000;
     private const uint WAIT_OBJECT_0 = 0x00000000;
     private const uint INFINITE = 0xFFFFFFFF;
@@ -139,43 +145,26 @@ public static class MatawakaLuaLauncher
 
             bool luaElevated = IsElevated(lua);
             bool luaHasRestrictingSids = IsTokenRestricted(lua);
+            bool luaHasRestrictions = QueryDword(lua, TokenHasRestrictions) != 0;
+            int luaElevationType = QueryDword(lua, TokenElevationType);
             if (luaElevated)
                 throw new InvalidOperationException("LUA_TOKEN_STILL_ELEVATED");
 
-            var command = new StringBuilder();
-            command.Append(Quote(executable));
-            foreach (var arg in args)
-            {
-                command.Append(' ');
-                command.Append(Quote(arg));
-            }
+            string systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? throw new InvalidOperationException("SYSTEM_ROOT_ABSENT");
+            string systemCanary = Path.Combine(systemRoot, "System32", "cmd.exe");
+            uint systemCanaryExitCode = RunProcess(lua, systemCanary, new[] { "/d", "/c", "exit", "0" }, workingDirectory);
+            uint exitCode = RunProcess(lua, executable, args, workingDirectory);
 
-            var startup = new STARTUPINFO { cb = checked((uint)Marshal.SizeOf<STARTUPINFO>()) };
-            if (!CreateProcessAsUser(lua, executable, command, IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW,
-                IntPtr.Zero, workingDirectory, ref startup, out var pi))
-                ThrowWin32("CREATE_PROCESS_AS_LUA");
-
-            try
+            return new MatawakaLuaLaunchResult
             {
-                uint wait = WaitForSingleObject(pi.hProcess, INFINITE);
-                if (wait != WAIT_OBJECT_0)
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), $"WAIT_LUA_PROCESS:{wait}");
-                if (!GetExitCodeProcess(pi.hProcess, out uint exitCode))
-                    ThrowWin32("GET_LUA_PROCESS_EXIT_CODE");
-
-                return new MatawakaLuaLaunchResult
-                {
-                    SourceElevated = sourceElevated,
-                    LuaElevated = luaElevated,
-                    LuaHasRestrictingSids = luaHasRestrictingSids,
-                    ExitCode = exitCode
-                };
-            }
-            finally
-            {
-                if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
-                if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
-            }
+                SourceElevated = sourceElevated,
+                LuaElevated = luaElevated,
+                LuaHasRestrictingSids = luaHasRestrictingSids,
+                LuaHasRestrictions = luaHasRestrictions,
+                LuaElevationType = luaElevationType,
+                SystemCanaryExitCode = systemCanaryExitCode,
+                ExitCode = exitCode
+            };
         }
         finally
         {
@@ -184,16 +173,49 @@ public static class MatawakaLuaLauncher
         }
     }
 
-    private static bool IsElevated(IntPtr token)
+    private static uint RunProcess(IntPtr token, string executable, string[] args, string workingDirectory)
+    {
+        var command = new StringBuilder();
+        command.Append(Quote(executable));
+        foreach (var arg in args)
+        {
+            command.Append(' ');
+            command.Append(Quote(arg));
+        }
+
+        var startup = new STARTUPINFO { cb = checked((uint)Marshal.SizeOf<STARTUPINFO>()) };
+        if (!CreateProcessAsUser(token, executable, command, IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW,
+            IntPtr.Zero, workingDirectory, ref startup, out var pi))
+            ThrowWin32("CREATE_PROCESS_AS_LUA");
+
+        try
+        {
+            uint wait = WaitForSingleObject(pi.hProcess, INFINITE);
+            if (wait != WAIT_OBJECT_0)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), $"WAIT_LUA_PROCESS:{wait}");
+            if (!GetExitCodeProcess(pi.hProcess, out uint exitCode))
+                ThrowWin32("GET_LUA_PROCESS_EXIT_CODE");
+            return exitCode;
+        }
+        finally
+        {
+            if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
+            if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
+        }
+    }
+
+    private static bool IsElevated(IntPtr token) => QueryDword(token, TokenElevation) != 0;
+
+    private static int QueryDword(IntPtr token, int informationClass)
     {
         IntPtr buffer = Marshal.AllocHGlobal(sizeof(int));
         try
         {
-            if (!GetTokenInformation(token, TokenElevation, buffer, sizeof(int), out uint returned))
-                ThrowWin32("QUERY_TOKEN_ELEVATION");
+            if (!GetTokenInformation(token, informationClass, buffer, sizeof(int), out uint returned))
+                ThrowWin32($"QUERY_TOKEN_INFORMATION_{informationClass}");
             if (returned != sizeof(int))
-                throw new InvalidOperationException($"TOKEN_ELEVATION_SIZE:{returned}");
-            return Marshal.ReadInt32(buffer) != 0;
+                throw new InvalidOperationException($"TOKEN_INFORMATION_SIZE_{informationClass}:{returned}");
+            return Marshal.ReadInt32(buffer);
         }
         finally
         {
@@ -253,15 +275,20 @@ if (-not (Test-Path -LiteralPath $exeFull -PathType Leaf)) { throw "LUA executab
 if (-not (Test-Path -LiteralPath $workingFull -PathType Container)) { throw "LUA working directory absent: $workingFull" }
 
 $result = [MatawakaLuaLauncher]::Run($exeFull, $Arguments, $workingFull)
+$signedExitCode = [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$result.ExitCode), 0)
 [ordered]@{
-    schema = 'matawaka.windows-lua-parent-launch/v0.2'
+    schema = 'matawaka.windows-lua-parent-launch/v0.3'
     sourceElevated = $result.SourceElevated
     luaElevated = $result.LuaElevated
+    luaElevationType = $result.LuaElevationType
+    luaHasRestrictions = $result.LuaHasRestrictions
     luaHasRestrictingSids = $result.LuaHasRestrictingSids
-    childExitCode = $result.ExitCode
+    systemCanaryExitCode = [uint32]$result.SystemCanaryExitCode
+    childExitCodeUnsigned = [uint32]$result.ExitCode
+    childExitCodeSigned = $signedExitCode
     credentialUsed = $false
     userChanged = $false
     globalPolicyMutated = $false
 } | ConvertTo-Json -Compress | Write-Host
 
-Write-Output ([int]$result.ExitCode)
+Write-Output $signedExitCode
