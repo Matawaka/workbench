@@ -17,7 +17,9 @@ using System.Text;
 public sealed class MatawakaLuaLaunchResult
 {
     public bool SourceElevated { get; init; }
+    public uint SourceIntegrityRid { get; init; }
     public bool LuaElevated { get; init; }
+    public uint LuaIntegrityRid { get; init; }
     public bool LuaHasRestrictingSids { get; init; }
     public bool LuaHasRestrictions { get; init; }
     public int LuaElevationType { get; init; }
@@ -38,12 +40,27 @@ public static class MatawakaLuaLauncher
     private const int TokenElevationType = 18;
     private const int TokenElevation = 20;
     private const int TokenHasRestrictions = 21;
+    private const int TokenIntegrityLevel = 25;
+    private const int ERROR_INSUFFICIENT_BUFFER = 122;
     private const uint CREATE_NO_WINDOW = 0x08000000;
     private const uint WAIT_OBJECT_0 = 0x00000000;
     private const uint INFINITE = 0xFFFFFFFF;
     private const uint CWF_CREATE_ONLY = 0x00000001;
     private const uint WINSTA_ALL_ACCESS = 0x0000037F;
     private const uint GENERIC_ALL = 0x10000000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SID_AND_ATTRIBUTES
+    {
+        public IntPtr Sid;
+        public uint Attributes;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TOKEN_MANDATORY_LABEL
+    {
+        public SID_AND_ATTRIBUTES Label;
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFO
@@ -109,6 +126,12 @@ public static class MatawakaLuaLauncher
     [DllImport("advapi32.dll", SetLastError = true, ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsTokenRestricted(IntPtr token);
+
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    private static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    private static extern IntPtr GetSidSubAuthority(IntPtr sid, uint subAuthority);
 
     [DllImport("advapi32.dll", EntryPoint = "CreateProcessAsUserW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -180,6 +203,7 @@ public static class MatawakaLuaLauncher
         try
         {
             bool sourceElevated = IsElevated(source);
+            uint sourceIntegrityRid = QueryIntegrityRid(source);
             if (!sourceElevated)
                 throw new InvalidOperationException("SOURCE_TOKEN_NOT_ELEVATED_EXPECTED_HOSTED_RUNNER");
 
@@ -187,6 +211,7 @@ public static class MatawakaLuaLauncher
                 ThrowWin32("CREATE_LUA_TOKEN");
 
             bool luaElevated = IsElevated(lua);
+            uint luaIntegrityRid = QueryIntegrityRid(lua);
             bool luaHasRestrictingSids = IsTokenRestricted(lua);
             bool luaHasRestrictions = QueryBoolean(lua, TokenHasRestrictions);
             int luaElevationType = QueryDword(lua, TokenElevationType);
@@ -225,7 +250,9 @@ public static class MatawakaLuaLauncher
             return new MatawakaLuaLaunchResult
             {
                 SourceElevated = sourceElevated,
+                SourceIntegrityRid = sourceIntegrityRid,
                 LuaElevated = luaElevated,
+                LuaIntegrityRid = luaIntegrityRid,
                 LuaHasRestrictingSids = luaHasRestrictingSids,
                 LuaHasRestrictions = luaHasRestrictions,
                 LuaElevationType = luaElevationType,
@@ -291,6 +318,41 @@ public static class MatawakaLuaLauncher
     }
 
     private static bool IsElevated(IntPtr token) => QueryDword(token, TokenElevation) != 0;
+
+    private static uint QueryIntegrityRid(IntPtr token)
+    {
+        GetTokenInformation(token, TokenIntegrityLevel, IntPtr.Zero, 0, out uint required);
+        int firstError = Marshal.GetLastWin32Error();
+        if (required == 0 || firstError != ERROR_INSUFFICIENT_BUFFER)
+            throw new Win32Exception(firstError, $"QUERY_TOKEN_INTEGRITY_SIZE:{required}");
+
+        IntPtr buffer = Marshal.AllocHGlobal(checked((int)required));
+        try
+        {
+            if (!GetTokenInformation(token, TokenIntegrityLevel, buffer, required, out uint returned))
+                ThrowWin32("QUERY_TOKEN_INTEGRITY");
+            if (returned > required)
+                throw new InvalidOperationException($"TOKEN_INTEGRITY_SIZE_GROWTH:{returned}>{required}");
+
+            var label = Marshal.PtrToStructure<TOKEN_MANDATORY_LABEL>(buffer);
+            if (label.Label.Sid == IntPtr.Zero)
+                throw new InvalidOperationException("TOKEN_INTEGRITY_SID_ABSENT");
+            IntPtr countPtr = GetSidSubAuthorityCount(label.Label.Sid);
+            if (countPtr == IntPtr.Zero)
+                throw new InvalidOperationException("TOKEN_INTEGRITY_SUBAUTHORITY_COUNT_ABSENT");
+            byte count = Marshal.ReadByte(countPtr);
+            if (count == 0)
+                throw new InvalidOperationException("TOKEN_INTEGRITY_SUBAUTHORITY_EMPTY");
+            IntPtr ridPtr = GetSidSubAuthority(label.Label.Sid, (uint)(count - 1));
+            if (ridPtr == IntPtr.Zero)
+                throw new InvalidOperationException("TOKEN_INTEGRITY_RID_ABSENT");
+            return unchecked((uint)Marshal.ReadInt32(ridPtr));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
 
     private static bool QueryBoolean(IntPtr token, int informationClass)
     {
@@ -381,9 +443,11 @@ if (-not (Test-Path -LiteralPath $workingFull -PathType Container)) { throw "LUA
 $result = [MatawakaLuaLauncher]::Run($exeFull, $Arguments, $workingFull)
 $signedExitCode = [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$result.ExitCode), 0)
 [ordered]@{
-    schema = 'matawaka.windows-lua-parent-launch/v0.6'
+    schema = 'matawaka.windows-lua-parent-launch/v0.7'
     sourceElevated = $result.SourceElevated
+    sourceIntegrityRid = [uint32]$result.SourceIntegrityRid
     luaElevated = $result.LuaElevated
+    luaIntegrityRid = [uint32]$result.LuaIntegrityRid
     luaElevationType = $result.LuaElevationType
     luaHasRestrictions = $result.LuaHasRestrictions
     luaHasRestrictingSids = $result.LuaHasRestrictingSids
