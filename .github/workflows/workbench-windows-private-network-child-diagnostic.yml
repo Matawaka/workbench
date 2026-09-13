@@ -1,0 +1,116 @@
+name: Workbench Windows Private Network Child Diagnostic
+
+on:
+  push:
+    branches:
+      - feat/workbench-windows-private-network-isolation-proof-v1
+    paths:
+      - integrations/model-invocation/windows-private-network-proof-v1/PrivateNetworkChildObserver.cs
+      - integrations/model-invocation/windows-private-network-proof-v1/PrivateNetworkChildObserver.csproj
+      - .github/workflows/workbench-windows-private-network-child-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PREDECESSOR: 27595e46d44858250f59bf908852f30aa79c3495
+  NATIVE_BOUNDARY_BLOB: 8a8f91a13c114e9c224cf449193800f0fedfdaf2
+  LAUNCHER_BLOB: 8f960bca553dbba6ae14887e1a78f88b72caddc9
+  OWNER_NORMALIZER_BLOB: 7ea24c32bce642d1ae7d935fa12e77050a4781d2
+  AUTHORIZATION: ISSUE-106-CURRENT-EXPLICIT-DEVELOPMENT
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Guard exact non-authoritative diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git merge-base HEAD $env:PREDECESSOR).Trim() -ne $env:PREDECESSOR){throw 'diagnostic lineage mismatch'}
+          foreach($item in @(
+            @('integrations/model-invocation/windows-isolation-probe/NativeBoundary.cs',$env:NATIVE_BOUNDARY_BLOB),
+            @('integrations/model-invocation/windows-isolation-network-proof-v2/RunWithSaferLuaToken.ps1',$env:LAUNCHER_BLOB),
+            @('integrations/model-invocation/windows-isolation-network-proof-v2/SetTrialOwnerOnly.ps1',$env:OWNER_NORMALIZER_BLOB)
+          )){if((git rev-parse "$env:PREDECESSOR`:$($item[0])").Trim() -ne $item[1] -or (git hash-object -- $item[0]).Trim() -ne $item[1]){throw "diagnostic harness drift: $($item[0])"}}
+          $observer=Get-Content integrations/model-invocation/windows-private-network-proof-v1/PrivateNetworkChildObserver.cs -Raw
+          foreach($must in @('ProofClaimed','OPERATIONAL_RFC1918_IPV4_LOWEST_NUMERIC_THEN_INTERFACE_ID','NetworkInterface.GetAllNetworkInterfaces','DnsUsed','ExternalNetworkAccessed')){if(-not $observer.Contains($must)){throw "observer marker absent: $must"}}
+          foreach($forbidden in @('Dns.GetHost','HttpClient','NetworkIsolationSetAppContainerConfig','netsh','Set-NetIP','New-Net','Add-Net','route.exe','169.254.169.254')){if($observer.Contains($forbidden)){throw "forbidden observer surface: $forbidden"}}
+          $proof=Get-Content integrations/model-invocation/windows-private-network-proof-v1/Program.cs -Raw
+          if(-not $proof.Contains('DiagnoseInfoType == 1')){throw 'canonical strict type-1 criterion missing'}
+          git diff --check "$env:PREDECESSOR...HEAD";if($LASTEXITCODE -ne 0){throw 'git diff --check failed'}
+          Write-Host 'PRIVATE_NETWORK_CHILD_DIAGNOSTIC_GUARD_PASS proof_claimed=false'
+
+      - name: Build strict child and diagnostic observer
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $childOut=Join-Path $env:RUNNER_TEMP 'private-network-diagnostic-child';$childObj=(Join-Path $env:RUNNER_TEMP 'private-network-diagnostic-child-obj')+'\'
+          dotnet publish .\integrations\model-invocation\windows-private-network-proof-v1\PrivateNetworkProofV1.csproj -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -p:BaseIntermediateOutputPath=$childObj -o $childOut --nologo
+          if($LASTEXITCODE -ne 0){throw "child build failed: $LASTEXITCODE"}
+          $observerOut=Join-Path $env:RUNNER_TEMP 'private-network-child-observer';$observerObj=(Join-Path $env:RUNNER_TEMP 'private-network-child-observer-obj')+'\'
+          dotnet publish .\integrations\model-invocation\windows-private-network-proof-v1\PrivateNetworkChildObserver.csproj -c Release -r win-x64 --self-contained false -p:DebugType=None -p:DebugSymbols=false -p:BaseIntermediateOutputPath=$observerObj -o $observerOut --nologo
+          if($LASTEXITCODE -ne 0){throw "observer build failed: $LASTEXITCODE"}
+          foreach($name in @('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json')){if(-not(Test-Path (Join-Path $childOut $name) -PathType Leaf)){throw "child bundle missing: $name"}}
+          if(-not(Test-Path (Join-Path $observerOut 'Workbench.PrivateNetworkChildObserver.exe') -PathType Leaf)){throw 'observer executable missing'}
+          "child_out=$childOut" >> $env:GITHUB_OUTPUT;"observer_out=$observerOut" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare disposable diagnostic trial
+        id: trial
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $parent=Join-Path $env:RUNNER_TEMP ('windows-isolation-qualification-private-diagnostic-'+[guid]::NewGuid().ToString('N'))
+          $trial=Join-Path $parent 'trial';New-Item -ItemType Directory -Path $trial|Out-Null
+          $names=@('Workbench.AppContainerProbe.exe','Workbench.AppContainerProbe.dll','Workbench.AppContainerProbe.runtimeconfig.json','Workbench.AppContainerProbe.deps.json');$files=[ordered]@{}
+          foreach($name in $names){Copy-Item (Join-Path '${{ steps.build.outputs.child_out }}' $name) (Join-Path $trial $name);$files[$name]=(Get-FileHash (Join-Path $trial $name) -Algorithm SHA256).Hash.ToLowerInvariant()}
+          [IO.File]::WriteAllText((Join-Path $trial 'allow-read.txt'),'SYNTHETIC_ALLOWED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-read.txt'),'SYNTHETIC_DENIED',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText((Join-Path $trial 'deny-write.txt'),'SYNTHETIC_UNCHANGED',[Text.UTF8Encoding]::new($false))
+          & .\integrations\model-invocation\windows-isolation-network-proof-v2\SetTrialOwnerOnly.ps1 -Trial $trial -BundleNames $names
+          if($LASTEXITCODE -ne 0){throw "diagnostic trial normalization failed: $LASTEXITCODE"}
+          $manifest=Join-Path $parent 'BUNDLE.json';[ordered]@{schema='matawaka.workbench-private-network-diagnostic-build/v0.1';files=$files;nativeBoundaryBlob=$env:NATIVE_BOUNDARY_BLOB;modelStarted=$false}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8NoBOM $manifest
+          "trial=$trial" >> $env:GITHUB_OUTPUT;"manifest=$manifest" >> $env:GITHUB_OUTPUT;"receipt=$(Join-Path $parent 'PRIVATE-NETWORK-CHILD-DIAGNOSTIC.json')" >> $env:GITHUB_OUTPUT
+
+      - name: Observe raw strict child result inside AppContainer
+        id: observe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path '${{ steps.build.outputs.observer_out }}' 'Workbench.PrivateNetworkChildObserver.exe'
+          $args=@('--observe-private-child','${{ steps.trial.outputs.trial }}','${{ steps.trial.outputs.manifest }}','${{ steps.trial.outputs.receipt }}','${{ github.sha }}',$env:AUTHORIZATION)
+          $code=& .\integrations\model-invocation\windows-isolation-network-proof-v2\RunWithSaferLuaToken.ps1 -Executable $exe -Arguments $args -WorkingDirectory '${{ github.workspace }}';$code=[int]$code
+          if(Test-Path '${{ steps.trial.outputs.receipt }}' -PathType Leaf){Get-Content '${{ steps.trial.outputs.receipt }}' -Raw|Write-Host}
+          if($code -ne 0){throw "bounded private-network observer failed closed: $code"}
+
+      - name: Verify and expose exact raw child classification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$r=Get-Content '${{ steps.trial.outputs.receipt }}' -Raw|ConvertFrom-Json
+          if($r.Schema -ne 'matawaka.workbench-private-network-child-observer/v0.1' -or $r.SourceHead -ne '${{ github.sha }}' -or $r.NativeBoundaryBlob -ne $env:NATIVE_BOUNDARY_BLOB){throw 'observer binding mismatch'}
+          if($r.ProofClaimed -ne $false -or $r.DnsUsed -ne $false -or $r.ExternalNetworkAccessed -ne $false -or $r.NetworkIsolationConfigMutated -ne $false -or $r.FirewallRuleMutated -ne $false -or $r.RouteOrInterfaceMutated -ne $false -or $r.GlobalWindowsPolicyMutated -ne $false -or $r.ProductionProviderRegistered -ne $false){throw 'diagnostic widened effect or claim'}
+          if($r.Token.AppContainer -ne $true -or $r.Token.Capabilities -ne 0 -or $r.Token.PackageMatches -ne $true -or $r.Token.LowIntegrity -ne $true -or $r.Token.Elevated -ne $false -or $r.Token.InOwnedJob -ne $true -or $r.JobLimitsVerified -ne $true){throw 'observer token/job evidence incomplete'}
+          if($r.ParentTargetControlConnected -ne $true -or $r.UnexpectedIsolatedConnectionObserved -ne $false -or $r.ProcessCreated -ne $true -or $r.ProcessExited -ne $true -or $r.ProfileCreated -ne $true -or $r.ProfileRemoved -ne $true -or $r.CleanupSucceeded -ne $true -or $r.StdoutBytes -le 0){throw 'observer process/control/cleanup evidence incomplete'}
+          $child=$r.StdoutUtf8|ConvertFrom-Json
+          if($child.Schema -ne 'matawaka.workbench-appcontainer-private-network-child/v0.1' -or $child.PackageSid -notlike 'S-1-15-2-*' -or $child.CapabilityCount -ne 0 -or $child.SocketBehaviorUsedAsProof -ne $false){throw 'raw child diagnostic payload mismatch'}
+          foreach($field in @('Address','InterfaceId','InterfaceName','InterfaceType','SelectionRule')){if($child.Target.$field -ne $r.Target.$field){throw "observer/child target mismatch field=$field"}}
+          Write-Host ("PRIVATE_NETWORK_RAW_CHILD_RESULT target={0}:{1} socketOutcome={2} socketCode={3} diagnoseHasRequiredCapability={4} diagnoseInfoReturn={5} diagnoseInfoType={6} childExit={7} proofClaimed=false" -f $r.Target.Address,$r.TargetPort,$child.SocketOutcome,$child.SocketCode,$child.DiagnoseHasRequiredCapability,$child.DiagnoseInfoReturn,$child.DiagnoseInfoType,$r.ProcessExitCode)
+
+      - name: Upload bounded diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-windows-private-network-child-diagnostic-${{ github.sha }}
+          path: ${{ steps.trial.outputs.receipt }}
+          if-no-files-found: warn
+          retention-days: 30
