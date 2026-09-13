@@ -21,6 +21,10 @@ public sealed class MatawakaLuaLaunchResult
     public bool LuaHasRestrictingSids { get; init; }
     public bool LuaHasRestrictions { get; init; }
     public int LuaElevationType { get; init; }
+    public bool PrivateWindowStationCreated { get; init; }
+    public bool PrivateDesktopCreated { get; init; }
+    public bool OriginalWindowStationRestored { get; init; }
+    public string DesktopTarget { get; init; } = "";
     public uint SystemCanaryExitCode { get; init; }
     public uint ExitCode { get; init; }
 }
@@ -37,6 +41,9 @@ public static class MatawakaLuaLauncher
     private const uint CREATE_NO_WINDOW = 0x08000000;
     private const uint WAIT_OBJECT_0 = 0x00000000;
     private const uint INFINITE = 0xFFFFFFFF;
+    private const uint CWF_CREATE_ONLY = 0x00000001;
+    private const uint WINSTA_ALL_ACCESS = 0x0000037F;
+    private const uint GENERIC_ALL = 0x10000000;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFO
@@ -118,6 +125,37 @@ public static class MatawakaLuaLauncher
         ref STARTUPINFO startupInfo,
         out PROCESS_INFORMATION processInformation);
 
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern IntPtr GetProcessWindowStation();
+
+    [DllImport("user32.dll", EntryPoint = "CreateWindowStationW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateWindowStation(
+        string windowStation,
+        uint flags,
+        uint desiredAccess,
+        IntPtr securityAttributes);
+
+    [DllImport("user32.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetProcessWindowStation(IntPtr windowStation);
+
+    [DllImport("user32.dll", EntryPoint = "CreateDesktopW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateDesktop(
+        string desktop,
+        IntPtr device,
+        IntPtr devMode,
+        uint flags,
+        uint desiredAccess,
+        IntPtr securityAttributes);
+
+    [DllImport("user32.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseDesktop(IntPtr desktop);
+
+    [DllImport("user32.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseWindowStation(IntPtr windowStation);
+
     [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
     private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
 
@@ -134,6 +172,11 @@ public static class MatawakaLuaLauncher
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY, out var source))
             ThrowWin32("OPEN_SOURCE_TOKEN");
         IntPtr lua = IntPtr.Zero;
+        IntPtr privateStation = IntPtr.Zero;
+        IntPtr privateDesktop = IntPtr.Zero;
+        IntPtr originalStation = IntPtr.Zero;
+        bool switchedToPrivateStation = false;
+        bool originalStationRestored = false;
         try
         {
             bool sourceElevated = IsElevated(source);
@@ -150,10 +193,34 @@ public static class MatawakaLuaLauncher
             if (luaElevated)
                 throw new InvalidOperationException("LUA_TOKEN_STILL_ELEVATED");
 
+            originalStation = GetProcessWindowStation();
+            if (originalStation == IntPtr.Zero)
+                ThrowWin32("GET_ORIGINAL_WINDOW_STATION");
+
+            string stationName = "MatawakaLuaWinsta_" + Guid.NewGuid().ToString("N");
+            string desktopName = "MatawakaLuaDesktop_" + Guid.NewGuid().ToString("N");
+            privateStation = CreateWindowStation(stationName, CWF_CREATE_ONLY, WINSTA_ALL_ACCESS, IntPtr.Zero);
+            if (privateStation == IntPtr.Zero)
+                ThrowWin32("CREATE_PRIVATE_WINDOW_STATION");
+
+            if (!SetProcessWindowStation(privateStation))
+                ThrowWin32("SET_PRIVATE_WINDOW_STATION");
+            switchedToPrivateStation = true;
+
+            privateDesktop = CreateDesktop(desktopName, IntPtr.Zero, IntPtr.Zero, 0, GENERIC_ALL, IntPtr.Zero);
+            if (privateDesktop == IntPtr.Zero)
+                ThrowWin32("CREATE_PRIVATE_DESKTOP");
+
+            if (!SetProcessWindowStation(originalStation))
+                ThrowWin32("RESTORE_ORIGINAL_WINDOW_STATION");
+            switchedToPrivateStation = false;
+            originalStationRestored = true;
+
+            string desktopTarget = stationName + "\\" + desktopName;
             string systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? throw new InvalidOperationException("SYSTEM_ROOT_ABSENT");
             string systemCanary = Path.Combine(systemRoot, "System32", "cmd.exe");
-            uint systemCanaryExitCode = RunProcess(lua, systemCanary, new[] { "/d", "/c", "exit", "0" }, workingDirectory);
-            uint exitCode = RunProcess(lua, executable, args, workingDirectory);
+            uint systemCanaryExitCode = RunProcess(lua, systemCanary, new[] { "/d", "/c", "exit", "0" }, workingDirectory, desktopTarget);
+            uint exitCode = RunProcess(lua, executable, args, workingDirectory, desktopTarget);
 
             return new MatawakaLuaLaunchResult
             {
@@ -162,18 +229,33 @@ public static class MatawakaLuaLauncher
                 LuaHasRestrictingSids = luaHasRestrictingSids,
                 LuaHasRestrictions = luaHasRestrictions,
                 LuaElevationType = luaElevationType,
+                PrivateWindowStationCreated = true,
+                PrivateDesktopCreated = true,
+                OriginalWindowStationRestored = originalStationRestored,
+                DesktopTarget = desktopTarget,
                 SystemCanaryExitCode = systemCanaryExitCode,
                 ExitCode = exitCode
             };
         }
         finally
         {
+            if (switchedToPrivateStation && originalStation != IntPtr.Zero)
+            {
+                if (!SetProcessWindowStation(originalStation))
+                    ThrowWin32("RESTORE_ORIGINAL_WINDOW_STATION_CLEANUP");
+                switchedToPrivateStation = false;
+                originalStationRestored = true;
+            }
+            if (privateDesktop != IntPtr.Zero && !CloseDesktop(privateDesktop))
+                ThrowWin32("CLOSE_PRIVATE_DESKTOP");
+            if (privateStation != IntPtr.Zero && !CloseWindowStation(privateStation))
+                ThrowWin32("CLOSE_PRIVATE_WINDOW_STATION");
             if (lua != IntPtr.Zero) CloseHandle(lua);
             if (source != IntPtr.Zero) CloseHandle(source);
         }
     }
 
-    private static uint RunProcess(IntPtr token, string executable, string[] args, string workingDirectory)
+    private static uint RunProcess(IntPtr token, string executable, string[] args, string workingDirectory, string desktopTarget)
     {
         var command = new StringBuilder();
         command.Append(Quote(executable));
@@ -186,7 +268,7 @@ public static class MatawakaLuaLauncher
         var startup = new STARTUPINFO
         {
             cb = checked((uint)Marshal.SizeOf<STARTUPINFO>()),
-            lpDesktop = string.Empty
+            lpDesktop = desktopTarget
         };
         if (!CreateProcessAsUser(token, executable, command, IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW,
             IntPtr.Zero, workingDirectory, ref startup, out var pi))
@@ -299,18 +381,23 @@ if (-not (Test-Path -LiteralPath $workingFull -PathType Container)) { throw "LUA
 $result = [MatawakaLuaLauncher]::Run($exeFull, $Arguments, $workingFull)
 $signedExitCode = [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$result.ExitCode), 0)
 [ordered]@{
-    schema = 'matawaka.windows-lua-parent-launch/v0.5'
+    schema = 'matawaka.windows-lua-parent-launch/v0.6'
     sourceElevated = $result.SourceElevated
     luaElevated = $result.LuaElevated
     luaElevationType = $result.LuaElevationType
     luaHasRestrictions = $result.LuaHasRestrictions
     luaHasRestrictingSids = $result.LuaHasRestrictingSids
-    desktopSelection = 'EMPTY_STRING_SYSTEM_CONNECTION_RULES'
+    privateWindowStationCreated = $result.PrivateWindowStationCreated
+    privateDesktopCreated = $result.PrivateDesktopCreated
+    originalWindowStationRestored = $result.OriginalWindowStationRestored
+    desktopTarget = $result.DesktopTarget
     systemCanaryExitCode = [uint32]$result.SystemCanaryExitCode
     childExitCodeUnsigned = [uint32]$result.ExitCode
     childExitCodeSigned = $signedExitCode
     credentialUsed = $false
     userChanged = $false
+    globalWindowStationAclMutated = $false
+    desktopAclMutated = $false
     globalPolicyMutated = $false
 } | ConvertTo-Json -Compress | Write-Host
 
