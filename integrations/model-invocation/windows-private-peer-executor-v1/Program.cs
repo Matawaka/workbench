@@ -92,7 +92,7 @@ internal static class Program
                 if (phase == Phase.Begun)
                 {
                     Need(remoteAddress == ProofNodeAddressLiteral, "PARENT_CONTROL_REMOTE_ADDRESS");
-                    Need(controlLine is not null, "PARENT_CONTROL_LINE_ABSENT");
+                    if (controlLine is null) throw new ProtocolFailure("PARENT_CONTROL_LINE_ABSENT");
                     var parts = controlLine.Split('|');
                     Need(parts.Length == 3 && parts[0] == "CONTROL", "PARENT_CONTROL_LINE_SHAPE");
                     Need(parts[1] == sessionId, "PARENT_CONTROL_SESSION_MISMATCH");
