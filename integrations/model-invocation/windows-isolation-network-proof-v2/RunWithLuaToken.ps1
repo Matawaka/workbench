@@ -17,7 +17,7 @@ public sealed class MatawakaLuaLaunchResult
 {
     public bool SourceElevated { get; init; }
     public bool LuaElevated { get; init; }
-    public bool LuaRestricted { get; init; }
+    public bool LuaHasRestrictingSids { get; init; }
     public uint ExitCode { get; init; }
 }
 
@@ -138,11 +138,9 @@ public static class MatawakaLuaLauncher
                 ThrowWin32("CREATE_LUA_TOKEN");
 
             bool luaElevated = IsElevated(lua);
-            bool luaRestricted = IsTokenRestricted(lua);
+            bool luaHasRestrictingSids = IsTokenRestricted(lua);
             if (luaElevated)
                 throw new InvalidOperationException("LUA_TOKEN_STILL_ELEVATED");
-            if (!luaRestricted)
-                throw new InvalidOperationException("LUA_TOKEN_NOT_RESTRICTED");
 
             var command = new StringBuilder();
             command.Append(Quote(executable));
@@ -169,7 +167,7 @@ public static class MatawakaLuaLauncher
                 {
                     SourceElevated = sourceElevated,
                     LuaElevated = luaElevated,
-                    LuaRestricted = luaRestricted,
+                    LuaHasRestrictingSids = luaHasRestrictingSids,
                     ExitCode = exitCode
                 };
             }
@@ -256,10 +254,10 @@ if (-not (Test-Path -LiteralPath $workingFull -PathType Container)) { throw "LUA
 
 $result = [MatawakaLuaLauncher]::Run($exeFull, $Arguments, $workingFull)
 [ordered]@{
-    schema = 'matawaka.windows-lua-parent-launch/v0.1'
+    schema = 'matawaka.windows-lua-parent-launch/v0.2'
     sourceElevated = $result.SourceElevated
     luaElevated = $result.LuaElevated
-    luaRestricted = $result.LuaRestricted
+    luaHasRestrictingSids = $result.LuaHasRestrictingSids
     childExitCode = $result.ExitCode
     credentialUsed = $false
     userChanged = $false
