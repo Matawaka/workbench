@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -5,7 +7,7 @@ namespace Workbench.IsolationQualification;
 
 internal static class LoopbackApiChildDiagnostic
 {
-    private const string Schema = "matawaka.workbench-appcontainer-loopback-api-diagnostic/v0.1";
+    private const string Schema = "matawaka.workbench-appcontainer-loopback-api-diagnostic/v0.2";
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SidAndAttributes
@@ -37,8 +39,31 @@ internal static class LoopbackApiChildDiagnostic
         uint count = 0;
         nint entries = 0;
         uint configReturn = NetworkIsolationGetAppContainerConfig(out count, out entries);
+        string socketOutcome = "OTHER";
+        int? socketCode = null;
         try
         {
+            try
+            {
+                using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                socket.ConnectAsync(new IPEndPoint(IPAddress.Loopback, port))
+                    .WaitAsync(TimeSpan.FromMilliseconds(1000)).GetAwaiter().GetResult();
+                socketOutcome = socket.Connected ? "CONNECTED" : "OTHER";
+            }
+            catch (SocketException e)
+            {
+                socketCode = e.ErrorCode;
+                socketOutcome = e.SocketErrorCode == SocketError.ConnectionRefused ? "REFUSED" : "SOCKET_ERROR";
+            }
+            catch (TimeoutException)
+            {
+                socketOutcome = "TIMEOUT";
+            }
+            catch (Exception e)
+            {
+                socketOutcome = "OTHER_EXCEPTION_" + e.GetType().Name;
+            }
+
             uint hasRequiredCapability = NetworkIsolationDiagnoseConnectFailure("127.0.0.1");
             uint infoReturn = NetworkIsolationDiagnoseConnectFailureAndGetInfo("127.0.0.1", out int infoType);
             var result = new
@@ -48,9 +73,12 @@ internal static class LoopbackApiChildDiagnostic
                 observedPort = port,
                 getConfigReturn = configReturn,
                 getConfigCount = count,
+                socketOutcome,
+                socketCode,
                 diagnoseHasRequiredCapability = hasRequiredCapability != 0,
                 diagnoseInfoReturn = infoReturn,
                 diagnoseInfoType = infoType,
+                timeoutPromotedToProof = false,
                 networkIsolationConfigMutated = false,
                 firewallRuleMutated = false,
                 globalWindowsPolicyMutated = false,
