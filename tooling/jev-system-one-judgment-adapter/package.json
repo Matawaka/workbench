@@ -1,0 +1,15 @@
+{
+  "name": "@matawaka/system-one-judgment-adapter-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Non-normative System One / Jev judgment-evidence adapter prototype for Matawaka.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "demo": "node examples/offline-demo.mjs",
+    "live": "node examples/live-jev.mjs"
+  }
+}
