@@ -11,23 +11,21 @@ CommandRouter / DevelopmentAgentHost
         |
         |  authority path completes
         v
-CommandResult
+already-produced CommandResult
         |
-        +--> RenderResult
+        |  explicit research-component call only
+        v
+optional local Jev shadow export
         |
-        +--> ApplyTerminalState
-        |
-        +--> optional local Jev shadow export
-                 |
-                 v
-          inert JSON envelope
+        v
+inert JSON envelope
                  |
                  X  no automatic network/model invocation
                  X  no result readback into Workbench
                  X  no permit/deny influence
 ```
 
-The current branch does **not** invoke TypeSafe. It only creates a local candidate envelope when the operator explicitly sets:
+The current branch does **not** wire the exporter into production `MainWindow` or `CommandRouter`, and it does **not** invoke TypeSafe. The component creates a local candidate envelope only when an explicit research caller invokes it and the operator has set:
 
 `MATAWAKA_JEV_SHADOW_ROOT=<local directory>`
 
@@ -60,7 +58,7 @@ For `agent.run`, the local envelope may contain the already-typed `CapabilityReq
 
 ## Failure semantics
 
-Shadow export occurs only after the base terminal state has been applied.
+v0.1 is intentionally not wired into the production UI. Its qualification probe calls the exporter only with an already-produced terminal `CommandResult`. A later live-wiring PR must independently prove that any UI integration occurs after the base terminal state is applied.
 
 Exporter failure or cancellation:
 
@@ -80,7 +78,7 @@ This branch must not modify:
 - `src/Matawaka.Workbench.AgentHost/SemanticProvider.cs`
 - `src/Matawaka.Workbench.Runtime/LiveCapabilityEvidenceAuditV058.cs`
 
-The integration point is UI/application-side and post-terminal.
+The v0.1 component lives in the App assembly but has **no production call site**. Live UI wiring is a later separately reviewed change.
 
 ## Alpha.5 qualification basis
 
@@ -110,3 +108,12 @@ Before any TypeSafe sidecar is added:
 6. design a separate explicit externalization/sanitization boundary.
 
 `Probabilistic Judgment != Authorization` remains structural.
+
+
+## v0.60 protected-surface consequence
+
+Current Workbench contains a historical v0.60 qualification workflow that intentionally guards `MainWindow.xaml.cs` against unrelated successor changes. v0.1 does not weaken or bypass that gate. Production MainWindow remains byte-identical to the alpha.5 predecessor.
+
+This means:
+
+`Qualified shadow component != live Workbench shadow activation`.
