@@ -8,8 +8,13 @@ const [candidatePath, leasePath, storeRootArg] = process.argv.slice(2);
 if (!candidatePath || !leasePath || !storeRootArg) {
   throw new Error("Usage: node examples/send-once.mjs <candidate.json> <activated-lease.json> <consumption-store-dir>");
 }
-const candidate = JSON.parse(await fs.readFile(candidatePath, "utf8"));
-const lease = JSON.parse(await fs.readFile(leasePath, "utf8"));
+async function readJsonFile(file) {
+  const text = await fs.readFile(file, "utf8");
+  return JSON.parse(text.replace(/^\uFEFF/, ""));
+}
+
+const candidate = await readJsonFile(candidatePath);
+const lease = await readJsonFile(leasePath);
 validateShadowSendLease(candidate, lease);
 
 const provider = new JevHttpProvider({ model: candidate.requestedModel });
