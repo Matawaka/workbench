@@ -92,12 +92,24 @@ try
     Require(!decision.NetworkAccessGranted, "shadow export mutated network grant");
     Require(!decision.ArbitraryProcessExecutionGranted, "shadow export mutated process grant");
 
-    Console.WriteLine("PASS jev-shadow-v0.1");
-    Console.WriteLine($"artifact={Path.GetFileName(exported.ArtifactPath)}");
-    Console.WriteLine("payloadBytesIncluded=false");
-    Console.WriteLine("providerInvocation=false");
-    Console.WriteLine("authorityReadback=false");
-    Console.WriteLine("terminalStateUnchanged=true");
+    Console.WriteLine(JsonSerializer.Serialize(new
+    {
+        schema = "matawaka.jev-shadow-qualification/v0.1",
+        status = "QUALIFIED_LOCAL_EXPORT_NO_AUTHORITY_CHANGE",
+        disabledWritesNothing = true,
+        payloadBytesIncluded = false,
+        payloadDigestPresent = true,
+        externalizationAuthorized = false,
+        providerInvocationAuthorized = false,
+        decisionReadbackSupported = false,
+        authorityCreated = false,
+        displayPermitCreated = false,
+        actionPermitCreated = false,
+        terminalStateUnchanged = true,
+        authorityReceiptUnchanged = true,
+        networkGrantUnchanged = true,
+        processGrantUnchanged = true
+    }));
 }
 finally
 {
