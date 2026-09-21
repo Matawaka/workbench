@@ -1,0 +1,157 @@
+name: Jev Shadow Real-Case Lab v0.1
+
+on:
+  pull_request:
+    paths:
+      - 'tooling/jev-shadow-real-case-lab-v001/**'
+      - '.github/workflows/workbench-jev-shadow-real-case-lab-v001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-real-case-lab-v001:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify exact corpus predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '470c885cf4ef70b23a83b5b7c3fbbdc4b5c388b2'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact corpus predecessor is not an ancestor.' }
+
+      - name: Verify Workbench production sources are untouched
+        shell: pwsh
+        run: |
+          $changed = git diff --name-only '${{ github.event.pull_request.base.sha }}' HEAD
+          if ($changed | Select-String '^src/Matawaka\.Workbench\.') {
+            throw 'Real-case lab must not modify Workbench production sources.'
+          }
+
+      - name: Verify lab is read-only and no-provider
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $text = Get-Content 'tooling/jev-shadow-real-case-lab-v001/Program.cs' -Raw
+          foreach ($required in @('catalog.inspect','AgentEnabled: false','AllowGitFetch: false')) {
+            if (-not $text.Contains($required)) { throw "Missing safe lab invariant: $required" }
+          }
+          foreach ($forbidden in @('JevHttpProvider','TYPESAFE_API_KEY','api.typesafe.ai','catalog.fetch','agent.run')) {
+            if ($text.Contains($forbidden)) { throw "Forbidden lab token: $forbidden" }
+          }
+
+      - name: Build Shadow Lab
+        run: dotnet build tooling/jev-shadow-real-case-lab-v001/Capture.csproj -c Release
+
+      - name: Create temporary real Git catalog
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $catalog = Join-Path $env:RUNNER_TEMP 'jev-real-catalog'
+          $repo = Join-Path $catalog 'actual-repo'
+          New-Item -ItemType Directory -Force $repo | Out-Null
+          git -C $repo init
+          git -C $repo config user.email 'qualification@example.invalid'
+          git -C $repo config user.name 'Qualification'
+          Set-Content -Path (Join-Path $repo 'README.md') -Value '# actual qualification repo'
+          git -C $repo add README.md
+          git -C $repo commit -m 'qualification seed'
+          "CATALOG_ROOT=$catalog" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Run real CommandRouter catalog.inspect and capture local shadow
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'jev-real-shadow-case'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          dotnet run --project tooling/jev-shadow-real-case-lab-v001/Capture.csproj -c Release --no-build -- samples/catalog-inspect.json $env:CATALOG_ROOT $out | Out-File -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'jev-real-case-lab-summary.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Shadow Lab capture failed.' }
+          $summary = Get-Content (Join-Path $env:RUNNER_TEMP 'jev-real-case-lab-summary.json') -Raw | ConvertFrom-Json
+          if ($summary.status -ne 'REAL_WORKBENCH_SHADOW_CAPTURED') { throw 'Unexpected lab status.' }
+          if ($summary.providerInvoked -or $summary.networkAuthorityCreated -or $summary.mutationAuthorityCreated) { throw 'Lab created forbidden provider/network/mutation effect.' }
+          if (-not (Test-Path $summary.shadowArtifact)) { throw 'Shadow artifact missing.' }
+          "SHADOW_ARTIFACT=$($summary.shadowArtifact)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "CASE_ROOT=$out" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Verify captured shadow authority boundary
+        shell: pwsh
+        run: |
+          $x = Get-Content $env:SHADOW_ARTIFACT -Raw | ConvertFrom-Json
+          if ($x.NormativeEffect -ne 'NONE' -or $x.AuthorityIssuance -ne 'OUT_OF_SCOPE') { throw 'Shadow gained normative authority.' }
+          if ($x.ProviderInvocationAuthorized -or $x.DecisionReadbackSupported -or $x.AuthorityCreated -or $x.ActionPermitCreated) { throw 'Shadow gained forbidden effect.' }
+          if ($x.CommandKind -ne 'catalog.inspect' -or $x.CommandTerminalState -ne 'Completed') { throw 'Unexpected captured command.' }
+
+      - name: Create private disclosure template
+        shell: pwsh
+        run: |
+          node tooling/jev-shadow-real-case-lab-v001/prepare-candidate.mjs init $env:SHADOW_ARTIFACT $env:CASE_ROOT | Out-File -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'disclosure-init.json')
+          $disclosure = Join-Path $env:CASE_ROOT 'disclosure.json'
+          $d = Get-Content $disclosure -Raw | ConvertFrom-Json
+          $d.operatorAttestedSanitized = $true
+          $d.syntheticContext.declaredIntent = 'Inspect a local source catalog without changing repositories.'
+          $d.syntheticContext.requestedOperation = 'Inspect repository metadata from a local source catalog.'
+          $d.syntheticContext.presentedScope = 'Read-only local repository catalog inspection.'
+          $d.syntheticContext.resourceClass = 'local source repository catalog'
+          $json = $d | ConvertTo-Json -Depth 20
+          [IO.File]::WriteAllText($disclosure, $json, (New-Object Text.UTF8Encoding($false)))
+          "DISCLOSURE_FILE=$disclosure" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Build sanitized externalization candidate
+        shell: pwsh
+        run: |
+          node tooling/jev-shadow-real-case-lab-v001/prepare-candidate.mjs build $env:SHADOW_ARTIFACT $env:DISCLOSURE_FILE $env:CASE_ROOT | Out-File -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'candidate-build.json')
+          $candidate = Join-Path $env:CASE_ROOT 'candidate.json'
+          $c = Get-Content $candidate -Raw | ConvertFrom-Json
+          if ($c.externalizationAuthorized -or $c.providerInvocationAuthorized -or $c.networkSendAuthorized -or $c.decisionReadbackSupported) { throw 'Candidate gained send/readback authority.' }
+          if (-not $c.humanReviewRequired) { throw 'Candidate must require human review.' }
+          if ($c.questionUse.operationalSpecificity -ne 'RESEARCH_ONLY') { throw 'Specificity must remain research-only.' }
+          "CANDIDATE_FILE=$candidate" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Create pre-send blinded human label packet
+        shell: pwsh
+        run: |
+          node tooling/jev-shadow-real-case-lab-v001/prepare-blind-label.mjs $env:CANDIDATE_FILE $env:CASE_ROOT real-case-lab-qualification | Out-File -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'blind-label-init.json')
+          $packet = Get-Content (Join-Path $env:CASE_ROOT 'review-packet.json') -Raw | ConvertFrom-Json
+          $label = Get-Content (Join-Path $env:CASE_ROOT 'label.primary.json') -Raw | ConvertFrom-Json
+          if ($packet.modelOutputVisible -or $packet.authorityEffect -ne 'NONE') { throw 'Blinded review packet boundary failed.' }
+          if ($label.modelOutputVisibleToLabeler -or -not $label.independentOfModelOutput) { throw 'Human label template is not blinded.' }
+          if ((Get-Content (Join-Path $env:CASE_ROOT 'review-packet.json') -Raw).Contains('providerRequestId')) { throw 'Model/provider output leaked into blinded packet.' }
+
+      - name: Verify repository remains clean
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw 'Shadow Lab qualification changed repository working tree.' }
+
+      - name: Upload lab qualification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jev-shadow-real-case-lab-v001
+          path: |
+            ${{ runner.temp }}/jev-real-case-lab-summary.json
+            ${{ runner.temp }}/jev-real-shadow-case/*.json
+          if-no-files-found: error
+          retention-days: 30
