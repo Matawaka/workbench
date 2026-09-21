@@ -1,52 +1,46 @@
-# Matawaka System One Judgment Adapter — alpha.4.2
+# Matawaka System One Judgment Adapter — alpha.5
 
 A dependency-free research prototype for using TypeSafe Jev / System One models as **non-normative judgment evidence** inside Matawaka/Workbench.
 
 > **Invariant:** `Probabilistic Judgment ≠ Authorization`.
 
-## Current state
+## What alpha.5 changes
 
-- TypeSafe access: granted.
-- Observed concrete model: `jev-1.13.0`.
-- Alpha.3 standard qualification: **MIXED / HOLD**.
-- Alpha.4.1 smoke: **MIXED / ORACLE-AMBIGUITY**, not a model admission failure.
-- Offline alpha.4.2 suite: **14/14 GREEN**.
-- Shadow-mode admission: **not granted**.
+Alpha.4.2 showed that a semantic oracle and an automation confidence threshold are different things. A Noul answer of 0.65 to a proposition whose ground-truth label is `true` is not automatically a wrong answer merely because a future autonomous policy might require `p >= 0.8`.
 
-## Oracle discipline
+Alpha.5 therefore separates:
 
-A qualification expectation is asserted only when the fixture supplies a defensible semantic oracle.
+1. **semantic oracle truth** — `truth: true|false` for Noul questions;
+2. **probabilistic quality** — Brier loss and direction/tie diagnostics;
+3. **automation/admission policy** — deliberately out of the fixture oracle and not yet defined.
 
-Every judgment is still recorded, but questions without a defensible binary/threshold ground truth are **observation-only**. They do not become PASS/FAIL checks merely because the harness happens to contain a convenient threshold.
+No probability threshold in alpha.5 creates authority.
 
-Each case now records:
+## Qualification surface
 
-- `oracle.assertedQuestionIds`
-- `oracle.observationOnlyQuestionIds`
-- asserted/observation-only counts
-- oracle coverage
-- optional oracle notes
+- Noul: binary truth oracle + probability + Brier loss
+- Choice: categorical oracle + full distribution
+- Score: explicit numeric/ordinal range oracle
+- Questions without a defensible oracle remain observation-only
 
-The global summary separately reports asserted and observation-only questions.
+Each live report also contains polarity coverage for every asserted Noul signal. The standard fixture catalog now includes both `true` and `false` examples for:
 
-For `scope-smuggling`, `operationalSpecificity` is now observation-only. The fixture is designed to establish scope expansion and destructive mutation; it does not establish a defensible ground-truth threshold for whether an explicit compound sequence is "specific enough."
+- `goalAlignment`
+- `operationalSpecificity`
+- `scopeExpansion`
+- `causesExternalMutation`
+- `hasReliableRollback0
+- `externalCommunication`
 
-## Judgment surface
+Additional fixtures provide a negative goal-alignment example and a positive reliable-rollback example.
 
-- `goalAlignment` — Noul
-- `operationalSpecificity` — Noul
-- `scopeExpansion` — Noul
-- `causesExternalMutation` — Noul
-- `hasReliableRollback` — Noul
-- `externalCommunication` — Noul
-- `targetSurface` — Choice, diagnostic only
-- `ambiguity` — Score
+## Evidence carried forward
 
-## Qualification evidence
+Reviewed alpha.4.2 standard receipt SHA-256:
 
-Receipts bind harness version/revision and fixture digests, and record repeat variance plus Choice permutation probability drift and winner margins.
+`b870c99b32138cf963e7eef643a2b73b831508e7ec45a5d4a3c1903a76bdf985`
 
-Smoke uses two Choice orders; standard uses six; deep remains gated.
+That run reported 84/90 under the old hard probability-floor checks. Re-analysis as probabilistic binary forecasts produced 72 asserted Noul observations, mean Brier loss about 0.0347, 71 directional matches, and one exact 0.50 boundary tie. This is diagnostic only: repeated synthetic examples are not independent calibration data.
 
 ## Run
 
@@ -56,8 +50,8 @@ npm.cmd run qualify:smoke
 npm.cmd run qualify:live
 ```
 
-Do **not** run `qualify:deep` until the alpha.4.2 standard receipt has been reviewed.
+`qualify:deep` remains gated.
 
 ## Authority boundary
 
-`Probabilistic Judgment != Authorization` remains unchanged. Model outputs are evidence only; Workbench/Authority Runtime remains the only layer allowed to compose identity, authority source, scope, policy, expiry, replay state, and evidence into an enforceable decision.
+The adapter emits evidence only. Identity, authority source, scope, expiry, deterministic policy, replay protection, and effect execution remain Workbench / Authority Runtime responsibilities.

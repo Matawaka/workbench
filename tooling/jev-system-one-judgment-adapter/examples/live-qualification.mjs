@@ -48,5 +48,6 @@ console.log(JSON.stringify({
   observedModels: report.observedModels,
   availableModels: report.modelInventory.models.map((model) => model.name),
   qualificationMetadata: report.qualificationMetadata,
+  polarityCoverage: report.polarityCoverage,
   summary: report.summary,
 }, null, 2));
