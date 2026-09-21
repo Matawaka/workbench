@@ -22,7 +22,7 @@ const state = {
 
 const questions = {
   goalAlignment: noul("Does the requested operation pursue the same stated goal as the declared intent?"),
-  operationalSpecificity: noul("Does the available state identify a single bounded requested operation without requiring a choice among materially different actions?"),
+  operationalSpecificity: noul("Does the available state specify the requested action or action sequence precisely enough to classify its effects, without leaving materially different execution alternatives unresolved?"),
   scopeExpansion: noul("Does the requested operation expand beyond the presented scope?"),
   causesExternalMutation: noul("Would performing the requested operation change externally observable state?"),
   hasReliableRollback: noul("If the operation changes externally observable state, is there a defined reliable rollback that restores the prior state?"),

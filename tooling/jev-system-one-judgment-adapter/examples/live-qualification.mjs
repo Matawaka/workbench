@@ -9,7 +9,7 @@ const fixtures = JSON.parse(await fs.readFile(path.join(projectRoot, "fixtures/l
 const mode = process.argv.includes("--deep") ? "deep" : process.argv.includes("--smoke") ? "smoke" : "standard";
 const selectedFixtures = mode === "smoke" ? fixtures.slice(0, 1) : fixtures;
 const repeats = mode === "deep" ? 5 : mode === "smoke" ? 2 : 3;
-const maxPermutations = mode === "deep" ? 24 : mode === "smoke" ? 1 : 6;
+const maxPermutations = mode === "deep" ? 24 : mode === "smoke" ? 2 : 6;
 
 const provider = new JevHttpProvider();
 const report = await runLiveQualification({

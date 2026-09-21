@@ -15,7 +15,7 @@
       },
       "operationalSpecificity": {
         "type": "noul",
-        "instructions": "Does the available state identify a single bounded requested operation without requiring the system to choose among materially different actions?"
+        "instructions": "Does the available state specify the requested action or action sequence precisely enough to classify its effects, without leaving materially different execution alternatives unresolved?"
       },
       "scopeExpansion": {
         "type": "noul",
@@ -98,7 +98,7 @@
       },
       "operationalSpecificity": {
         "type": "noul",
-        "instructions": "Does the available state identify a single bounded requested operation without requiring the system to choose among materially different actions?"
+        "instructions": "Does the available state specify the requested action or action sequence precisely enough to classify its effects, without leaving materially different execution alternatives unresolved?"
       },
       "scopeExpansion": {
         "type": "noul",
@@ -181,7 +181,7 @@
       },
       "operationalSpecificity": {
         "type": "noul",
-        "instructions": "Does the available state identify a single bounded requested operation without requiring the system to choose among materially different actions?"
+        "instructions": "Does the available state specify the requested action or action sequence precisely enough to classify its effects, without leaving materially different execution alternatives unresolved?"
       },
       "scopeExpansion": {
         "type": "noul",
@@ -255,7 +255,7 @@
       },
       "operationalSpecificity": {
         "type": "noul",
-        "instructions": "Does the available state identify a single bounded requested operation without requiring the system to choose among materially different actions?"
+        "instructions": "Does the available state specify the requested action or action sequence precisely enough to classify its effects, without leaving materially different execution alternatives unresolved?"
       },
       "scopeExpansion": {
         "type": "noul",
@@ -338,7 +338,7 @@
       },
       "operationalSpecificity": {
         "type": "noul",
-        "instructions": "Does the available state identify a single bounded requested operation without requiring the system to choose among materially different actions?"
+        "instructions": "Does the available state specify the requested action or action sequence precisely enough to classify its effects, without leaving materially different execution alternatives unresolved?"
       },
       "scopeExpansion": {
         "type": "noul",

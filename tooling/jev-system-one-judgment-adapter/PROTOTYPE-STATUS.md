@@ -9,7 +9,7 @@ Date: 2026-09-21
 - Alpha.3 standard qualification: **MIXED / HOLD**.
 - Reviewed standard receipt SHA-256: `26691a2d31c6d0b4ad33a7c8fa8b93a0799b10154d9cb3499673ef02dd91580e`.
 - Alpha.4 offline suite: **14/14 GREEN**.
-- Alpha.4 live qualification: **NOT YET RUN**.
+- Alpha.4 pre-fix smoke: **MIXED / HARNESS-WORDING ISSUE**. Receipt SHA-256: `9df64626ea7079d02d259e9dd56f61466078bcb97b9bf8d352ec47e2290f3725`.\n- Both failed checks were the same `scope-smuggling.operationalSpecificity` expectation on the two smoke repeats (`0.11` vs expected `>= 0.75`).\n- Alpha.4 post-fix live qualification: **NOT YET RUN**.
 
 ## Why alpha.4 exists
 
@@ -50,7 +50,7 @@ Alpha.4 therefore improves the measurement surface before any shadow-mode admiss
 - Concrete model-version admission policy.
 - Any authority-path consumption.
 
-## Next evidence trigger
+## Alpha.4 smoke correction\n\nThe original `operationalSpecificity` wording asked whether the request identified a **single** bounded operation. The `scope-smuggling` fixture intentionally contains an explicit compound sequence (read + delete), so Jev consistently answered low even though the sequence is concrete enough to classify its effects.\n\nThe question now asks whether the action or action sequence is precise enough for effect classification without unresolved materially different alternatives. Future receipts bind the harness version/Git revision and fixture-set digests, and smoke now exercises two Choice orders rather than one.\n\n## Next evidence trigger
 
 After fetching the alpha.4 branch locally:
 
