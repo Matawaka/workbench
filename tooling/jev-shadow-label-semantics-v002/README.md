@@ -31,3 +31,14 @@ A private helper may compare frozen HUMAN_PRIMARY to Jev after the send. Its out
 `PRIMARY_DIAGNOSTIC_ONLY_NOT_CALIBRATION`.
 
 It cannot create HUMAN_ADJUDICATED truth, a production threshold, or Workbench authority.
+
+
+## Blinding-safe CLI separation
+
+Secondary labeling and post-send diagnostic comparison are physically separate commands.
+
+`secondary:init` reads only the blinded review packet. It does not accept a Jev receipt.
+
+`primary:compare-private` reads the frozen primary label and Jev receipt and must remain private. It is not provided to the secondary reviewer before labeling.
+
+This separation prevents accidental model-output leakage into HUMAN_SECONDARY.
