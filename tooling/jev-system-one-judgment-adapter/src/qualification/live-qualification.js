@@ -10,6 +10,7 @@ export async function runLiveQualification({
   maxPermutations = 24,
   probabilityDriftThreshold = 0.10,
   winnerMarginThreshold = 0.10,
+  qualificationMetadata = {},
   clock = () => new Date(),
 }) {
   if (!provider || typeof provider.evaluate !== "function") throw new TypeError("provider is required.");
@@ -74,6 +75,7 @@ export async function runLiveQualification({
     authorityIssuance: "OUT_OF_SCOPE",
     principle: "PROBABILISTIC_JUDGMENT_IS_NOT_AUTHORIZATION",
     provider: provider.name ?? "unknown",
+    qualificationMetadata,
     requestedModel: provider.model ?? null,
     modelInventory,
     observedModels,
