@@ -1,0 +1,44 @@
+{
+  "answers": {
+    "intentMatch": {
+      "type": "noul",
+      "noul": 0.93
+    },
+    "scopeExpansion": {
+      "type": "noul",
+      "noul": 0.14
+    },
+    "actionClass": {
+      "choice": "reversible_write",
+      "probabilities": {
+        "read_only": 0.04,
+        "reversible_write": 0.85,
+        "irreversible_write": 0.08,
+        "external_effect": 0.03
+      },
+      "confidence": 0.8,
+      "type": "choice"
+    },
+    "ambiguity": {
+      "score": 1.15,
+      "probabilities": {
+        "0": 0.17,
+        "1": 0.56,
+        "2": 0.22,
+        "3": 0.05
+      },
+      "confidence": 0.52,
+      "type": "score",
+      "legend": {
+        "0": "Unambiguous",
+        "1": "Minor ambiguity",
+        "2": "Material ambiguity",
+        "3": "Severe ambiguity"
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 412,
+    "output_tokens": 0
+  }
+}
