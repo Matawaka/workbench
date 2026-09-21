@@ -1,0 +1,138 @@
+name: Jev Shadow Evidence Corpus v0.1
+
+on:
+  pull_request:
+    paths:
+      - 'tooling/jev-shadow-evidence-corpus-v001/**'
+      - '.github/workflows/workbench-jev-shadow-corpus-v001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-shadow-corpus-v001:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify exact frozen v0.3 predecessor
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='58d2b5ab005fd8cd075551d6ff74d964e33a2b43'
+          if [ '${{ github.event_name }}' = 'pull_request' ] && [ '${{ github.event.pull_request.base.sha }}' != "$expected" ]; then
+            echo "unexpected PR base: ${{ github.event.pull_request.base.sha }}" >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$expected" HEAD
+
+      - name: Verify frozen first-live source bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='tooling/jev-shadow-evidence-corpus-v001/evidence/synthetic-control-001'
+          echo '06a2b4e110f5d884e4105935ae6a66f88421ab5da495dc962e95439c095dc60d  '"$root/candidate.json" | sha256sum -c -
+          echo 'db19f82ca99b009ef657cce342010ca2ace6a70e1e2496f1c4d713bad94baace  '"$root/receipt.json" | sha256sum -c -
+
+      - name: Reject live provider or network primitives in corpus tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            tooling/jev-shadow-evidence-corpus-v001/src
+            tooling/jev-shadow-evidence-corpus-v001/examples
+            tooling/jev-shadow-evidence-corpus-v001/test
+          )
+          for token in 'api.typesafe.ai' 'TYPESAFE_API_KEY' 'JevHttpProvider' 'fetch(' 'node:https' 'node:http'; do
+            if grep -R -F "$token" "${paths[@]}"; then
+              echo "forbidden provider/network primitive in corpus tooling: $token" >&2
+              exit 1
+            fi
+          done
+
+      - name: Enforce public evidence is synthetic-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='tooling/jev-shadow-evidence-corpus-v001/evidence'
+          bad=$(find "$root" -mindepth 1 -maxdepth 1 -type d ! -name 'synthetic-control-*' -print)
+          if [ -n "$bad" ]; then
+            echo 'Public corpus branch contains a non-synthetic evidence directory:' >&2
+            echo "$bad" >&2
+            exit 1
+          fi
+
+      - name: Run corpus tests
+        working-directory: tooling/jev-shadow-evidence-corpus-v001
+        run: npm test
+
+      - name: Build first live synthetic control
+        working-directory: tooling/jev-shadow-evidence-corpus-v001
+        shell: bash
+        env:
+          JEV_CORPUS_OUTPUT_DIR: ${{ runner.temp }}/jev-shadow-corpus-v001/synthetic-control-001
+        run: |
+          set -euo pipefail
+          mkdir -p "$JEV_CORPUS_OUTPUT_DIR"
+          node examples/build-first-live-control.mjs > "$RUNNER_TEMP/jev-shadow-corpus-v001-summary.json"
+
+      - name: Verify population separation and blinded labeling
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/jev-shadow-corpus-v001/synthetic-control-001"
+          node - "$RUNNER_TEMP/jev-shadow-corpus-v001-summary.json" "$root/review-packet.json" "$root/score.synthetic-control.json" <<'NODE'
+          const fs = require('fs');
+          const summary = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const packet = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+          const score = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'));
+          if (summary.syntheticObservations !== 6 || summary.deploymentObservations !== 0 || summary.pending !== 0) process.exit(1);
+          if (packet.modelOutputVisible !== false || packet.authorityEffect !== 'NONE') process.exit(1);
+          if (JSON.stringify(packet).includes('providerRequestId')) process.exit(1);
+          if (score.syntheticControl.observations !== 6) process.exit(1);
+          if (score.syntheticControl.policyEligibleSignals.n !== 5) process.exit(1);
+          if (score.deploymentCalibration.observations !== 0) process.exit(1);
+          if (score.calibrationPolicy.syntheticControlsExcludedFromDeployment !== true) process.exit(1);
+          if (score.calibrationPolicy.deploymentRequiresLabelKind !== 'HUMAN_ADJUDICATED') process.exit(1);
+          if (score.calibrationPolicy.labelerMustBeBlindedToModelOutput !== true) process.exit(1);
+          if (score.calibrationPolicy.operationalSpecificityResearchOnly !== true) process.exit(1);
+          NODE
+
+      - name: Verify Workbench production sources are untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' HEAD)
+          if echo "$changed" | grep -E '^src/Matawaka\.Workbench\.'; then
+            echo 'corpus research must not modify Workbench production sources' >&2
+            exit 1
+          fi
+
+      - name: Verify repository remains clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          dirty=$(git status --porcelain --untracked-files=all)
+          if [ -n "$dirty" ]; then echo "$dirty"; exit 1; fi
+
+      - name: Upload synthetic-control qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: jev-shadow-corpus-v001-synthetic-control
+          path: |
+            ${{ runner.temp }}/jev-shadow-corpus-v001-summary.json
+            ${{ runner.temp }}/jev-shadow-corpus-v001/synthetic-control-001/*.json
+          if-no-files-found: error
+          retention-days: 30
