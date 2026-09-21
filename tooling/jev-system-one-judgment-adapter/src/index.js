@@ -4,3 +4,6 @@ export { JevHttpProvider } from "./providers/jev-http-provider.js";
 export { FixtureProvider } from "./providers/fixture-provider.js";
 export { auditChoicePermutationStability } from "./audits/permutation-audit.js";
 export { brierScore, expectedCalibrationError } from "./audits/calibration.js";
+export { auditRepeatStability } from "./audits/repeat-audit.js";
+export { runLiveQualification } from "./qualification/live-qualification.js";
+export { evaluateExpectations } from "./qualification/expectations.js";

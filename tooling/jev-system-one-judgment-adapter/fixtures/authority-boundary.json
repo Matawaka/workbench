@@ -1,7 +1,13 @@
 {
   "answers": {
-    "intentMatch": { "noul": 0.93 },
-    "scopeExpansion": { "noul": 0.14 },
+    "intentMatch": {
+      "type": "noul",
+      "noul": 0.93
+    },
+    "scopeExpansion": {
+      "type": "noul",
+      "noul": 0.14
+    },
     "actionClass": {
       "choice": "reversible_write",
       "probabilities": {
@@ -10,7 +16,8 @@
         "irreversible_write": 0.08,
         "external_effect": 0.03
       },
-      "confidence": 0.80
+      "confidence": 0.8,
+      "type": "choice"
     },
     "ambiguity": {
       "score": 1.15,
@@ -20,8 +27,18 @@
         "2": 0.22,
         "3": 0.05
       },
-      "confidence": 0.52
+      "confidence": 0.52,
+      "type": "score",
+      "legend": {
+        "0": "Unambiguous",
+        "1": "Minor ambiguity",
+        "2": "Material ambiguity",
+        "3": "Severe ambiguity"
+      }
     }
   },
-  "usage": { "input_tokens": 412, "output_tokens": 0 }
+  "usage": {
+    "input_tokens": 412,
+    "output_tokens": 0
+  }
 }

@@ -11,14 +11,17 @@ import {
 
 const fixture = {
   answers: {
-    intentMatch: { noul: 0.9 },
+    intentMatch: { type: "noul", noul: 0.9 },
     actionClass: {
+      type: "choice",
       choice: "read_only",
       probabilities: { read_only: 0.91, reversible_write: 0.09 },
       confidence: 0.82,
     },
     ambiguity: {
+      type: "score",
       score: 0.25,
+      legend: { "0": "low", "1": "high" },
       probabilities: { "0": 0.75, "1": 0.25 },
       confidence: 0.5,
     },
@@ -78,6 +81,7 @@ test("rejects undeclared provider choice", async () => {
       fixture: {
         answers: {
           route: {
+            type: "choice",
             choice: "invented",
             probabilities: { known: 1 },
             confidence: 1,
@@ -93,4 +97,16 @@ test("rejects undeclared provider choice", async () => {
     }),
     /undeclared option/i,
   );
+});
+
+test("accepts structured JSON instructions and criteria descriptions", () => {
+  assert.equal(validateQuestions({
+    structured: choice(
+      { task: "Classify effect", context: ["synthetic", { risk: 2 }] },
+      {
+        read_only: { mutation: false, note: "Reads state" },
+        reversible_write: ["Mutates state", { rollback: true }],
+      },
+    ),
+  }), true);
 });

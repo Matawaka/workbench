@@ -53,6 +53,7 @@ export class SystemOneJudgmentAdapter {
       responseDigest,
       startedAt,
       observedAt,
+      providerRequestId: providerResponse.requestId ?? null,
       judgments,
       usage: providerResponse.usage ?? null,
       provenance: {

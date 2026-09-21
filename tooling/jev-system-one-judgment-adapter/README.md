@@ -1,6 +1,6 @@
-# Matawaka System One Judgment Adapter â€” prototype v0.1
+# Matawaka System One Judgment Adapter â€” alpha.3
 
-A dependency-free Node.js protototype for integrating TypeSafe Jev / System One-style models as **non-normative judgment evidence** inside Matawaka/Workbench.
+A dependency-free Node.js prototype for integrating TypeSafe Jev / System One-style models as **non-normative judgment evidence** inside Matawaka/Workbench.
 
 > **Invariant:** `Probabilistic Judgment â‰  Authorization`.
 >
@@ -17,8 +17,10 @@ Matawaka needs an additional boundary: model judgment may be evidence for an aut
 - Works offline with a fixture provider.
 - Contains a direct Jev HTTP provider for `POST https://api.typesafe.ai/v1/systemone`.
 - Does not require the official SDK.
-- Live Jev execution requires `TYPESAFE_API_KEY` after TypeSafe access is granted.
-- 8 automated tests currently pass on Node 22.
+- TypeSafe early access has been granted; live execution now requires only a locally supplied `TYPESAFE_API_KEY`.
+- Captures `GET /v1/models` inventory and `x-typesafe-request-id` provenance.
+- Includes smoke, standard, and deep live qualification profiles.
+- 13 automated tests currently pass on Node 22.
 
 ## Run
 
@@ -27,12 +29,15 @@ npm test
 npm run demo
 ```
 
-When TypeSafe grants API access:
+With TypeSafe access granted, supply the key only through the local environment:
 
 ```bash
 export TYPESAFE_API_KEY='...'
-npm run live
+npm run qualify:smoke
+npm run qualify:live
 ```
+
+Do not commit or paste the API key into receipts.
 
 ## Core contract
 
@@ -89,7 +94,7 @@ permit / deny / human review
 external action + receipt
 ```
 
-The adapter cannot cross the evidence/authority boundary by construction.
+The adapter cannot cross the eVidence/authority boundary by construction.
 
 ## Example questions
 
@@ -157,7 +162,7 @@ This directly targets the order sensitivity reported in independent Jev probing.
 ```text
 src/
   adapter.js                  judgment-evidence envelope
-  contracts.js                 Choice / Score / Noul + anti-authority guard
+  contracts.js                Choice / Score / Noul + anti-authority guard
   validate-response.js        response/schema validation
   canonical-json.js           deterministic SHA-256 digests
   providers/
@@ -166,26 +171,32 @@ src/
   audits/
     permutation-audit.js       Choice order-sensitivity audit
     calibration.js             Brier / ECE helpers
+    repeat-audit.js             run-to-run variance audit
+  qualification/
+    live-qualification.js       staged live qualification
+    expectations.js             synthetic semantic checks
 examples/
   offline-demo.mjs
   live-jev.mjs
+  live-qualification.mjs
 fixtures/
   authority-boundary.json
+  live-qualification.json
 test/
 docs/
 ```
 
 ## Relationship to TypeSafe's official SDK
 
-TypeSafe also publishes `@typesafe-ai/sdk`. This prototype intentionally uses a tiny direct HTTP provider so the Matawaka boundary remains inspectable and dependency-light. Once access is granted, an official-SDK-backed provider can be added behind the same `provider.evaluate()` interface without changing the evidence contract.
+TypeSafe also publishes `@typesafe-ai/sdk`. This prototype intentionally uses a tiny direct HTTP provider so the Matawaka boundary remains inspectable and dependency-light. The alpha.3 contract has been checked against the current official SDK types. A future official-SDK-backed provider can still be added behind the same `provider.evaluate()` interface without changing the Matawaka evidence contract. See `docs/OFFICIAL-CONTRACT-SNAPSHOT.md`.
 
 ## Sources snapshot
 
-Research/design snapshot: 20 September 2026.
+Research/design snapshot updated: 21 September 2026.
 
 - TypeSafe AI â€” *Introducing System One Models & Jev* (15 Sep 2026): https://typesafe.ai/blog/introducing-system-one-models-and-jev
 - TypeSafe docs â€” Introduction: https://docs.typesafe.ai/introduction
-- TypeSafe official JS SDK: https://github.com/typesafe-ai/typesafe-sdk-js
-- Archer Hume â€” *Jev's Architecture Unmasked* (17 Sep 2026): https://archerhume.com/posts/jevs-architecture-unmasked/?v=3
-
-See `docs/ARCHITECTURE-NOTES.md` for the distinction between published facts, observations, and architectural inference.
+- TypeSafe official JS SDK: https://github.com/typesafe-ai/typesafe-sdkZœÂ‹H\˜Ú\ˆ[YH8 %
+’™]‰ÜÈ\˜Ú]Xİ\™H[›X\ÚÙY
+ˆ
+MÈÙ\ŒŠNˆÎ‹ËØ\˜Ú\š[YK˜ÛÛKÜÜİËÚ™]œËX\˜Ú]Xİ\™K][›X\ÚÙYÏİLÂ‚”ÙYHØÜËĞTÒUPÕT‘KS“ÕTË›Y›ÜˆH\İ[˜İ[Ûˆ™]ÙY[ˆX›\ÚY˜XİËØœÙ\˜][ÛœË[™\˜Ú]Xİ\˜[[™™\™[˜ÙK‚

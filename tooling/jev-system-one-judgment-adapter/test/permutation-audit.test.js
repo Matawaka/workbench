@@ -20,6 +20,7 @@ class OrderSensitiveProvider {
       model: this.model,
       answers: {
         [id]: {
+          type: "choice",
           choice: first,
           probabilities: { [first]: 0.7, [second]: 0.3 },
           confidence: 0.4,
