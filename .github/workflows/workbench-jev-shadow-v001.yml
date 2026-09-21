@@ -1,0 +1,130 @@
+name: Workbench Jev Shadow Bridge v0.1
+
+on:
+  pull_request:
+    paths:
+      - 'src/Matawaka.Workbench.App/JevShadowObservationExportV001.cs'
+      - 'src/Matawaka.Workbench.App/MainWindow.xaml.cs'
+      - 'integrations/jev-shadow/**'
+      - '.github/qualification/jev-shadow-v001/**'
+      - '.github/workflows/workbench-jev-shadow-v001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-jev-shadow-v001:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify exact alpha.5 predecessor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '9d17b6c583b7acbb1a4a0524e5acaa046abeb1c9'
+          if ('${{ github.event_name }}' -eq 'pull_request' -and '${{ github.event.pull_request.base.sha }}' -ne $expected) {
+            throw "Unexpected PR base: ${{ github.event.pull_request.base.sha }}"
+          }
+          git merge-base --is-ancestor $expected HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact alpha.5 predecessor is not an ancestor of candidate.' }
+
+      - name: Verify protected authority sources remain exact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = @{
+            'src/Matawaka.Workbench.Runtime/CommandRouter.cs' = '08df01117ab5b657f493bcafc706fd568370b0a6'
+            'src/Matawaka.Workbench.AgentHost/DevelopmentAgentHost.cs' = '852de740c4ff94e0cffe751efb0abcf96e1a1c4c'
+            'src/Matawaka.Workbench.AgentHost/SemanticProvider.cs' = '4e8477216e1222608a7f85ff0f79d4573ca79c67'
+            'src/Matawaka.Workbench.Runtime/LiveCapabilityEvidenceAuditV058.cs' = 'e6bc8ffe7295bb56fb3749315c251816aa9633c8'
+          }
+          foreach ($path in $expected.Keys) {
+            $spec = 'HEAD:' + $path
+            $headBlob = (git rev-parse $spec).Trim()
+            if ($headBlob -ne $expected[$path]) {
+              throw "Protected authority source drifted: $path; observed=$headBlob expected=$($expected[$path])"
+            }
+          }
+
+      - name: Verify post-terminal wiring order
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $text = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml.cs' -Raw
+          $run = $text.IndexOf('var result = await _router.RunAsync(command, context, progress, _cts!.Token);')
+          $render = $text.IndexOf('RenderResult(result);', $run)
+          $terminal = $text.IndexOf('ApplyTerminalState(result.TerminalState, result.Summary);', $render)
+          $shadow = $text.IndexOf('await TryExportJevShadowObservationV001Async(command, result);', $terminal)
+          if ($run -lt 0 -or $render -le $run -or $terminal -le $render -or $shadow -le $terminal) {
+            throw 'Jev shadow wiring is not strictly post-command and post-terminal.'
+          }
+
+      - name: Verify no provider/network implementation in Workbench shadow exporter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $paths = @(
+            'src/Matawaka.Workbench.App/JevShadowObservationExportV001.cs',
+            'src/Matawaka.Workbench.App/MainWindow.xaml.cs'
+          )
+          $forbidden = @('api.typesafe.ai', 'TYPESAFE_API_KEY', 'HttpClient', 'System.Net.Http', 'jev-latest')
+          foreach ($path in $paths) {
+            $text = Get-Content $path -Raw
+            foreach ($token in $forbidden) {
+              if ($text.Contains($token, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Forbidden live-provider token '$token' found in $path"
+              }
+            }
+          }
+
+      - name: Full Workbench Release build
+        run: dotnet build Matawaka.Workbench.sln -c Release
+
+      - name: Build shadow qualification probe
+        run: dotnet build .github/qualification/jev-shadow-v001/Probe.csproj -c Release
+
+      - name: Run observation-only shadow qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "$env:RUNNER_TEMP\jev-shadow-v001.json"
+          dotnet run --project .github/qualification/jev-shadow-v001/Probe.csproj -c Release --no-build | Out-File -Encoding utf8 $out
+          if ($LASTEXITCODE -ne 0) { throw 'Jev shadow v0.1 qualification probe failed.' }
+          $receipt = Get-Content $out -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'QUALIFIED_LOCAL_EXPORT_NO_AUTHORITY_CHANGE') { throw 'Unexpected qualification status.' }
+          if (-not $receipt.disabledWritesNothing -or $receipt.payloadBytesIncluded -or $receipt.externalizationAuthorized -or $receipt.providerInvocationAuthorized -or $receipt.decisionReadbackSupported) {
+            throw 'Shadow boundary violated export/provider/readback invariants.'
+          }
+          if ($receipt.authorityCreated -or $receipt.displayPermitCreated -or $receipt.actionPermitCreated) {
+            throw 'Shadow qualification reported authority or permit creation.'
+          }
+          if (-not $receipt.terminalStateUnchanged -or -not $receipt.authorityReceiptUnchanged -or -not $receipt.networkGrantUnchanged -or -not $receipt.processGrantUnchanged) {
+            throw 'Shadow export changed terminal state or base authority grants.'
+          }
+
+      - name: Verify repository remains clean
+        shell: pwsh
+        run: |
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw 'Qualification changed repository working tree' }
+
+      - name: Upload qualification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-jev-shadow-v001
+          path: ${{ runner.temp }}/jev-shadow-v001.json
+          if-no-files-found: error
+          retention-days: 30
