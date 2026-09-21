@@ -1,0 +1,84 @@
+name: Workbench Jev Shadow One-Shot Send v0.3
+
+on:
+  pull_request:
+    paths:
+      - 'tooling/jev-shadow-one-shot-send-v003/**'
+      - '.github/workflows/workbench-jev-shadow-send-v003.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-shadow-send-v003:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify exact v0.2 predecessor
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='1de336da6a263a57cf465b1bc1a95345dc8286c7'
+          if [ '${{ github.event_name }}' = 'pull_request' ] && [ '${{ github.event.pull_request.base.sha }}' != "$expected" ]; then
+            echo "unexpected PR base: ${{ github.event.pull_request.base.sha }}" >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$expected" HEAD
+
+      - name: Verify sidecar core has no direct network/provider implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          core='tooling/jev-shadow-one-shot-send-v003/src/one-shot-send.js'
+          for token in 'JevHttpProvider' 'TYPESAFE_API_KEY' 'fetch(' 'node:https' 'node:http'; do
+            if grep -Fi "$token" "$core"; then
+              echo "network/provider primitive leaked into sidecar core: $token" >&2
+              exit 1
+            fi
+          done
+
+      - name: Verify live provider is isolated to manual CLI after lease validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cli='tooling/jev-shadow-one-shot-send-v003/examples/send-once.mjs'
+          grep -F 'JevHttpProvider' "$cli" >/dev/null
+          node -e 'const fs=require("fs");const t=fs.readFileSync(process.argv[1],"utf8");const v=t.indexOf("validateShadowSendLease(candidate, lease)");const p=t.indexOf("new JevHttpProvider");if(v<0||p<=v)process.exit(1)' "$cli"
+
+      - name: Run v0.2 no-send adapter tests
+        working-directory: tooling/jev-system-one-judgment-adapter
+        run: npm test
+
+      - name: Run v0.3 one-shot sidecar tests
+        working-directory: tooling/jev-shadow-one-shot-send-v003
+        run: npm test
+
+      - name: Verify Workbench production sources are untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' HEAD)
+          if echo "$changed" | grep -E '^src/Matawaka\.Workbench\.'; then
+            echo 'v0.3 must not modify Workbench production sources' >&2
+            exit 1
+          fi
+
+      - name: Verify repository remains clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          dirty=$(git status --porcelain --untracked-files=all)
+          if [ -n "$dirty" ]; then echo "$dirty"; exit 1; fi

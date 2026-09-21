@@ -1,0 +1,12 @@
+{
+  "name": "@matawaka/jev-shadow-one-shot-send-v003",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test",
+    "lease:template": "node examples/lease-template.mjs",
+    "send:once": "node examples/send-once.mjs"
+  }
+}
