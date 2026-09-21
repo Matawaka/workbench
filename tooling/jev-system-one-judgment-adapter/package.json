@@ -15,4 +15,4 @@
     "qualify:live": "node examples/live-qualification.mjs",
     "qualify:deep": "node examples/live-qualification.mjs --deep"
   }
-}\n
+}
