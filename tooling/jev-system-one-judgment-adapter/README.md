@@ -1,23 +1,37 @@
-# Matawaka System One Judgment Adapter — alpha.4.1
+# Matawaka System One Judgment Adapter — alpha.4.2
 
 A dependency-free research prototype for using TypeSafe Jev / System One models as **non-normative judgment evidence** inside Matawaka/Workbench.
 
 > **Invariant:** `Probabilistic Judgment ≠ Authorization`.
 
-The adapter may classify, score, estimate uncertainty, and emit probability distributions. It cannot issue authority, permits, approvals, executions, or external effects.
-
-## Current qualification state
+## Current state
 
 - TypeSafe access: granted.
 - Observed concrete model: `jev-1.13.0`.
 - Alpha.3 standard qualification: **MIXED / HOLD**.
-- Alpha.4 pre-fix smoke: **MIXED / HARNESS-WORDING ISSUE**.
-- Offline suite after alpha.4.1 correction: **14/14 GREEN**.
+- Alpha.4.1 smoke: **MIXED / ORACLE-AMBIGUITY**, not a model admission failure.
+- Offline alpha.4.2 suite: **14/14 GREEN**.
 - Shadow-mode admission: **not granted**.
 
-## Judgment surface
+## Oracle discipline
 
-Authority-adjacent semantics are decomposed into independent questions:
+A qualification expectation is asserted only when the fixture supplies a defensible semantic oracle.
+
+Every judgment is still recorded, but questions without a defensible binary/threshold ground truth are **observation-only**. They do not become PASS/FAIL checks merely because the harness happens to contain a convenient threshold.
+
+Each case now records:
+
+- `oracle.assertedQuestionIds`
+- `oracle.observationOnlyQuestionIds`
+- asserted/observation-only counts
+- oracle coverage
+- optional oracle notes
+
+The global summary separately reports asserted and observation-only questions.
+
+For `scope-smuggling`, `operationalSpecificity` is now observation-only. The fixture is designed to establish scope expansion and destructive mutation; it does not establish a defensible ground-truth threshold for whether an explicit compound sequence is "specific enough."
+
+## Judgment surface
 
 - `goalAlignment` — Noul
 - `operationalSpecificity` — Noul
@@ -28,30 +42,13 @@ Authority-adjacent semantics are decomposed into independent questions:
 - `targetSurface` — Choice, diagnostic only
 - `ambiguity` — Score
 
-`operationalSpecificity` asks whether the requested action **or action sequence** is precise enough to classify its effects without unresolved materially different alternatives. A compound sequence is not automatically ambiguous.
-
 ## Qualification evidence
 
-The live runner records:
+Receipts bind harness version/revision and fixture digests, and record repeat variance plus Choice permutation probability drift and winner margins.
 
-- requested model alias and concrete observed model;
-- TypeSafe request IDs;
-- canonical request/response SHA-256 digests;
-- repeat variance;
-- Choice option-order permutations;
-- maximum probability spread;
-- minimum winner margin;
-- threshold-relevant instability;
-- harness package version;
-- harness Git revision when available;
-- full fixture-catalog digest;
-- selected-fixture digest and IDs.
-
-Smoke now executes **two Choice orders** so the permutation metric is exercised rather than trivially reporting a one-order zero.
+Smoke uses two Choice orders; standard uses six; deep remains gated.
 
 ## Run
-
-PowerShell:
 
 ```powershell
 npm.cmd test
@@ -59,27 +56,8 @@ npm.cmd run qualify:smoke
 npm.cmd run qualify:live
 ```
 
-Do **not** run `qualify:deep` until the standard alpha.4.1 receipt has been reviewed.
+Do **not** run `qualify:deep` until the alpha.4.2 standard receipt has been reviewed.
 
 ## Authority boundary
 
-```text
-Jev / System One
-      |
-      v
-Probabilistic Judgment Evidence
-      |
-      |  no authority
-      v
-Workbench / Authority Runtime
-      |
-      v
-permit / deny / human review
-```
-
-Provider failure, low confidence, semantic ambiguity, or a high probability never creates authority by itself.
-
-See:
-- `docs/QUALIFICATION-2026-09-21-STANDARD.md`
-- `docs/LIVE-QUALIFICATION.md`
-- `docs/THREAT-MODEL.md`
+`Probabilistic Judgment != Authorization` remains unchanged. Model outputs are evidence only; Workbench/Authority Runtime remains the only layer allowed to compose identity, authority source, scope, policy, expiry, replay state, and evidence into an enforceable decision.

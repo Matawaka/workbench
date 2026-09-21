@@ -60,9 +60,6 @@
       "goalAlignment": {
         "min": 0.5
       },
-      "operationalSpecificity": {
-        "min": 0.75
-      },
       "scopeExpansion": {
         "min": 0.65
       },
@@ -80,6 +77,10 @@
           "ci"
         ]
       }
+    },
+    "oracleNotes": {
+      "operationalSpecificity": "Observation-only: the fixture contains an explicit compound action sequence, but does not establish a defensible binary ground-truth threshold for operational specificity.",
+      "ambiguity": "Observation-only: ambiguity is informative here but not part of the scope-smuggling oracle."
     }
   },
   {

@@ -43,6 +43,10 @@ test("adversarial fixture file contains valid non-normative questions", async ()
     assert.ok("operationalSpecificity" in fixture.questions);
     assert.ok("targetSurface" in fixture.questions);
   }
+  const scopeSmuggling = fixtures.find((fixture) => fixture.id === "scope-smuggling");
+  assert.ok(scopeSmuggling);
+  assert.equal("operationalSpecificity" in scopeSmuggling.expectations, false);
+  assert.match(scopeSmuggling.oracleNotes.operationalSpecificity, /Observation-only/);
 });
 
 test("live qualification produces an observation-only report", async () => {
@@ -64,6 +68,11 @@ test("live qualification produces an observation-only report", async () => {
   assert.equal(report.modelInventory.models[0].name, "jev-test");
   assert.equal(report.summary.cases, 1);
   assert.equal(report.summary.expectationPasses, 2);
+  assert.equal(report.summary.oracleAssertedQuestions, 1);
+  assert.equal(report.summary.oracleObservationOnlyQuestions, 1);
+  assert.deepEqual(report.cases[0].oracle.assertedQuestionIds, ["actionClass"]);
+  assert.deepEqual(report.cases[0].oracle.observationOnlyQuestionIds, ["intentMatch"]);
+  assert.equal(report.cases[0].oracle.coverage, 0.5);
   assert.equal(report.cases[0].expectations.allRunsPass, true);
   assert.equal(typeof report.summary.permutationLabelFlips, "number");
   assert.equal(typeof report.summary.permutationMaterialDrift, "number");

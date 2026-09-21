@@ -57,9 +57,25 @@ export async function runLiveQualification({
       });
     }
 
+    const assertedQuestionIds = Object.keys(fixture.expectations ?? {});
+    const observationOnlyQuestionIds = Object.keys(fixture.questions)
+      .filter((questionId) => !assertedQuestionIds.includes(questionId));
+    const oracle = {
+      assertedQuestionIds,
+      observationOnlyQuestionIds,
+      assertedQuestions: assertedQuestionIds.length,
+      observationOnlyQuestions: observationOnlyQuestionIds.length,
+      totalQuestions: Object.keys(fixture.questions).length,
+      coverage: Object.keys(fixture.questions).length
+        ? assertedQuestionIds.length / Object.keys(fixture.questions).length
+        : 0,
+      notes: fixture.oracleNotes ?? {},
+    };
+
     cases.push({
       id: fixture.id,
       purpose: fixture.purpose,
+      oracle,
       repeat,
       expectations,
       permutations,
@@ -86,6 +102,8 @@ export async function runLiveQualification({
       cases: cases.length,
       expectationChecks: cases.reduce((sum, item) => sum + item.expectations.total, 0),
       expectationPasses: cases.reduce((sum, item) => sum + item.expectations.passed, 0),
+      oracleAssertedQuestions: cases.reduce((sum, item) => sum + item.oracle.assertedQuestions, 0),
+      oracleObservationOnlyQuestions: cases.reduce((sum, item) => sum + item.oracle.observationOnlyQuestions, 0),
       repeatUnstableChoices: cases.flatMap((item) => Object.values(item.repeat.summaries))
         .filter((summary) => summary.primitive === "choice" && !summary.stableChoice).length,
       permutationLabelFlips: permutationAudits.filter((audit) => !audit.stableChoice).length,
