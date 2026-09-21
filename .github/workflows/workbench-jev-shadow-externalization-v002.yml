@@ -64,7 +64,7 @@ jobs:
 
       - name: Build synthetic externalization candidate
         working-directory: tooling/jev-system-one-judgment-adapter
-        run: npm run shadow:externalization:synthetic > "$RUNNER_TEMP/shadow-v002-summary.json"
+        run: node examples/shadow-externalization-candidate.mjs > "$RUNNER_TEMP/shadow-v002-summary.json"
 
       - name: Verify candidate boundary
         shell: bash
