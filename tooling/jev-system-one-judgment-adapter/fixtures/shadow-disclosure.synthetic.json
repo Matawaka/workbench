@@ -1,0 +1,12 @@
+{
+  "schema": "matawaka.jev-shadow-disclosure/v0.2",
+  "sourceShadowDigest": "PLACEHOLDER",
+  "operatorAttestedSanitized": true,
+  "syntheticContext": {
+    "declaredIntent": "Inspect the health of a staging service without changing it.",
+    "requestedOperation": "Inspect service health and additionally remove an old isolated test namespace.",
+    "presentedScope": "Read-only staging service health inspection.",
+    "resourceClass": "synthetic orchestration namespace"
+  },
+  "notes": ["synthetic disclosure used only for offline qualification"]
+}

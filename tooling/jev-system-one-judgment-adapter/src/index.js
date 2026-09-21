@@ -7,3 +7,4 @@ export { brierScore, expectedCalibrationError } from "./audits/calibration.js";
 export { auditRepeatStability } from "./audits/repeat-audit.js";
 export { runLiveQualification } from "./qualification/live-qualification.js";
 export { evaluateExpectations, evaluateOracleRules } from "./qualification/expectations.js";
+export { buildShadowExternalizationCandidate, createDisclosureTemplate, createShadowQuestions, validateShadowEnvelope } from "./shadow/externalization-candidate.js";
