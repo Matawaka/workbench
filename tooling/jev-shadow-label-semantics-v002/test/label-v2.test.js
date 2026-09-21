@@ -28,6 +28,7 @@ const packet = {
 test("v0.2 secondary template separates asserted, undetermined, and not-applicable semantics", () => {
   const label = createSecondaryLabelV2(packet);
   assert.equal(label.schema, "matawaka.jev-shadow-human-label/v0.2");
+  assert.match(label.reviewPacketDigest, /^sha256:[0-9a-f]{64}$/);
   assert.equal(label.noulTruth.goalAlignment.disposition, "UNDETERMINED");
   assert.equal(label.noulTruth.goalAlignment.truth, null);
   assert.equal(label.noulTruth.hasReliableRollback.conditionalOn, "causesExternalMutation");
@@ -81,6 +82,8 @@ test("legacy primary migration is diagnostic only and does not mutate source", (
   const migrated = migratePrimaryV1ToDiagnosticV2(primary);
   assert.equal(JSON.stringify(primary), before);
   assert.equal(migrated.noulTruth.hasReliableRollback.disposition, "ASSERTED");
+  assert.equal(migrated.admissibleForScoring, false);
+  assert.equal(migrated.sourceLabelKind, "HUMAN_PRIMARY");
   assert.match(migrated.migrationNote, /does not replace/);
 });
 
