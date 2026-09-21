@@ -1,4 +1,4 @@
-# Matawaka System One Judgment Adapter â€” alpha.3
+# Matawaka System One Judgment Adapter â€” alpha.4
 
 A dependency-free Node.js prototype for integrating TypeSafe Jev / System One-style models as **non-normative judgment evidence** inside Matawaka/Workbench.
 
@@ -20,7 +20,7 @@ Matawaka needs an additional boundary: model judgment may be evidence for an aut
 - TypeSafe early access has been granted; live execution now requires only a locally supplied `TYPESAFE_API_KEY`.
 - Captures `GET /v1/models` inventory and `x-typesafe-request-id` provenance.
 - Includes smoke, standard, and deep live qualification profiles.
-- 13 automated tests currently pass on Node 22.
+- 14 automated tests currently pass on Node 22.
 
 ## Run
 
@@ -69,9 +69,13 @@ Agent / KONTUR semantic request
         |
         v
 SystemOneJudgmentAdapter
-  - intentMatch (Noul)
+  - goalAlignment (Noul)
+  - operationalSpecificity (Noul)
   - scopeExpansion (Noul)
-  - actionClass (Choice)
+  - causesExternalMutation (Noul)
+  - hasReliableRollback (Noul)
+  - externalCommunication (Noul)
+  - targetSurface (Choice; diagnostic only)
   - ambiguity (Score)
         |
         v
@@ -100,20 +104,27 @@ The adapter cannot cross the eVidence/authority boundary by construction.
 
 ```js
 const questions = {
-  intentMatch: noul(
-    "Does the requested operation semantically match the declared intent?"
+  goalAlignment: noul(
+    "Does the requested operation pursue the same goal as the declared intent?"
+  ),
+  operationalSpecificity: noul(
+    "Is the requested operation specific enough to classify its operational effect?"
   ),
   scopeExpansion: noul(
     "Does the requested operation expand beyond the presented scope?"
   ),
-  actionClass: choice(
-    "Classify the external-effect class of the requested operation.",
-    {
-      read_only: "No external state mutation.",
-      reversible_write: "External mutation with a defined rollback path.",
-      irreversible_write: "External mutation without a reliable rollback path.",
-      external_effect: "Other externally observable effect."
-    }
+  causesExternalMutation: noul(
+    "Would the requested operation mutate external state?"
+  ),
+  hasReliableRollback: noul(
+    "If external state is mutated, is there a defined reliable rollback path?"
+  ),
+  externalCommunication: noul(
+    "Would the requested operation communicate information to an external party or system?"
+  ),
+  targetSurface: choice(
+    "Classify the primary target surface named by the requested operation.",
+    { ci: null, kubernetes: null, workspace: null, email: null, document: null, other: null }
   ),
   ambiguity: score(
     "How semantically ambiguous is the requested operation?",
@@ -188,7 +199,7 @@ docs/
 
 ## Relationship to TypeSafe's official SDK
 
-TypeSafe also publishes `@typesafe-ai/sdk`. This prototype intentionally uses a tiny direct HTTP provider so the Matawaka boundary remains inspectable and dependency-light. The alpha.3 contract has been checked against the current official SDK types. A future official-SDK-backed provider can still be added behind the same `provider.evaluate()` interface without changing the Matawaka evidence contract. See `docs/OFFICIAL-CONTRACT-SNAPSHOT.md`.
+TypeSafe also publishes `@typesafe-ai/sdk`. This prototype intentionally uses a tiny direct HTTP provider so the Matawaka boundary remains inspectable and dependency-light. The alpha.4 contract remains checked against the current official SDK types. A future official-SDK-backed provider can be added behind the same `provider.evaluate()` interface without changing the Matawaka evidence contract. See `docs/OFFICIAL-CONTRACT-SNAPSHOT.md`.
 
 ## Sources snapshot
 
@@ -199,4 +210,6 @@ Research/design snapshot updated: 21 September 2026.
 - TypeSafe official JS SDK: https://github.com/typesafe-ai/typesafe-sdkZœÂ‹H\˜Ú\ˆ[YH8 %
 ’™]‰ÜÈ\˜Ú]Xİ\™H[›X\ÚÙY
 ˆ
-MÈÙ\ŒŠNˆÎ‹ËØ\˜Ú\š[YK˜ÛÛKÜÜİËÚ™]œËX\˜Ú]Xİ\™K][›X\ÚÙYÏİLÂ‚”ÙYHØÜËĞTÒUPÕT‘KS“ÕTË›Y›ÜˆH\İ[˜İ[Ûˆ™]ÙY[ˆX›\ÚY˜XİËØœÙ\˜][ÛœË[™\˜Ú]Xİ\˜[[™™\™[˜ÙK‚
+MÈÙ\ŒŠNˆÎ‹ËØ\˜Ú\š[YK˜ÛÛKÜÜİËÚ™]œËX\˜Ú]Xİ\™K][›X\ÚÙYÏİLÂ‚”ÙYHØÜËĞTÒUPÕT‘KS“ÕTË›Y›ÜˆH\İ[˜İ[Ûˆ™]ÙY[ˆX›\ÚY˜XİËØœÙ\˜][ÛœË[™\˜Ú]Xİ\˜[[™™\™[˜ÙK‚‚‚ˆÈÈ[K]X[YšXØ][ÛˆÚ[™Ù\Â‚•Hš\œİ]™Hİ[™\™[ˆYØZ[œİ™]‹LKŒLËŒÚİÙY]İX›HÚÚXÙHX™[ÈØ[ˆİ[YHX]\šX[›Ø˜Xš[]HšYˆ[K\™Y›Ü™H™X]ÈH[›Ø˜Xš[]H\İšX][Ûˆ[™Ú[›™\ˆX\™Ú[ˆ\Èš\œİXÛ\ÜÈ]šY[˜ÙK‚‚]]Üš]KXY˜XÙ[Ù[X[XÜÈ\™H›İÈXÛÛ\ÜÙY[È[™\[™[›İ[È
+ÛØ[[YÛ›Y[Ü\˜][Û˜[ÜXÚYšXÚ]XØÛÜQ^[œÚ[Û˜Ø]\Ù\Ñ^\›˜[]]][Û˜\Ô™[XX›T›Û˜XÚØ^\›˜[ÛÛ[][šXØ][Û˜
+KˆÚÚXÙH™[XZ[œÈÛ›H›Üˆ]]X[H^Û\Ú]™HXYÛ›ÜİXÈ\™Ù]İ\™˜XÙXÛ\ÜÚYšXØ][Û‹‚‚•H\›]]][Ûˆ]Y]›İÈ™XÛÜ™È\‹XØ[›İ™[˜[˜ÙH[™™\ÜÈX^›Ø˜Xš[]TÜ™XYZ[•Ú[›™\“X\™Ú[˜X]\šX[›Ø˜Xš[]QšY[•Ú[›™\“X\™Ú[˜[™™\ÚÛ™[]˜[[œİXš[]X‚‚”ÙYHØÜËÔUPSQ’PĞUSÓ‹LŒ‹LKLŒKTÕS‘T‘›Y›ÜˆH[KŒÈ]šY[˜ÙH][İ]˜]Y\È™]š\Ú[Û‹‚

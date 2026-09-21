@@ -1,70 +1,64 @@
-# Prototype status — alpha.3
+# Prototype status — alpha.4
 
 Date: 2026-09-21
 
-## Access state
+## Evidence state
 
-- TypeSafe account / early-access invite: **GRANTED**.
-- API key: supplied only through local environment variable `TYPESAFE_API_KEY`; not stored in repository or chat artifacts.
-- Live smoke execution: **PASS** on 2026-09-21 from the operator workstation.
+- TypeSafe early access: **GRANTED**.
+- Alpha.3 smoke: **PASS** against `jev-1.13.0`.
+- Alpha.3 standard qualification: **MIXED / HOLD**.
+- Reviewed standard receipt SHA-256: `26691a2d31c6d0b4ad33a7c8fa8b93a0799b10154d9cb3499673ef02dd91580e`.
+- Alpha.4 offline suite: **14/14 GREEN**.
+- Alpha.4 live qualification: **NOT YET RUN**.
 
-## Live smoke evidence
+## Why alpha.4 exists
 
-Operator-reported receipt:
+The alpha.3 standard run exposed two harness issues that matter for safe automation:
 
-- schema: `matawaka.jev-live-qualification/v0.1`
-- requested model: `jev-latest`
-- observed concrete model: `jev-1.13.0`
-- account-visible models: `jev-latest`, `jev-preview`
-- cases: 1
-- expectation checks: 6/6 PASS
-- repeat unstable choices: 0
-- permutation unstable choices: 0
-- receipt path: `artifacts/jev-smoke-qualification-2026-09-21T04-19-36-901Z.json`
+1. `ambiguous-cleanup.intentMatch` mixed goal alignment with operational specificity, creating all 3 failed checks from one ambiguous concept.
+2. `permutationUnstableChoices=0` hid substantial probability drift. `embedded-instruction` kept the same winning label while a label probability moved by up to 0.31 and the minimum winner margin fell to about 0.02.
 
-Qualification meaning: **transport / API contract / first synthetic semantic probe PASS**. This is not yet a model qualification, calibration claim, or authority-path admission.
+Alpha.4 therefore improves the measurement surface before any shadow-mode admission.
 
-The full smoke receipt has not yet been independently reviewed in this repository/chat context; the values above are recorded from the operator console output.
+## Implemented in alpha.4
 
-## Implemented
-
-- Non-normative `JudgmentEvidence` envelope.
-- Choice / Score / Noul constructors.
-- JSON-structured `state`, `instructions`, and criteria support aligned with the current official SDK contract.
-- Anti-authority validation guard across textual leaves of structured questions.
-- Direct TypeSafe Jev HTTP provider.
-- `GET /v1/models` inventory capture.
-- TypeSafe `x-typesafe-request-id` capture.
-- Strict provider response validation, including primitive `type`, Score `legend` and probabilities, exact outcome keys, model and usage metadata.
-- Canonical request/response SHA-256 digests.
-- Choice permutation audit.
-- Repeatability / run-to-run variance audit.
-- Brier score and ECE helpers.
-- Five synthetic adversarial live fixtures.
-- Smoke / standard / deep live qualification runner.
-- Offline demo.
-- 13 automated tests passing on Node 22.
-- First live smoke PASS against `jev-1.13.0`.
+- Split `goalAlignment` from `operationalSpecificity`.
+- Replaced overlapping authority-adjacent effect Choice semantics with orthogonal Nouls:
+  - `causesExternalMutation`
+  - `hasReliableRollback`
+  - `externalCommunication`
+- Retained Choice only for mutually exclusive `targetSurface` diagnostics.
+- Choice permutation audit schema v0.2.
+- Per-permutation provenance:
+  - concrete model ID
+  - provider request ID
+  - request digest
+  - response digest
+- `maxProbabilitySpread` and `minWinnerMargin` metrics.
+- Explicit `materialProbabilityDrift`, `thinWinnerMargin`, and `thresholdRelevantInstability` flags.
+- Qualification report schema v0.2 with aggregate threshold-relevant instability counts.
+- 14 automated tests GREEN.
+- Offline demo updated to the decomposed semantics.
 
 ## Still not qualified
 
-- Full alpha.3 adversarial fixture set against live Jev.
-- Repeat/permutation behavior across the full fixture set.
+- Alpha.4 live behavior on the revised fixtures.
 - Deployment calibration on Matawaka-labeled data.
+- Any production threshold policy.
 - Workbench C# shadow-mode bridge.
-- Receipt signing / incorporation into existing Workbench receipt structures.
-- Model-version admission policy.
+- Receipt signing / durable Workbench receipt integration.
+- Concrete model-version admission policy.
 - Any authority-path consumption.
 
 ## Next evidence trigger
 
-Run:
+After fetching the alpha.4 branch locally:
 
-1. `npm.cmd run qualify:live`
-2. inspect the generated standard qualification receipt;
-3. compare observed model ID, expectation checks, repeat spread, and Choice order sensitivity across all fixtures;
-4. only if those results are acceptable, design Workbench **shadow mode**.
+1. run `npm.cmd test`;
+2. run `npm.cmd run qualify:smoke`;
+3. review the v0.2 receipt;
+4. run `npm.cmd run qualify:live` only if smoke is structurally sound.
 
-Do **not** run `qualify:deep` until the standard receipt has been reviewed.
+Do **not** run `qualify:deep` yet.
 
-No Jev signal is permitted to alter production authority before a separate shadow-mode review and admission decision.
+No Jev signal may alter production authority before a separate shadow-mode design and review.

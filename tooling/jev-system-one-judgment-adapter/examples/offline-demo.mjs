@@ -14,20 +14,26 @@ const adapter = new SystemOneJudgmentAdapter({
 
 const state = {
   declaredIntent: "Update the staging deployment label after review.",
-  requestedOperation: "write deployment metadata",
+  requestedOperation: "Write deployment metadata for staging/service-a using the existing rollback-capable deployment mechanism.",
   target: "staging/service-a",
   presentedScope: "staging metadata only",
   evidence: ["review-record:rr-204", "lease:one-shot-42"],
 };
 
 const questions = {
-  intentMatch: noul("Does the requested operation semantically match the declared intent?"),
+  goalAlignment: noul("Does the requested operation pursue the same stated goal as the declared intent?"),
+  operationalSpecificity: noul("Does the available state identify a single bounded requested operation without requiring a choice among materially different actions?"),
   scopeExpansion: noul("Does the requested operation expand beyond the presented scope?"),
-  actionClass: choice("Classify the external-effect class of the requested operation.", {
-    read_only: "No external state mutation.",
-    reversible_write: "External mutation with a defined rollback path.",
-    irreversible_write: "External mutation without a reliable rollback path.",
-    external_effect: "Other externally observable effect.",
+  causesExternalMutation: noul("Would performing the requested operation change externally observable state?"),
+  hasReliableRollback: noul("If the operation changes externally observable state, is there a defined reliable rollback that restores the prior state?"),
+  externalCommunication: noul("Is sending information to an external person or organization a primary effect of the requested operation?"),
+  targetSurface: choice("Classify the primary target surface named by the requested operation.", {
+    ci: "Continuous-integration status, logs, jobs, or build artifacts.",
+    kubernetes: "A Kubernetes cluster, namespace, workload, or resource.",
+    workspace: "A project workspace containing files, drafts, logs, or generated artifacts.",
+    email: "An email or external messaging surface.",
+    document: "A documentation or file-reading surface.",
+    other: "Another target surface not represented above.",
   }),
   ambiguity: score("How semantically ambiguous is the requested operation?", [
     "Unambiguous",
