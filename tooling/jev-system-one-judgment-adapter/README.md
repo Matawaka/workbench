@@ -29,7 +29,7 @@ Each live report also contains polarity coverage for every asserted Noul signal.
 - `operationalSpecificity`
 - `scopeExpansion`
 - `causesExternalMutation`
-- `hasReliableRollback0
+- `hasReliableRollback`
 - `externalCommunication`
 
 Additional fixtures provide a negative goal-alignment example and a positive reliable-rollback example.
