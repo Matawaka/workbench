@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "node --test",
-    "seed:first-live-control": "node examples/build-first-live-control.mjs"
+    "seed:first-live-control": "node examples/build-first-live-control.mjs",
+    "intake:private-real": "node examples/create-private-real-case.mjs"
   }
 }

@@ -97,3 +97,30 @@ test("duplicate case IDs are rejected and visible-model labels are rejected", as
   label.modelOutputVisibleToLabeler = true;
   assert.throws(() => validateHumanLabel({ packet, label, caseRecord: c }), /not independent\/blinded/);
 });
+
+import os from "node:os";
+import path from "node:path";
+import { writePrivateRealShadowBundle } from "../src/private-intake.js";
+
+test("private real-shadow intake refuses public repo paths and creates a blinded bundle outside repo", async () => {
+  const candidateBytes = await fs.readFile(new URL("../evidence/synthetic-control-001/candidate.json", import.meta.url));
+  const receiptBytes = await fs.readFile(new URL("../evidence/synthetic-control-001/receipt.json", import.meta.url));
+  const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+  await assert.rejects(
+    writePrivateRealShadowBundle({ candidateBytes, receiptBytes, outputDir: path.join(repoRoot, "private-real"), repoRoot, caseId: "real-private-001" }),
+    /outside the public repository root/,
+  );
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), "jev-real-shadow-"));
+  try {
+    const result = await writePrivateRealShadowBundle({ candidateBytes, receiptBytes, outputDir: path.join(temp, "case-001"), repoRoot, caseId: "real-private-001" });
+    assert.equal(result.manifest.publicRepositoryPublicationAuthorized, false);
+    assert.deepEqual(result.manifest.reviewerMayReceive, ["review-packet.json", "label.primary.json"]);
+    assert.ok(result.manifest.reviewerMustNotReceiveBeforeLabeling.includes("source/receipt.json"));
+    const packetText = await fs.readFile(path.join(result.outputDir, "review-packet.json"), "utf8");
+    assert.equal(packetText.includes("providerRequestId"), false);
+    const labelText = await fs.readFile(path.join(result.outputDir, "label.primary.json"), "utf8");
+    assert.equal(labelText.includes('"truth": null'), true);
+  } finally {
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+});

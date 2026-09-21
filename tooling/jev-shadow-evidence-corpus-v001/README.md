@@ -36,3 +36,13 @@ Repeated calls from the same case must not be counted as independent deployment 
 ## Authority boundary
 
 Corpus creation, labeling and scoring all carry `normativeEffect=NONE` / `authorityIssuance=OUT_OF_SCOPE`. No metric creates a Workbench permit/deny decision or production threshold.
+
+## Private real-shadow intake
+
+Use `npm run intake:private-real -- <candidate.json> <receipt.json> <private-output-dir> <case-id>` only with an output directory **outside this public repository**. The tool refuses repository-local destinations.
+
+The private bundle separates files for blinded review:
+- reviewer may receive: `review-packet.json`, `label.primary.json`;
+- reviewer must not receive before labeling: `source/receipt.json`, `case.json`.
+
+After independent primary/secondary review, adjudication should produce a `HUMAN_ADJUDICATED` label before the case is admitted to deployment-calibration scoring.
