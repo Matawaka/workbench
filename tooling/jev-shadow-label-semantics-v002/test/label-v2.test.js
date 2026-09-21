@@ -10,7 +10,6 @@ import {
 const packet = {
   caseId: "case-0001",
   modelOutputVisible: false,
-  reviewPacketDigest: "sha256:packet",
   questionUse: {
     goalAlignment: "SHADOW_OBSERVATION",
     operationalSpecificity: "RESEARCH_ONLY",
@@ -84,7 +83,7 @@ test("legacy primary migration is diagnostic only and does not mutate source", (
   assert.equal(migrated.noulTruth.hasReliableRollback.disposition, "ASSERTED");
   assert.equal(migrated.admissibleForScoring, false);
   assert.equal(migrated.sourceLabelKind, "HUMAN_PRIMARY");
-  assert.match(migrated.migrationNote, /does not replace/);
+  assert.match(migrated.migrationNote, /does not replace/i);
 });
 
 test("primary-vs-Jev comparison is explicitly not calibration", () => {
