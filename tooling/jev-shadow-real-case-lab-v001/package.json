@@ -6,6 +6,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "disclosure:init": "node prepare-candidate.mjs init",
-    "candidate:build": "node prepare-candidate.mjs build"
+    "candidate:build": "node prepare-candidate.mjs build",
+    "label:init": "node prepare-blind-label.mjs"
   }
 }
