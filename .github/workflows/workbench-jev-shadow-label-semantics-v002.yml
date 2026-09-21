@@ -1,0 +1,93 @@
+name: Jev Shadow Label Semantics v0.2
+
+on:
+  pull_request:
+    paths:
+      - 'tooling/jev-shadow-label-semantics-v002/**'
+      - '.github/workflows/workbench-jev-shadow-label-semantics-v002.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-label-semantics-v002:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify exact real-case-lab predecessor
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='bf5326c355578db3d3dc9eb46051e07973b07748'
+          if [ '${{ github.event_name }}' = 'pull_request' ] && [ '${{ github.event.pull_request.base.sha }}' != "$expected" ]; then
+            echo "unexpected PR base: ${{ github.event.pull_request.base.sha }}" >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$expected" HEAD
+
+      - name: Reject provider/network primitives
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='tooling/jev-shadow-label-semantics-v002'
+          for token in 'api.typesafe.ai' 'TYPESAFE_API_KEY' 'JevHttpProvider' 'fetch(' 'node:https' 'node:http'; do
+            if grep -R -F "$token" "$root/src" "$root/examples" "$root/test"; then
+              echo "forbidden provider/network primitive: $token" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run label semantics tests
+        working-directory: tooling/jev-shadow-label-semantics-v002
+        run: npm test
+
+      - name: Verify package stays separate from corpus v0.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' HEAD)
+          if echo "$changed" | grep -E '^tooling/jev-shadow-evidence-corpus-v001/'; then
+            echo 'v0.2 must not modify corpus v0.1 files' >&2
+            exit 1
+          fi
+
+      - name: Verify Workbench production sources are untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' HEAD)
+          if echo "$changed" | grep -E '^src/Matawaka\.Workbench\.'; then
+            echo 'label semantics research must not modify Workbench production sources' >&2
+            exit 1
+          fi
+
+      - name: Verify semantic markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='tooling/jev-shadow-label-semantics-v002/src/label-v2.js'
+          grep -F 'ASSERTED' "$file" >/dev/null
+          grep -F 'UNDETERMINED' "$file" >/dev/null
+          grep -F 'NOT_APPLICABLE' "$file" >/dev/null
+          grep -F 'PRIMARY_DIAGNOSTIC_ONLY_NOT_CALIBRATION' "$file" >/dev/null
+          grep -F 'admissibleForScoring: false' "$file" >/dev/null
+
+      - name: Verify repository remains clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          dirty=$(git status --porcelain --untracked-files=all)
+          if [ -n "$dirty" ]; then echo "$dirty"; exit 1; fi
