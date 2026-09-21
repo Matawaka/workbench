@@ -1,6 +1,18 @@
+import { createHash } from "node:crypto";
+
 const LABEL_V2_SCHEMA = "matawaka.jev-shadow-human-label/v0.2";
 const PRIMARY_V1_SCHEMA = "matawaka.jev-shadow-human-label/v0.1";
 const DISPOSITIONS = new Set(["ASSERTED", "UNDETERMINED", "NOT_APPLICABLE"]);
+
+function normalize(value) {
+  if (Array.isArray(value)) return value.map(normalize);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, normalize(value[key])]));
+  return value;
+}
+
+function sha256Json(value) {
+  return `sha256:${createHash("sha256").update(JSON.stringify(normalize(value))).digest("hex")}`;
+}
 
 function requireObject(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -41,7 +53,7 @@ export function createSecondaryLabelV2(packet, { reviewerPseudonym = "" } = {}) 
   return {
     schema: LABEL_V2_SCHEMA,
     caseId: packet.caseId,
-    reviewPacketDigest: packet.reviewPacketDigest ?? null,
+    reviewPacketDigest: packet.reviewPacketDigest ?? sha256Json(packet),
     labelKind: "HUMAN_SECONDARY",
     modelOutputVisibleToLabeler: false,
     independentOfModelOutput: true,
@@ -137,6 +149,8 @@ export function migratePrimaryV1ToDiagnosticV2(primary) {
     noulTruth,
     diagnostics: primary.diagnostics ?? {},
     authorityEffect: "NONE",
+    admissibleForScoring: false,
+    sourceLabelKind: "HUMAN_PRIMARY",
     migrationNote: "Diagnostic migration only. Does not replace or mutate the frozen HUMAN_PRIMARY v0.1 artifact.",
   };
 }
