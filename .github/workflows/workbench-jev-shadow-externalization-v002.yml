@@ -1,0 +1,86 @@
+name: Workbench Jev Shadow Externalization v0.2
+
+on:
+  pull_request:
+    paths:
+      - 'tooling/jev-system-one-judgment-adapter/src/shadow/**'
+      - 'tooling/jev-system-one-judgment-adapter/test/shadow-externalization.test.js'
+      - 'tooling/jev-system-one-judgment-adapter/fixtures/shadow-*.json'
+      - 'tooling/jev-system-one-judgment-adapter/examples/shadow-externalization-candidate.mjs'
+      - 'tooling/jev-system-one-judgment-adapter/docs/SHADOW-EXTERNALIZATION-V0.2.md'
+      - 'tooling/jev-system-one-judgment-adapter/package.json'
+      - '.github/workflows/workbench-jev-shadow-externalization-v002.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-shadow-externalization-v002:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify exact v0.1 predecessor
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='daefb4420f0165c3325e6a260d05b37a614ba77f'
+          if [ '${{ github.event_name }}' = 'pull_request' ] && [ '${{ github.event.pull_request.base.sha }}' != "$expected" ]; then
+            echo "unexpected PR base: ${{ github.event.pull_request.base.sha }}" >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$expected" HEAD
+
+      - name: Verify no send path exists in v0.2 candidate builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            tooling/jev-system-one-judgment-adapter/src/shadow/externalization-candidate.js
+            tooling/jev-system-one-judgment-adapter/examples/shadow-externalization-candidate.mjs
+          )
+          for token in 'api.typesafe.ai' 'TYPESAFE_API_KEY' 'JevHttpProvider' 'fetch(' 'https://'; do
+            if grep -Fi "$token" "${files[@]}"; then
+              echo "forbidden live-send token found: $token" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run adapter and shadow tests
+        working-directory: tooling/jev-system-one-judgment-adapter
+        run: npm test
+
+      - name: Build synthetic externalization candidate
+        working-directory: tooling/jev-system-one-judgment-adapter
+        run: node examples/shadow-externalization-candidate.mjs > "$RUNNER_TEMP/shadow-v002-summary.json"
+
+      - name: Verify candidate boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary="$RUNNER_TEMP/shadow-v002-summary.json"
+          node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(x.providerInvocationAuthorized!==false||x.networkSendAuthorized!==false||x.humanReviewRequired!==true)process.exit(1)' "$summary"
+          artifact=$(ls -1t tooling/jev-system-one-judgment-adapter/artifacts/jev-shadow-externalization-candidate-*.json | head -1)
+          if grep -Fq 'payments-prod-eu-west-secret' "$artifact"; then exit 1; fi
+          if grep -Fq 'employee-alice-private' "$artifact"; then exit 1; fi
+          if grep -Fq 'customer ledger' "$artifact"; then exit 1; fi
+          node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(x.externalizationAuthorized||x.providerInvocationAuthorized||x.networkSendAuthorized||x.decisionReadbackSupported||!x.humanReviewRequired)process.exit(1); if(x.questionUse.operationalSpecificity!=="RESEARCH_ONLY")process.exit(1)' "$artifact"
+
+      - name: Verify repository remains clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          dirty=$(git status --porcelain --untracked-files=all)
+          if [ -n "$dirty" ]; then echo "$dirty"; exit 1; fi

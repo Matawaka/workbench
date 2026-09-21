@@ -1,6 +1,6 @@
 {
   "name": "@matawaka/system-one-judgment-adapter-prototype",
-  "version": "0.4.0-alpha.5",
+  "version": "0.5.0-shadow.2",
   "private": true,
   "description": "Non-normative System One / Jev judgment-evidence adapter prototype for Matawaka.",
   "type": "module",
@@ -13,6 +13,7 @@
     "live": "node examples/live-jev.mjs",
     "qualify:smoke": "node examples/live-qualification.mjs --smoke",
     "qualify:live": "node examples/live-qualification.mjs",
-    "qualify:deep": "node examples/live-qualification.mjs --deep"
+    "qualify:deep": "node examples/live-qualification.mjs --deep",
+    "shadow:externalization:synthetic": "node examples/shadow-externalization-candidate.mjs"
   }
 }
