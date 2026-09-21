@@ -28,3 +28,16 @@ This yields a true Workbench-derived `SANITIZED_REAL_SHADOW` case while keeping 
 ## Important
 
 The private disclosure/candidate may still contain sensitive information. They must remain outside the public repository until separately reviewed for publication.
+
+
+## Blind human label before Jev
+
+After building the sanitized candidate and **before** any TypeSafe send, create the blinded human-label packet:
+
+`npm run label:init -- <candidate.json> <private-case-dir> <case-id>`
+
+This writes only:
+- `review-packet.json`
+- `label.primary.json`
+
+The reviewer should complete `label.primary.json` before seeing the Jev receipt or probabilities.
