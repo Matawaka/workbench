@@ -11,7 +11,7 @@ namespace Matawaka.Workbench.App;
 
 public partial class MainWindow : Window
 {
-    private readonly ICommandRunner _router = new CommandRouter();
+    private readonly ICommandRunner _router = new CommandRouter();\n    private readonly JevShadowObservationExportV001Service _jevShadowObservationExportV001 = new();
     private readonly WorkbenchAcceptanceHarness _acceptanceHarness;
     private readonly LocalCheckpointService _checkpointService = new();
     private readonly LocalUpdateIntakeService _updateIntakeService = new();
@@ -602,11 +602,38 @@ public partial class MainWindow : Window
 
             var result = await _router.RunAsync(command, context, progress, _cts!.Token);
             RenderResult(result);
-            ApplyTerminalState(result.TerminalState, result.Summary);
+            ApplyTerminalState(result.TerminalState, result.Summary);\n            await TryExportJevShadowObservationV001Async(command, result);
         }
         finally
         {
             EndRun();
+        }
+    }
+
+    private async Task TryExportJevShadowObservationV001Async(CommandEnvelope command, CommandResult result)
+    {
+        try
+        {
+            var exported = await _jevShadowObservationExportV001.TryExportAsync(
+                command,
+                result,
+                _cts?.Token ?? CancellationToken.None);
+
+            if (exported.Exported)
+            {
+                EventList.Items.Add(
+                    $"{DateTime.Now:HH:mm:ss}  jev-shadow.exported       localOnly=true; authority=false; providerInvoked=false; readback=false; artifact={Path.GetFileName(exported.ArtifactPath)}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            EventList.Items.Add(
+                $"{DateTime.Now:HH:mm:ss}  jev-shadow.skipped        cancelled=true; terminalStateUnchanged=true; authority=false");
+        }
+        catch (Exception ex)
+        {
+            EventList.Items.Add(
+                $"{DateTime.Now:HH:mm:ss}  jev-shadow.failed         terminalStateUnchanged=true; authority=false; errorType={ex.GetType().Name}");
         }
     }
 
