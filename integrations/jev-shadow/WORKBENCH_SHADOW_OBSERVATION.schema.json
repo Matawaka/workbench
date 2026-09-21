@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://matawaka.dev/schema/jev-workbench-shadow-observation-v0.1.json",
+  "title": "Matawaka Jev Workbench Shadow Observation v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "Schema",
+    "EvidenceKind",
+    "NormativeEffect",
+    "AuthorityIssuance",
+    "Principle",
+    "ObservedAt",
+    "CommandId",
+    "CommandKind",
+    "CommandTarget",
+    "CommandTerminalState",
+    "PayloadSha256",
+    "ContainsCommandPayload",
+    "ExternalizationAuthorized",
+    "ProviderInvocationAuthorized",
+    "DecisionReadbackSupported",
+    "AuthorityCreated",
+    "DisplayPermitCreated",
+    "ActionPermitCreated",
+    "NonEffects"
+  ],
+  "properties": {
+    "Schema": { "const": "matawaka.jev-workbench-shadow-observation/v0.1" },
+    "EvidenceKind": { "const": "PROBABILISTIC_JUDGMENT_SHADOW_INPUT_CANDIDATE" },
+    "NormativeEffect": { "const": "NONE" },
+    "AuthorityIssuance": { "const": "OUT_OF_SCOPE" },
+    "Principle": { "const": "PROBABILISTIC_JUDGMENT_IS_NOT_AUTHORIZATION" },
+    "ObservedAt": { "type": "string" },
+    "CommandId": { "type": "string", "minLength": 1 },
+    "CommandKind": { "type": "string", "minLength": 1 },
+    "CommandTarget": { "type": "string" },
+    "CommandTerminalState": { "type": "string", "enum": ["Completed", "Denied", "Invalid", "Failed", "Cancelled"] },
+    "PayloadSha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "Authority": {
+      "type": ["object", "null"]
+    },
+    "ContainsCommandPayload": { "const": false },
+    "ExternalizationAuthorized": { "const": false },
+    "ProviderInvocationAuthorized": { "const": false },
+    "DecisionReadbackSupported": { "const": false },
+    "AuthorityCreated": { "const": false },
+    "DisplayPermitCreated": { "const": false },
+    "ActionPermitCreated": { "const": false },
+    "NonEffects": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    }
+  }
+}
