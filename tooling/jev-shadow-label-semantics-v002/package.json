@@ -1,0 +1,13 @@
+{
+  "name": "@matawaka/jev-shadow-label-semantics-v002",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "adjudication:prepare": "node examples/prepare-adjudication-v002.mjs"
+  }
+}
