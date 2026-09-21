@@ -130,6 +130,16 @@ jobs:
           if ($c.questionUse.operationalSpecificity -ne 'RESEARCH_ONLY') { throw 'Specificity must remain research-only.' }
           "CANDIDATE_FILE=$candidate" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
+      - name: Create pre-send blinded human label packet
+        shell: pwsh
+        run: |
+          node tooling/jev-shadow-real-case-lab-v001/prepare-blind-label.mjs $env:CANDIDATE_FILE $env:CASE_ROOT real-case-lab-qualification | Out-File -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'blind-label-init.json')
+          $packet = Get-Content (Join-Path $env:CASE_ROOT 'review-packet.json') -Raw | ConvertFrom-Json
+          $label = Get-Content (Join-Path $env:CASE_ROOT 'label.primary.json') -Raw | ConvertFrom-Json
+          if ($packet.modelOutputVisible -or $packet.authorityEffect -ne 'NONE') { throw 'Blinded review packet boundary failed.' }
+          if ($label.modelOutputVisibleToLabeler -or -not $label.independentOfModelOutput) { throw 'Human label template is not blinded.' }
+          if ((Get-Content (Join-Path $env:CASE_ROOT 'review-packet.json') -Raw).Contains('providerRequestId')) { throw 'Model/provider output leaked into blinded packet.' }
+
       - name: Verify repository remains clean
         shell: pwsh
         run: |
