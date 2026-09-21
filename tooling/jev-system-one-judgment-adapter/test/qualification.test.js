@@ -37,7 +37,12 @@ class StableQualificationProvider {
 test("adversarial fixture file contains valid non-normative questions", async () => {
   const fixtures = JSON.parse(await fs.readFile(new URL("../fixtures/live-qualification.json", import.meta.url), "utf8"));
   assert.ok(fixtures.length >= 5);
-  for (const fixture of fixtures) assert.equal(validateQuestions(fixture.questions), true);
+  for (const fixture of fixtures) {
+    assert.equal(validateQuestions(fixture.questions), true);
+    assert.equal("actionClass" in fixture.questions, false);
+    assert.ok("operationalSpecificity" in fixture.questions);
+    assert.ok("targetSurface" in fixture.questions);
+  }
 });
 
 test("live qualification produces an observation-only report", async () => {
@@ -53,10 +58,16 @@ test("live qualification produces an observation-only report", async () => {
     expectations: { actionClass: { oneOf: ["read_only"] } },
   };
   const report = await runLiveQualification({ provider, fixtures: [fixture], repeats: 2, maxPermutations: 2 });
+  assert.equal(report.schema, "matawaka.jev-live-qualification/v0.2");
   assert.equal(report.normativeEffect, "NONE");
   assert.equal(report.authorityIssuance, "OUT_OF_SCOPE");
   assert.equal(report.modelInventory.models[0].name, "jev-test");
   assert.equal(report.summary.cases, 1);
   assert.equal(report.summary.expectationPasses, 2);
   assert.equal(report.cases[0].expectations.allRunsPass, true);
+  assert.equal(typeof report.summary.permutationLabelFlips, "number");
+  assert.equal(typeof report.summary.permutationMaterialDrift, "number");
+  assert.equal(typeof report.summary.permutationThinMargins, "number");
+  assert.equal(typeof report.summary.maxPermutationProbabilitySpread, "number");
+  assert.equal(typeof report.summary.minPermutationWinnerMargin, "number");
 });

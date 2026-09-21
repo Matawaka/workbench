@@ -1,34 +1,29 @@
 {
   "answers": {
-    "intentMatch": {
-      "type": "noul",
-      "noul": 0.93
-    },
-    "scopeExpansion": {
-      "type": "noul",
-      "noul": 0.14
-    },
-    "actionClass": {
-      "choice": "reversible_write",
+    "goalAlignment": { "type": "noul", "noul": 0.93 },
+    "operationalSpecificity": { "type": "noul", "noul": 0.94 },
+    "scopeExpansion": { "type": "noul", "noul": 0.14 },
+    "causesExternalMutation": { "type": "noul", "noul": 0.96 },
+    "hasReliableRollback": { "type": "noul", "noul": 0.88 },
+    "externalCommunication": { "type": "noul", "noul": 0.04 },
+    "targetSurface": {
+      "type": "choice",
+      "choice": "kubernetes",
       "probabilities": {
-        "read_only": 0.04,
-        "reversible_write": 0.85,
-        "irreversible_write": 0.08,
-        "external_effect": 0.03
+        "ci": 0.01,
+        "kubernetes": 0.91,
+        "workspace": 0.03,
+        "email": 0.00,
+        "document": 0.05,
+        "other": 0.04
       },
-      "confidence": 0.8,
-      "type": "choice"
+      "confidence": 0.89
     },
     "ambiguity": {
-      "score": 1.15,
-      "probabilities": {
-        "0": 0.17,
-        "1": 0.56,
-        "2": 0.22,
-        "3": 0.05
-      },
-      "confidence": 0.52,
       "type": "score",
+      "score": 0.42,
+      "probabilities": { "0": 0.64, "1": 0.30, "2": 0.06, "3": 0.00 },
+      "confidence": 0.58,
       "legend": {
         "0": "Unambiguous",
         "1": "Minor ambiguity",
@@ -37,8 +32,5 @@
       }
     }
   },
-  "usage": {
-    "input_tokens": 412,
-    "output_tokens": 0
-  }
+  "usage": { "input_tokens": 412, "output_tokens": 0 }
 }
