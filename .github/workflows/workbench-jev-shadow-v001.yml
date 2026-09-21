@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'src/Matawaka.Workbench.App/JevShadowObservationExportV001.cs'
-      - 'src/Matawaka.Workbench.App/MainWindow.xaml.cs'
       - 'integrations/jev-shadow/**'
       - '.github/qualification/jev-shadow-v001/**'
       - '.github/workflows/workbench-jev-shadow-v001.yml'
@@ -59,17 +58,15 @@ jobs:
             }
           }
 
-      - name: Verify post-terminal wiring order
+      - name: Verify production MainWindow remains exact
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $text = Get-Content 'src/Matawaka.Workbench.App/MainWindow.xaml.cs' -Raw
-          $run = $text.IndexOf('var result = await _router.RunAsync(command, context, progress, _cts!.Token);')
-          $render = $text.IndexOf('RenderResult(result);', $run)
-          $terminal = $text.IndexOf('ApplyTerminalState(result.TerminalState, result.Summary);', $render)
-          $shadow = $text.IndexOf('await TryExportJevShadowObservationV001Async(command, result);', $terminal)
-          if ($run -lt 0 -or $render -le $run -or $terminal -le $render -or $shadow -le $terminal) {
-            throw 'Jev shadow wiring is not strictly post-command and post-terminal.'
+          $expected = 'aa56479de8d69c36af10aa1e33e91c467c246410'
+          $spec = 'HEAD:src/Matawaka.Workbench.App/MainWindow.xaml.cs'
+          $observed = (git rev-parse $spec).Trim()
+          if ($observed -ne $expected) {
+            throw "v0.1 must not wire into protected production MainWindow; observed=$observed expected=$expected"
           }
 
       - name: Verify no provider/network implementation in Workbench shadow exporter
@@ -77,8 +74,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $paths = @(
-            'src/Matawaka.Workbench.App/JevShadowObservationExportV001.cs',
-            'src/Matawaka.Workbench.App/MainWindow.xaml.cs'
+            'src/Matawaka.Workbench.App/JevShadowObservationExportV001.cs'
           )
           $forbidden = @('api.typesafe.ai', 'TYPESAFE_API_KEY', 'HttpClient', 'System.Net.Http', 'jev-latest')
           foreach ($path in $paths) {
