@@ -4,11 +4,11 @@ Implementation base: `9e950781b26f144af498e6b28b2cda966ad61428`.
 Frozen implementation / review head (H1): `9bc20dff92402bb1aa1f33ff1d1acb25f17fc793`.
 Draft PR: https://github.com/Matawaka/workbench/pull/120.
 
-Реестр сохраняет привязку каждого ответа к фактически указанной версии. Исходный внешний target — H1. Ответ Claude получен через оператора; исправление его C1 оформляется последующим commit и не переносит прежние выводы на новый код. Обновлять строки только по фактическому ответу; модель и SHA не выводить из названия диалога.
+Реестр сохраняет привязку каждого ответа к фактически указанной версии. Исходный внешний target — H1. Ответы Claude и Grok получены через оператора со статусом PARTIAL. Исправление C1 Claude — commit `12ae4eb495899242f17b63e84fbee180cdd4ffa3`; ни один ответ не переносится на него автоматически. Обновлять строки только по фактическому ответу; модель и SHA не выводить из названия диалога.
 
 | Reviewer | Фокус | Статус | Reviewed head SHA | Evidence / результат |
 | --- | --- | --- | --- | --- |
-| Grok; model/version UNKNOWN | Adversarial inputs, hashes, path and resource boundaries | NOT_RUN | — | Brief подготовлен; ответ не получен |
+| Grok 4.5 (self-report); оператор назвал Grok fast | Заявлен полный static review app/core/tests/fixtures H1 | PARTIAL | `9bc20dff92402bb1aa1f33ff1d1acb25f17fc793`, по ответу | [Ответ и уточнения](GROK-20260922-PARTIAL.md): actionable findings не сообщил; runtime NOT_RUN; exposure EXPOSED. Две неточности UI prose и отсутствие concurrent smoke coverage уточнены root; три прерванные попытки не считаются review. |
 | Claude Sonnet 5, версия по переданному ответу; оператор назвал Extra | Semantics/UI; фактически только доступные scaffolding/docs | PARTIAL | H1 запрошен; exact checkout не выполнен | [Переданный ответ и disposition C1](CLAUDE-20260922-PARTIAL.md). UI/core/fixtures/tests недоступны через web; ничего не исполнял. C1 P2 принят и исправлен, внешний recheck PENDING. |
 | Internal AI security review | Offline chain/authority boundaries; ограниченный static review | COMPLETED | `9bc20dff92402bb1aa1f33ff1d1acb25f17fc793` | Оставшихся блокеров не выявлено. Перед code commit root сверил неизменность хэшей четырёх проверенных файлов рабочего дерева. Исходные findings и их исправления зафиксированы отдельно; не передаются до первых внешних ответов. |
 | Internal implementation verification | Windows build, synthetic tests and in-process WPF smoke | COMPLETED, с указанными ограничениями | `9bc20dff92402bb1aa1f33ff1d1acb25f17fc793` | Root повторно выполнил 112 predecessor tests и 83 importer tests: PASS; build: 0 warnings / 0 errors; WPF smoke: 11 PASS; output guards: 5/5 rejected. Рендеры успешной загрузки и ошибки просмотрены. |
