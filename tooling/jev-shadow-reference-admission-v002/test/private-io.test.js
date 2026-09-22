@@ -11,8 +11,10 @@ import { rawHash } from '../src/common.js';
 import { fixture, writeFixture } from './fixtures.js';
 
 async function temporary(t) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jev-reference-synthetic-'));
-  t.after(async () => { assert.ok(path.resolve(dir).startsWith(path.resolve(os.tmpdir()) + path.sep)); await fs.rm(dir, { recursive: true, force: true }); });
+  // Hosted Windows may expose its temp directory via an alias. Fixtures use the real path; the production guard still rejects aliases.
+  const tempRoot = await fs.realpath(os.tmpdir());
+  const dir = await fs.mkdtemp(path.join(tempRoot, 'jev-reference-synthetic-'));
+  t.after(async () => { assert.ok(path.resolve(dir).startsWith(path.resolve(tempRoot) + path.sep)); await fs.rm(dir, { recursive: true, force: true }); });
   return dir;
 }
 test('actual byte hashes, one BOM, and source manifest preserve originals', async t => {
