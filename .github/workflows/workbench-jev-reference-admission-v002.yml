@@ -1,0 +1,64 @@
+name: Jev Offline Reference Admission v0.2
+
+on:
+  pull_request:
+    paths:
+      - 'tooling/jev-shadow-reference-admission-v002/**'
+      - '.github/workflows/workbench-jev-reference-admission-v002.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-reference-bridge:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check exact handoff ancestry and narrow change surface
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          expected=1ca1fdcc68d155a14b5e86c091342501e0297f5f
+          if [ -n "$PR_BASE" ] && [ "$PR_BASE" != "$expected" ]; then
+            echo 'Unexpected PR base; handoff is not main.' >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$expected" HEAD
+          git diff --name-only "$expected" HEAD > "$RUNNER_TEMP/jev-changed.txt"
+          if grep -Ev '^(tooling/jev-shadow-reference-admission-v002/|\.github/workflows/workbench-jev-reference-admission-v002\.yml$)' "$RUNNER_TEMP/jev-changed.txt"; then
+            echo 'Change outside bounded successor.' >&2
+            exit 1
+          fi
+      - name: Reject provider and network imports in successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=tooling/jev-shadow-reference-admission-v002/src
+          for token in 'api.typesafe.ai' 'TYPESAFE_API_KEY' 'JevHttpProvider' 'fetch(' 'node:http' 'node:https' 'node:net' 'node:child_process' 'one-shot-send.js'; do
+            if grep -R -F "$token" "$root"; then
+              echo 'Forbidden provider/network primitive.' >&2
+              exit 1
+            fi
+          done
+      - name: Baseline suites and successor (offline only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in jev-system-one-judgment-adapter jev-shadow-one-shot-send-v003 jev-shadow-evidence-corpus-v001 jev-shadow-label-semantics-v002 jev-shadow-reference-admission-v002; do
+            npm --prefix "tooling/$package" test
+          done
+          test -z "$(git status --porcelain --untracked-files=all)"
