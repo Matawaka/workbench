@@ -1,0 +1,15 @@
+{
+  "schema": "matawaka.jev-lab-inputs/v0.1",
+  "caseId": "demo-read-only",
+  "sampleClass": "SYNTHETIC_CONTROL",
+  "artifacts": {
+    "candidate": {
+      "path": "candidate.json",
+      "rawSha256": "sha256:79bbf512caf9de613b3b19ce4f1ef8fc50979a333605754921a3e460cd103a4c"
+    },
+    "receipt": {
+      "path": "receipt.json",
+      "rawSha256": "sha256:942501e3b8e6f608ca6d73a3e2bc9d51db6984d2586d48ed49e7379a4e2f3ea9"
+    }
+  }
+}

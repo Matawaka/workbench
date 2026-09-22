@@ -1,0 +1,63 @@
+name: Workbench Jev Lab Offline v0.1
+on:
+  pull_request:
+    paths:
+      - 'tooling/jev-workbench-experiment-v001/**'
+      - '.github/workflows/workbench-jev-lab-v001.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-lab:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact predecessor and isolated change scope
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          expected=9e950781b26f144af498e6b28b2cda966ad61428
+          if [ -n "$PR_BASE" ] && [ "$PR_BASE" != "$expected" ]; then exit 1; fi
+          git merge-base --is-ancestor "$expected" HEAD
+          git diff --name-only "$expected" HEAD > "$RUNNER_TEMP/lab-changed.txt"
+          if grep -Ev '^(tooling/jev-workbench-experiment-v001/|\.github/workflows/workbench-jev-lab-v001\.yml$)' "$RUNNER_TEMP/lab-changed.txt"; then exit 1; fi
+          node tooling/jev-workbench-experiment-v001/checks/offline-source-guard.mjs
+          node --test tooling/jev-workbench-experiment-v001/checks/offline-source-guard.test.mjs
+      - name: Existing offline suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in jev-system-one-judgment-adapter jev-shadow-one-shot-send-v003 jev-shadow-evidence-corpus-v001 jev-shadow-label-semantics-v002 jev-shadow-reference-admission-v002; do
+            npm --prefix "tooling/$package" test
+          done
+      - name: Importer negative and compatibility tests
+        run: dotnet run --project tooling/jev-workbench-experiment-v001/test/JevLab.Tests.csproj -c Release
+      - name: Build experimental WPF window
+        run: dotnet build tooling/jev-workbench-experiment-v001/app/JevLab.App.csproj -c Release
+      - name: Actual WPF synthetic smoke
+        shell: pwsh
+        run: |
+          $smokeDir = Join-Path $env:RUNNER_TEMP 'jev-lab-synthetic-smoke'
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'tooling/jev-workbench-experiment-v001/app/bin/Release/net10.0-windows/Matawaka.Workbench.JevLab.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList '--smoke', $smokeDir -WindowStyle Hidden -PassThru -Wait
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+          Get-Content (Join-Path $smokeDir 'smoke.json')
+          if (git status --porcelain --untracked-files=all) { throw 'Dirty repository' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jev-lab-synthetic-ui-smoke
+          path: ${{ runner.temp }}/jev-lab-synthetic-smoke
+          if-no-files-found: error

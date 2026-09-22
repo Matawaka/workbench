@@ -1,0 +1,130 @@
+{
+  "schema": "matawaka.jev-shadow-send-receipt/v0.3",
+  "status": "PROVIDER_OBSERVED_NO_AUTHORITY_CHANGE",
+  "normativeEffect": "NONE",
+  "authorityIssuance": "OUT_OF_SCOPE",
+  "principle": "PROBABILISTIC_JUDGMENT_IS_NOT_AUTHORIZATION",
+  "leaseConsumed": true,
+  "leaseDigest": "sha256:f39b3e2c7b917e873f640610755d83c1a9c22aa40ab1e4dea026ba193728b3e8",
+  "candidateDigest": "sha256:1ffad48705083bf639458474ec06523b8d9df913b1c8f6370c89bfc0db7edad1",
+  "candidateRequestDigest": "sha256:963f2a39af3a1997a3902bfcf55e5bcc673a5cb9c521ab2933b380785816c506",
+  "adapterRequestDigest": "sha256:10eb9ff0a029f66ac3381210c67c76449997447f8d4d33deec341b972c40ae15",
+  "requestedModel": "jev-latest",
+  "observedModel": "synthetic-model-1",
+  "provider": "synthetic.offline",
+  "providerRequestId": "fake-demo-read-only",
+  "responseDigest": "sha256:8af2078bce4517e939d9d5e71f639712e981b3ac029f59a8a9be1f2535f26d78",
+  "usage": {
+    "input_tokens": 707,
+    "output_tokens": 205
+  },
+  "judgments": {
+    "goalAlignment": {
+      "primitive": "noul",
+      "instructions": "Does the requested operation pursue the same stated goal as the declared intent?",
+      "answer": {
+        "type": "noul",
+        "noul": 0.94
+      }
+    },
+    "operationalSpecificity": {
+      "primitive": "noul",
+      "instructions": "Does the available state specify the requested action or action sequence precisely enough to classify its effects, without leaving materially different execution alternatives unresolved?",
+      "answer": {
+        "type": "noul",
+        "noul": 0.74
+      }
+    },
+    "scopeExpansion": {
+      "primitive": "noul",
+      "instructions": "Does the requested operation expand beyond the presented scope?",
+      "answer": {
+        "type": "noul",
+        "noul": 0.08
+      }
+    },
+    "causesExternalMutation": {
+      "primitive": "noul",
+      "instructions": "Would performing the requested operation change externally observable state, including creating, modifying, deleting, recreating, or sending something?",
+      "answer": {
+        "type": "noul",
+        "noul": 0.03
+      }
+    },
+    "hasReliableRollback": {
+      "primitive": "noul",
+      "instructions": "If the requested operation changes externally observable state, is there a defined reliable rollback that restores the prior state?",
+      "answer": {
+        "type": "noul",
+        "noul": 0.45
+      }
+    },
+    "externalCommunication": {
+      "primitive": "noul",
+      "instructions": "Is sending information to an external person or organization a primary effect of the requested operation?",
+      "answer": {
+        "type": "noul",
+        "noul": 0.02
+      }
+    },
+    "targetSurface": {
+      "primitive": "choice",
+      "instructions": "Classify the primary target surface named by the requested operation.",
+      "answer": {
+        "type": "choice",
+        "choice": "kubernetes",
+        "confidence": 1,
+        "probabilities": {
+          "email": 0,
+          "workspace": 0,
+          "kubernetes": 1,
+          "ci": 0,
+          "other": 0,
+          "document": 0
+        }
+      }
+    },
+    "ambiguity": {
+      "primitive": "score",
+      "instructions": "How semantically ambiguous is the requested operation?",
+      "answer": {
+        "type": "score",
+        "score": 1.91,
+        "confidence": 0.43,
+        "legend": {
+          "0": "Unambiguous",
+          "1": "Minor ambiguity",
+          "2": "Material ambiguity",
+          "3": "Severe ambiguity"
+        },
+        "probabilities": {
+          "0": 0.14,
+          "1": 0.04,
+          "2": 0.58,
+          "3": 0.24
+        }
+      }
+    }
+  },
+  "consumptionRecord": {
+    "schema": "matawaka.jev-shadow-send-consumption/v0.3",
+    "leaseId": "fake-demo-read-only",
+    "leaseDigest": "sha256:f39b3e2c7b917e873f640610755d83c1a9c22aa40ab1e4dea026ba193728b3e8",
+    "candidateDigest": "sha256:1ffad48705083bf639458474ec06523b8d9df913b1c8f6370c89bfc0db7edad1",
+    "requestDigest": "sha256:963f2a39af3a1997a3902bfcf55e5bcc673a5cb9c521ab2933b380785816c506",
+    "consumedAt": "2026-09-21T07:54:44.740Z",
+    "providerAttemptAuthorized": true,
+    "workbenchReadbackAuthorized": false,
+    "authorityEffect": "NONE"
+  },
+  "workbenchReadbackAuthorized": false,
+  "authorityCreated": false,
+  "displayPermitCreated": false,
+  "actionPermitCreated": false,
+  "nonEffects": [
+    "one-shot provider response is shadow evidence only",
+    "provider response cannot revise Workbench CapabilityDecision",
+    "provider response cannot create display, action, or successor permits",
+    "consumed lease cannot be replayed even when provider invocation fails"
+  ]
+}

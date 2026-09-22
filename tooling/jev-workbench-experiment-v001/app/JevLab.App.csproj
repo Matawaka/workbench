@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Matawaka.Workbench.JevLab</AssemblyName>
+    <RootNamespace>Matawaka.Workbench.JevLab</RootNamespace>
+    <StartupObject>Matawaka.Workbench.JevLab.LabApplication</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../core/JevLab.Core.csproj" />
+    <Content Include="../fixtures/**/*.json" Link="fixtures/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,11 @@
+{
+  "schema": "matawaka.jev-lab-source-guard/v0.1",
+  "forbiddenTokens": [
+    "HttpClient",
+    "WebRequest",
+    "TYPESAFE_API_KEY",
+    "api.typesafe.ai",
+    "CommandRouter",
+    "AgentHost"
+  ]
+}
