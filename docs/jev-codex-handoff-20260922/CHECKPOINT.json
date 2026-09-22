@@ -1,0 +1,57 @@
+{
+  "schema": "matawaka.jev-codex-handoff/v0.1",
+  "date": "2026-09-22",
+  "repository": "Matawaka/workbench",
+  "repositoryVisibilityAtHandoff": "public",
+  "implementationBaseline": "a6e389f1b2910e987f5749186152fb5d31f98eda",
+  "implementationBranch": "research/jev-shadow-label-semantics-v0.2",
+  "implementationPullRequest": 117,
+  "handoffBranch": "handoff/jev-shadow-codex-2026-09-22",
+  "historicalBaselineCiRun": 35583894030,
+  "historicalBaselineCiConclusion": "success",
+  "implementationChangesInHandoff": false,
+  "referenceAdmission": "HOLD_ADJUDICATION_PENDING",
+  "secondaryOrigin": {
+    "classification": "HUMAN_AI_ASSISTED",
+    "basis": "OPERATOR_DECLARATION",
+    "implementedAsNewLabelKind": false,
+    "humanIdentitySeparation": "NOT_ESTABLISHED",
+    "humanExposureOutsideAssistingConversation": "NOT_ESTABLISHED",
+    "assistingModelIdentity": "NOT_ESTABLISHED"
+  },
+  "caseDisposition": "PRESERVE_FROZEN_INPUTS_AND_PRIVATE_POSTMODEL_DIAGNOSTICS",
+  "completedHumanAdjudication": false,
+  "deploymentCalibrationClaim": false,
+  "currentResearchLimitations": [
+    "Legacy corpus expects label schema v0.1; v0.2 semantics is separate",
+    "ECE aggregate gate uses observation count, not independent source cases",
+    "Reference admission lacks provenance-aware adjudication binding",
+    "Legacy private intake may overwrite frozen files; do not rerun on source case",
+    "Hash identity does not prove chronology, authorship or blinding",
+    "Read-only task label is not a whole-pipeline no-side-effects proof",
+    "Model agreement cannot select reference truth"
+  ],
+  "nextCodexTask": "OFFLINE_PROVENANCE_AWARE_REFERENCE_ADMISSION_BRIDGE",
+  "nextImplementationPackageSuggested": "tooling/jev-shadow-reference-admission-v002",
+  "mustRemain": {
+    "normativeEffect": "NONE",
+    "authorityIssuance": "OUT_OF_SCOPE",
+    "workbenchReadbackAuthorized": false,
+    "newProviderInvocationAuthorized": false,
+    "newLiveCaptureAuthorized": false,
+    "automaticHumanAdjudicationAuthorized": false,
+    "privateEvidencePublicationAuthorized": false,
+    "productionThresholdDefinitionAuthorized": false,
+    "automaticMergeAuthorized": false
+  },
+  "offlineSuites": [
+    {"path": "tooling/jev-system-one-judgment-adapter", "historicalTests": 20},
+    {"path": "tooling/jev-shadow-one-shot-send-v003", "historicalTests": 4},
+    {"path": "tooling/jev-shadow-evidence-corpus-v001", "historicalTests": 7},
+    {"path": "tooling/jev-shadow-label-semantics-v002", "historicalTests": 5}
+  ],
+  "windowsBuildProject": "tooling/jev-shadow-real-case-lab-v001/Capture.csproj",
+  "privateFiles": "Not included in public checkpoint; see operator-private manifest",
+  "missingPrivateInputsBehavior": "COMPLETE_CODE_AND_SYNTHETIC_TESTS_THEN_REPORT_PRIVATE_INPUTS_UNAVAILABLE",
+  "nextStopCondition": "DRAFT_PR_AND_TEST_EVIDENCE_READY_NO_REFERENCE_ADMISSION_WITHOUT_REQUIRED_EVIDENCE"
+}
