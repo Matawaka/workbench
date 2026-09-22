@@ -1,0 +1,123 @@
+name: Jev Codex Handoff 2026-09-22
+
+on:
+  pull_request:
+    paths:
+      - 'docs/jev-codex-handoff-20260922/**'
+      - '.github/workflows/jev-codex-handoff-20260922.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  offline-checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify implementation baseline and handoff-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor a6e389f1b2910e987f5749186152fb5d31f98eda HEAD
+          python - <<'PY'
+          import subprocess
+          base='a6e389f1b2910e987f5749186152fb5d31f98eda'
+          paths=subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines()
+          bad=[p for p in paths if not (p.startswith('docs/jev-codex-handoff-20260922/') or p=='.github/workflows/jev-codex-handoff-20260922.yml')]
+          if bad: raise SystemExit('Implementation drift outside handoff: '+repr(bad))
+          print('PASS: implementation and frozen evidence byte-identical to baseline')
+          PY
+      - name: Run four offline suites without TypeSafe credentials
+        shell: bash
+        env:
+          TYPESAFE_API_KEY: ''
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/jev-codex-handoff"
+          mkdir -p "$out/tests"
+          for pkg in jev-system-one-judgment-adapter jev-shadow-one-shot-send-v003 jev-shadow-evidence-corpus-v001 jev-shadow-label-semantics-v002; do
+            (cd "tooling/$pkg" && node --test --test-reporter=tap) | tee "$out/tests/$pkg.tap"
+          done
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Export exact sources, history and public metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/jev-codex-handoff"
+          git archive --format=zip --prefix=workbench/ -o "$out/workbench-source.zip" HEAD
+          git bundle create "$out/workbench-history.bundle" HEAD
+          git bundle verify "$out/workbench-history.bundle"
+          python - <<'PY'
+          import os,json,subprocess,hashlib,platform,urllib.request,datetime,pathlib
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'jev-codex-handoff'
+          sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          paths=subprocess.check_output(['git','ls-files','-z']).split(b'\0')
+          entries=[]
+          for item in paths:
+              if not item: continue
+              p=pathlib.Path(os.fsdecode(item))
+              if p.is_symlink(): data=os.readlink(p).encode(); kind='symlink'
+              else: data=p.read_bytes(); kind='file'
+              entries.append({'path':p.as_posix(),'kind':kind,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+          manifest={'schema':'matawaka.jev-codex-source-snapshot/v0.1','implementationBaseline':'a6e389f1b2910e987f5749186152fb5d31f98eda','handoffCommit':sha,'createdAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'nodeVersion':subprocess.check_output(['node','--version'],text=True).strip(),'platform':platform.platform(),'files':entries,'privateEvidenceIncluded':False,'providerInvoked':False}
+          (out/'SOURCE-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          metadata=[]
+          for number in range(108,118):
+              url=f'https://api.github.com/repos/{os.environ["GH_REPOSITORY"]}/pulls/{number}'
+              req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=15) as r: x=json.load(r)
+                  metadata.append({'number':number,'url':x['html_url'],'title':x['title'],'state':x['state'],'draft':x['draft'],'merged':x['merged'],'headRef':x['head']['ref'],'headSha':x['head']['sha'],'baseRef':x['base']['ref'],'baseSha':x['base']['sha'],'updatedAt':x['updated_at']})
+              except Exception as e: metadata.append({'number':number,'metadataReadError':type(e).__name__})
+          (out/'PR-CHAIN.json').write_text(json.dumps(metadata,indent=2)+'\n')
+          sums=[]
+          for p in sorted(out.rglob('*')):
+              if p.is_file(): sums.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(out).as_posix())
+          (out/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jev-codex-handoff-20260922-source-and-tests
+          path: ${{ runner.temp }}/jev-codex-handoff/
+          if-no-files-found: error
+          retention-days: 30
+
+  windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build existing real-case lab without executing a real case
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'jev-codex-windows-build.txt'
+          dotnet build tooling/jev-shadow-real-case-lab-v001/Capture.csproj -c Release 2>&1 | Tee-Object -FilePath $out
+          if ($LASTEXITCODE -ne 0) { throw 'Existing Capture build failed.' }
+          $dirty = git status --porcelain --untracked-files=all
+          if ($dirty) { throw 'Build modified tracked or unignored files.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jev-codex-handoff-20260922-windows-build
+          path: ${{ runner.temp }}/jev-codex-windows-build.txt
+          if-no-files-found: error
+          retention-days: 30
