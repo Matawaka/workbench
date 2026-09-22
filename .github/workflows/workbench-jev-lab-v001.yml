@@ -34,9 +34,8 @@ jobs:
           git merge-base --is-ancestor "$expected" HEAD
           git diff --name-only "$expected" HEAD > "$RUNNER_TEMP/lab-changed.txt"
           if grep -Ev '^(tooling/jev-workbench-experiment-v001/|\.github/workflows/workbench-jev-lab-v001\.yml$)' "$RUNNER_TEMP/lab-changed.txt"; then exit 1; fi
-          for token in 'HttpClient' 'WebRequest' 'TYPESAFE_API_KEY' 'api.typesafe.ai' 'CommandRouter' 'AgentHost'; do
-            if grep -R -F "$token" tooling/jev-workbench-experiment-v001/core; then exit 1; fi
-          done
+          node tooling/jev-workbench-experiment-v001/checks/offline-source-guard.mjs
+          node --test tooling/jev-workbench-experiment-v001/checks/offline-source-guard.test.mjs
       - name: Existing offline suites
         shell: bash
         run: |

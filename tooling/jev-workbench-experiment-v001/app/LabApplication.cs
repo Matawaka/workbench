@@ -2,8 +2,8 @@ using System.Windows;
 
 namespace Matawaka.Workbench.JevLab;
 
-// Dedicated experimental entry point. Does not instantiate production MainWindow,
-// CommandRouter, settings, AgentHost, maintenance services or a model provider.
+// Dedicated experimental entry point. Does not instantiate production windows,
+// routing, settings, host or maintenance services, or a model provider.
 internal sealed class LabApplication : Application
 {
     [STAThread]

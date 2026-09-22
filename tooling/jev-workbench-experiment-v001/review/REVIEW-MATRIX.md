@@ -4,12 +4,12 @@ Implementation base: `9e950781b26f144af498e6b28b2cda966ad61428`.
 Frozen implementation / review head (H1): `9bc20dff92402bb1aa1f33ff1d1acb25f17fc793`.
 Draft PR: https://github.com/Matawaka/workbench/pull/120.
 
-Реестр фиксирует полученные внутренние результаты и отсутствие внешних ответов. Финализированные briefs и этот реестр добавляются после H1 отдельным commit, без изменений app/core/tests; объект внешнего review остаётся H1. Обновлять строки только по фактическому ответу; модель и SHA не выводить из названия диалога.
+Реестр сохраняет привязку каждого ответа к фактически указанной версии. Исходный внешний target — H1. Ответ Claude получен через оператора; исправление его C1 оформляется последующим commit и не переносит прежние выводы на новый код. Обновлять строки только по фактическому ответу; модель и SHA не выводить из названия диалога.
 
 | Reviewer | Фокус | Статус | Reviewed head SHA | Evidence / результат |
 | --- | --- | --- | --- | --- |
 | Grok; model/version UNKNOWN | Adversarial inputs, hashes, path and resource boundaries | NOT_RUN | — | Brief подготовлен; ответ не получен |
-| Claude; model/version UNKNOWN | Semantics, UI, stale display, claims and evidence distinctions | NOT_RUN | — | Brief подготовлен; ответ не получен |
+| Claude Sonnet 5, версия по переданному ответу; оператор назвал Extra | Semantics/UI; фактически только доступные scaffolding/docs | PARTIAL | H1 запрошен; exact checkout не выполнен | [Переданный ответ и disposition C1](CLAUDE-20260922-PARTIAL.md). UI/core/fixtures/tests недоступны через web; ничего не исполнял. C1 P2 принят и исправлен, внешний recheck PENDING. |
 | Internal AI security review | Offline chain/authority boundaries; ограниченный static review | COMPLETED | `9bc20dff92402bb1aa1f33ff1d1acb25f17fc793` | Оставшихся блокеров не выявлено. Перед code commit root сверил неизменность хэшей четырёх проверенных файлов рабочего дерева. Исходные findings и их исправления зафиксированы отдельно; не передаются до первых внешних ответов. |
 | Internal implementation verification | Windows build, synthetic tests and in-process WPF smoke | COMPLETED, с указанными ограничениями | `9bc20dff92402bb1aa1f33ff1d1acb25f17fc793` | Root повторно выполнил 112 predecessor tests и 83 importer tests: PASS; build: 0 warnings / 0 errors; WPF smoke: 11 PASS; output guards: 5/5 rejected. Рендеры успешной загрузки и ошибки просмотрены. |
 
